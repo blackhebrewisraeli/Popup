@@ -16,6 +16,12 @@ const valid = {
   event_id: '2026-10-20T12:00:00Z',
 };
 
+const attributed = {
+  ...valid,
+  trigger_schema_version: '1',
+  trigger_reasons: ['high_volatility_risk_transition', 'atr_trailing_stop_breach'],
+};
+
 describe('tv-webhook payload', () => {
   it('normalises a TradingView alert body', () => {
     expect(
@@ -73,6 +79,26 @@ describe('tv-webhook payload', () => {
     });
   });
 
+  it('keeps every versioned trigger reason, including a score-69 SELL with simultaneous reasons', () => {
+    expect(parseSignal({ ...attributed, signal_score: 69 })).toMatchObject({
+      signal: {
+        action: 'SELL',
+        signal_score: 69,
+        trigger_schema_version: '1',
+        trigger_reasons: ['high_volatility_risk_transition', 'atr_trailing_stop_breach'],
+      },
+    });
+  });
+
+  it('keeps legacy alerts without attribution compatible', () => {
+    const parsed = parseSignal(valid);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.signal.trigger_schema_version).toBeUndefined();
+      expect(parsed.signal.trigger_reasons).toBeUndefined();
+    }
+  });
+
   it('keys an alert without event_id to its minute, so a re-send dedupes', () => {
     const { event_id: _omitted, ...body } = valid;
     const at = (iso: string) => parseSignal(body, new Date(iso));
@@ -100,6 +126,30 @@ describe('tv-webhook payload', () => {
     [{ ...valid, timeframe: '1 hour' }, 'timeframe is invalid'],
     [{ ...valid, bar_time: 'yesterday' }, 'bar_time is invalid'],
     [{ ...valid, model_version: { v: 1 } }, 'model_version is invalid'],
+    [
+      { ...valid, trigger_schema_version: '1' },
+      'trigger attribution must include version and reasons',
+    ],
+    [
+      { ...valid, trigger_reasons: ['atr_trailing_stop_breach'] },
+      'trigger attribution must include version and reasons',
+    ],
+    [
+      { ...valid, trigger_schema_version: '2', trigger_reasons: ['atr_trailing_stop_breach'] },
+      'trigger_schema_version is unsupported',
+    ],
+    [
+      { ...valid, trigger_schema_version: '1', trigger_reasons: ['made_up_reason'] },
+      'trigger_reasons contains an unsupported reason',
+    ],
+    [
+      {
+        ...valid,
+        trigger_schema_version: '1',
+        trigger_reasons: ['atr_trailing_stop_breach', 'atr_trailing_stop_breach'],
+      },
+      'trigger_reasons must not contain duplicates',
+    ],
   ])('rejects %j', (body, error) => {
     expect(parseSignal(body)).toEqual({ ok: false, error });
   });

@@ -286,22 +286,29 @@ describe('production Pine, the tested candidate and diagnostics (source checks, 
     }
   });
 
-  it('promotes the candidate that ran on TradingView, changing only comments, title and version', () => {
+  it('keeps the promoted candidate calculation code while allowing notification-only changes', () => {
     // docs/PINE_PARITY_ASSESSMENT.md section 4 records this hash for the candidate that ran.
     expect(
       createHash('sha256')
         .update(readFileSync('pine/candidates/zerochart_quant_hud_w200.pine'))
         .digest('hex'),
     ).toBe('014af558bd9215e494a38028def2c54101c73459d7be3522c095b0354b436842');
-    const code = (source: string) =>
+    const calculationCode = (source: string) =>
       source
+        .replace(
+          /\/\/ ===== Webhook alerts:[\s\S]*?\/\/ ===== On-chart terminal HUD =====/,
+          '// ===== On-chart terminal HUD =====',
+        )
         .split('\n')
         .filter(
           (line) =>
-            !line.startsWith('//') && !/^indicator\(|^const string MODEL_VERSION/.test(line),
+            !line.startsWith('//') &&
+            !/^indicator\(|^alertOutput\s+=|^const string (MODEL_VERSION|TRIGGER_SCHEMA_VERSION)/.test(
+              line,
+            ),
         )
         .join('\n');
-    expect(code(production)).toBe(code(candidate));
+    expect(calculationCode(production)).toBe(calculationCode(candidate));
     expect(production).toContain(`const string MODEL_VERSION = "${CANONICAL_MODEL_VERSION}-pw200"`);
   });
 

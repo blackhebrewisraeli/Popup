@@ -74,13 +74,15 @@ function ConnectTradingView({
     <section className="pine-connect" aria-labelledby="pine-connect-title">
       <h3 id="pine-connect-title">Connect TradingView</h3>
       <p>
-        Send alerts to your Action Center: generate a token, copy the Pine Script again (the token
-        is now inside it), then create a TradingView alert on ZC Quant pw200 with the condition “Any
-        alert() function call”, tick Webhook URL and paste the URL below.
+        Generate a token, copy the Pine Script again, then create two TradingView alerts with “Any
+        alert() function call”. For the machine alert choose “Machine JSON”, enable only Webhook URL
+        and paste the URL below. For the phone alert choose “Human readable”, enable Notify in App,
+        and leave Webhook URL off.
       </p>
       <p className="pine-connect-note">
         Set the chart to the daily (1D) timeframe first. Signals from other timeframes reach your
-        Action Center but can’t be executed.
+        Action Center but can’t be executed. One TradingView alert uses one generated message for
+        every enabled action, so never enable phone notifications on the machine alert.
       </p>
       <CopyField label="Webhook URL" value={`${resolveSupabaseUrl()}${TV_WEBHOOK_PATH}`} />
       {token !== null && (
@@ -90,7 +92,9 @@ function ConnectTradingView({
         </>
       )}
       <p className="pine-connect-note">
-        Generating a token replaces your old one. Alerts using the old token stop working.
+        Generating a token replaces your old one. Recreate every machine alert that used the old
+        script; never paste either token into chat. No custom webhook headers are required or
+        supported by this setup.
       </p>
       <button type="button" className="pricing-basic-button" onClick={generate} disabled={busy}>
         <KeyRound size={15} /> {token === null ? 'Generate webhook token' : 'Generate a new token'}

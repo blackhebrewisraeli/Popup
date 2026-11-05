@@ -190,6 +190,8 @@ function signal(overrides: Record<string, unknown> = {}) {
     timeframe: '1D',
     bar_time: '2026-10-20T12:00:00Z',
     model_version: '1.0.0',
+    trigger_schema_version: '1',
+    trigger_reasons: ['long_setup_transition'],
     status: 'PENDING',
     created_at: '2026-10-20T12:00:00.000Z',
     ...overrides,
@@ -251,6 +253,41 @@ describe('Action Center', () => {
 
     expect(await screen.findByText('Source: BINANCE · 1D · model 1.0.0')).toBeVisible();
     expect(screen.queryByText(/Source details are incomplete/)).toBeNull();
+  });
+
+  it('separates technical triggers from score and explains simultaneous SELL reasons', async () => {
+    db.pending = [
+      signal({
+        action: 'SELL',
+        signal_score: 69,
+        trigger_reasons: ['high_volatility_risk_transition', 'atr_trailing_stop_breach'],
+      }),
+    ];
+    renderSignedIn();
+
+    expect(await screen.findByText('69 / 100')).toBeVisible();
+    expect(screen.getByText('Technical event reasons')).toBeVisible();
+    expect(screen.getByText('Market entered the high-volatility risk setup.')).toBeVisible();
+    expect(screen.getByText('Price breached the indicator’s ATR trailing stop.')).toBeVisible();
+    expect(screen.getByText('Indicator sizing estimate')).toBeVisible();
+    expect(screen.getByText(/not owned holdings or an instruction to trade/i)).toBeVisible();
+    expect(screen.getByText(/does not mean an order was placed or filled/i)).toBeVisible();
+  });
+
+  it('labels legacy events without guessing a trigger reason', async () => {
+    db.pending = [signal({ trigger_schema_version: null, trigger_reasons: null })];
+    renderSignedIn();
+
+    expect(await screen.findByText('Trigger reason not recorded')).toBeVisible();
+    expect(screen.queryByText('Long setup began.')).toBeNull();
+  });
+
+  it('does not display authentication material from an unexpected row field', async () => {
+    db.pending = [signal({ secret_token: 'must-not-render' })];
+    renderSignedIn();
+
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(document.body).not.toHaveTextContent('must-not-render');
   });
 
   const unverified = 'Verified strategy provenance is required before execution.';

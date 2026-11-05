@@ -20,8 +20,27 @@ import {
   type DismissalReason,
 } from '@/lib/decisionJournal';
 
-type Signal = Database['public']['Tables']['trading_signals']['Row'];
+type Signal = Database['public']['Tables']['trading_signals']['Row'] & {
+  trigger_schema_version?: string | null;
+  trigger_reasons?: string[] | null;
+};
 const isStrategy = (signal: Signal) => signal.signal_kind === 'strategy';
+
+const TRIGGER_REASON_LABELS: Readonly<Record<string, string>> = {
+  long_setup_transition: 'Long setup began.',
+  low_score_risk_transition: 'Score entered the low-score risk setup.',
+  high_volatility_risk_transition: 'Market entered the high-volatility risk setup.',
+  atr_trailing_stop_breach: 'Price breached the indicator’s ATR trailing stop.',
+  high_conviction_transition: 'Score entered the high-conviction range.',
+};
+
+function triggerReasonLabels(signal: Signal): string[] | null {
+  if (signal.trigger_schema_version !== '1' || !Array.isArray(signal.trigger_reasons)) return null;
+  const labels = signal.trigger_reasons
+    .map((reason) => TRIGGER_REASON_LABELS[reason])
+    .filter((label): label is string => label !== undefined);
+  return labels.length === signal.trigger_reasons.length && labels.length > 0 ? labels : null;
+}
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -254,6 +273,8 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
   );
   const executionBlocked = rejection ?? provenanceBlock(signal, provenanceComplete);
   const reason = reasonChoice.id === signal.id ? reasonChoice.reason : '';
+  const eventReasons = triggerReasonLabels(signal);
+  const trailingStopEvent = signal.trigger_reasons?.includes('atr_trailing_stop_breach') ?? false;
 
   return (
     <section
@@ -264,33 +285,50 @@ export function ActionCenter({ assets }: Readonly<{ assets: Asset[] }>) {
         <Flame size={28} aria-hidden="true" />
         {signal.action} SIGNAL: {signal.ticker}
       </p>
+      <div className="action-center-trigger-reasons">
+        <strong>Technical event reasons</strong>
+        {eventReasons ? (
+          <ul>
+            {eventReasons.map((eventReason) => (
+              <li key={eventReason}>{eventReason}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>Trigger reason not recorded</p>
+        )}
+      </div>
       <dl className="action-center-facts">
         <div>
           <dt>Model Signal Score</dt>
           <dd>{signal.signal_score} / 100</dd>
         </div>
         <div>
-          <dt>Quantity</dt>
+          <dt>Indicator sizing estimate</dt>
           <dd>
             <Shares value={quantity} /> units
           </dd>
         </div>
         {notional !== null && (
           <div>
-            <dt>Notional</dt>
+            <dt>Estimated notional</dt>
             <dd>{formatPrice(notional)}</dd>
           </div>
         )}
         {signal.stop_loss !== null && (
           <div>
-            <dt>Planned stop</dt>
+            <dt>Indicator planned stop (estimate)</dt>
             <dd>{formatPrice(Number(signal.stop_loss))}</dd>
           </div>
         )}
       </dl>
       <p className="action-center-context">
-        TradingView alert · simulated execution only. The model score is not a probability.
-        {signal.stop_loss !== null && ' Planned stops do not create automatic stop orders.'}
+        TradingView technical event · information only. The model score is not a probability, and
+        the quantity is an indicator sizing estimate—not owned holdings or an instruction to trade.
+        Receipt does not place or fill any order.
+        {signal.stop_loss !== null &&
+          ' The planned stop is a sizing assumption; it does not create an automatic stop order.'}
+        {trailingStopEvent &&
+          ' A trailing-stop event reports an indicator threshold breach; it does not mean an order was placed or filled.'}
       </p>
       <p
         className={cn('action-center-source', !provenanceComplete && 'is-incomplete')}

@@ -3626,6 +3626,29 @@ body {
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
+.action-center-trigger-reasons {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklch, var(--action-tone) 35%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--action-tone) 7%, var(--card));
+}
+.action-center-trigger-reasons strong {
+  font:
+    600 11px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.action-center-trigger-reasons ul,
+.action-center-trigger-reasons p {
+  margin: 7px 0 0;
+  padding-left: 18px;
+  line-height: 1.55;
+}
+.action-center-trigger-reasons p {
+  padding-left: 0;
+  color: var(--muted-foreground);
+}
 .action-center-facts {
   display: flex;
   flex-wrap: wrap;

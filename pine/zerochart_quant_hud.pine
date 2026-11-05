@@ -23,6 +23,7 @@ showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "D
 hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
 showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
 showSignals      = input.bool(true, "Show High-Conviction Signal Labels", group = "Display")
+alertOutput      = input.string("Machine JSON", "Alert output", options = ["Machine JSON", "Human readable"], group = "Alerts", tooltip = "Use Machine JSON only for the ZeroChart webhook. Use Human readable for a separate phone alert with no webhook URL.")
 
 // ===== Semantic tokens =====
 color C_BG     = #101828
@@ -41,6 +42,7 @@ float REGIME_HIGH_VOLATILITY   = 0.04   // ATR/price >= 4% -> HIGH_VOLATILITY re
 float REGIME_TRENDING_MOMENTUM = 0.005  // |MACD hist|/price >= 0.5% -> TRENDING regime
 // CANONICAL_MODEL_VERSION plus this Pine implementation: bump with any change that can move a score.
 const string MODEL_VERSION = "1.0.0-pw200"
+const string TRIGGER_SCHEMA_VERSION = "1"
 int MODEL_WINDOW               = 200    // roboAdvisor.ts / evaluationLab: last 200 closed candles
 int MIN_CANDLES                = 34     // canonicalModel.ts MIN_CANDLES
 float FLAT_MOMENTUM            = 0.0005 // momentum inside +/-0.05% reads as "flat"
@@ -256,20 +258,40 @@ plot(stopPrice, "ZC Stop", display = display.none)
 // USER_SECRET_PLACEHOLDER for your webhook token when you copy the script.
 const string WEBHOOK_SECRET = "USER_SECRET_PLACEHOLDER"
 
-webhookJson(string side) =>
-    "{\"signal_kind\": \"strategy\", \"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"exchange\": \"" + syminfo.prefix + "\", \"timeframe\": \"" + timeframe.period + "\", \"bar_time\": \"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"model_version\": \"" + MODEL_VERSION + "\"}"
+appendJsonReason(string reasons, bool include, string reason) =>
+    include ? reasons + (str.length(reasons) > 0 ? ", " : "") + "\"" + reason + "\"" : reasons
+
+appendHumanReason(string reasons, bool include, string reason) =>
+    include ? reasons + (str.length(reasons) > 0 ? " " : "") + reason : reasons
+
+webhookJson(string side, string reasons) =>
+    "{\"signal_kind\": \"strategy\", \"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"exchange\": \"" + syminfo.prefix + "\", \"timeframe\": \"" + timeframe.period + "\", \"bar_time\": \"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"model_version\": \"" + MODEL_VERSION + "\", \"trigger_schema_version\": \"" + TRIGGER_SCHEMA_VERSION + "\", \"trigger_reasons\": [" + reasons + "]}"
+
+humanMessage(string side, string reasons) =>
+    "ZeroChart technical event — " + syminfo.prefix + ":" + syminfo.ticker + " " + timeframe.period + " · " + side + " · model score " + str.tostring(score) + "/100. " + reasons + " Informational only; no order was placed."
+
+alertMessage(string side, string jsonReasons, string humanReasons) =>
+    alertOutput == "Human readable" ? humanMessage(side, humanReasons) : webhookJson(side, jsonReasons)
 
 // A NaN quantity or score would break the JSON, so such a bar sends nothing.
 if ready and not na(suggestedShares)
     if longSignal
-        alert(webhookJson("BUY"), alert.freq_once_per_bar_close)
+        alert(alertMessage("BUY", "\"long_setup_transition\"", "Long setup began."), alert.freq_once_per_bar_close)
     if riskSignal or stopBreached
-        alert(webhookJson("SELL"), alert.freq_once_per_bar_close)
+        string sellJsonReasons = ""
+        sellJsonReasons := appendJsonReason(sellJsonReasons, riskSignal and score <= 28, "low_score_risk_transition")
+        sellJsonReasons := appendJsonReason(sellJsonReasons, riskSignal and regime == "HIGH_VOLATILITY", "high_volatility_risk_transition")
+        sellJsonReasons := appendJsonReason(sellJsonReasons, stopBreached, "atr_trailing_stop_breach")
+        string sellHumanReasons = ""
+        sellHumanReasons := appendHumanReason(sellHumanReasons, riskSignal and score <= 28, "Score entered the low-score risk setup.")
+        sellHumanReasons := appendHumanReason(sellHumanReasons, riskSignal and regime == "HIGH_VOLATILITY", "Market entered the high-volatility risk setup.")
+        sellHumanReasons := appendHumanReason(sellHumanReasons, stopBreached, "Price breached the indicator's ATR trailing stop.")
+        alert(alertMessage("SELL", sellJsonReasons, sellHumanReasons), alert.freq_once_per_bar_close)
 
-const string ALERT_FIELDS = ", \"signal_kind\": \"strategy\", \"signal_score\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"quantity\": {{plot(\"ZC Quantity\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}, \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"{{timenow}}\", \"exchange\": \"{{exchange}}\", \"timeframe\": \"{{interval}}\", \"bar_time\": \"{{time}}\", \"model_version\": \"" + MODEL_VERSION + "\"}"
-alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\"" + ALERT_FIELDS)
-alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
-alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS)
+const string ALERT_FIELDS = ", \"signal_kind\": \"strategy\", \"signal_score\": {{plot(\"ZC Score\")}}, \"price\": {{close}}, \"quantity\": {{plot(\"ZC Quantity\")}}, \"stop_loss\": {{plot(\"ZC Stop\")}}, \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"{{timenow}}\", \"exchange\": \"{{exchange}}\", \"timeframe\": \"{{interval}}\", \"bar_time\": \"{{time}}\", \"model_version\": \"" + MODEL_VERSION + "\", \"trigger_schema_version\": \"" + TRIGGER_SCHEMA_VERSION + "\", \"trigger_reasons\": "
+alertcondition(highConviction and not highConviction[1], "ZC High-Conviction Bullish", "{\"ticker\": \"{{ticker}}\", \"action\": \"BUY\"" + ALERT_FIELDS + "[\"high_conviction_transition\"]}")
+alertcondition(isHighVolatility and not isHighVolatility[1], "ZC Regime Shift: HIGH_VOLATILITY", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS + "[\"high_volatility_risk_transition\"]}")
+alertcondition(stopBreached, "ZC ATR Trailing Stop Breach", "{\"ticker\": \"{{ticker}}\", \"action\": \"SELL\"" + ALERT_FIELDS + "[\"atr_trailing_stop_breach\"]}")
 
 // ===== On-chart terminal HUD =====
 var table hud = table.new(position.top_right, 2, 5, bgcolor = C_BG, frame_color = C_BORDER, frame_width = 1, border_color = C_BORDER, border_width = 1)
