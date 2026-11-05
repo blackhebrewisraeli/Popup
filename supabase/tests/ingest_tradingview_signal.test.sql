@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(29);
 
 insert into auth.users (id) values
   ('00000000-0000-4000-8000-000000000011'),
@@ -25,7 +25,9 @@ select jsonb_build_object(
   'exchange', 'BINANCE',
   'timeframe', '60',
   'bar_time', '2026-10-21T23:00:00.000Z',
-  'model_version', '1.0.0'
+  'model_version', '1.0.0',
+  'trigger_schema_version', '1',
+  'trigger_reasons', jsonb_build_array('high_volatility_risk_transition', 'atr_trailing_stop_breach')
 ) as signal,
 encode(sha256(convert_to('tok-ingest', 'UTF8')), 'hex') as token_hash;
 grant select on delivery to service_role, authenticated;
@@ -68,6 +70,24 @@ select throws_ok(
   '23514',
   'signal_kind must be strategy or transport_test',
   'an unsupported signal_kind is rejected'
+);
+select throws_ok(
+  $$select public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal - 'trigger_reasons' || '{"event_id": "missing-reasons"}' from delivery)
+  )$$,
+  '23514',
+  'trigger attribution must include version and reasons',
+  'partial trigger attribution is rejected'
+);
+select throws_ok(
+  $$select public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "duplicate-reasons", "trigger_reasons": ["atr_trailing_stop_breach", "atr_trailing_stop_breach"]}' from delivery)
+  )$$,
+  '23514',
+  'trigger_reasons must not contain duplicates',
+  'duplicate trigger reasons are rejected'
 );
 select is(
   public.ingest_tradingview_signal((select token_hash from delivery), (select signal from delivery)),
@@ -139,6 +159,14 @@ select is(
 );
 select is(
   public.ingest_tradingview_signal(
+    (select token_hash from delivery),
+    (select signal || '{"event_id": "changed-reason", "trigger_reasons": ["atr_trailing_stop_breach"]}' from delivery)
+  ),
+  'conflict',
+  'changed trigger attribution for one modern logical identity is refused'
+);
+select is(
+  public.ingest_tradingview_signal(
     encode(sha256(convert_to('tok-other', 'UTF8')), 'hex'),
     (select signal from delivery)
   ),
@@ -198,7 +226,8 @@ select is(
 );
 select results_eq(
   $$
-    select user_id, status, signal_kind, exchange, timeframe, bar_time, model_version
+    select user_id, status, signal_kind, exchange, timeframe, bar_time, model_version,
+      trigger_schema_version, trigger_reasons
     from public.trading_signals
     where event_id = '2026-10-22T00:00:22Z'
       and user_id = '00000000-0000-4000-8000-000000000011'
@@ -212,7 +241,9 @@ select results_eq(
       'BINANCE'::text,
       '60'::text,
       '2026-10-21T23:00:00Z'::timestamptz,
-      '1.0.0'::text
+      '1.0.0'::text,
+      '1'::text,
+      array['high_volatility_risk_transition', 'atr_trailing_stop_breach']::text[]
     )
   $$,
   'the signal keeps its owner, PENDING status and source context'
@@ -220,7 +251,8 @@ select results_eq(
 select is(
   public.ingest_tradingview_signal(
     (select token_hash from delivery),
-    (select signal - 'exchange' - 'timeframe' - 'bar_time' - 'model_version' || '{"event_id": "legacy"}' from delivery)
+    (select signal - 'exchange' - 'timeframe' - 'bar_time' - 'model_version'
+      - 'trigger_schema_version' - 'trigger_reasons' || '{"event_id": "legacy"}' from delivery)
   ),
   'accepted',
   'alerts without source context are still accepted'
@@ -229,6 +261,7 @@ select is(
   public.ingest_tradingview_signal(
     (select token_hash from delivery),
     (select signal - 'exchange' - 'timeframe' - 'bar_time' - 'model_version'
+      - 'trigger_schema_version' - 'trigger_reasons'
       || '{"event_id": "legacy", "price": 84001}' from delivery)
   ),
   'duplicate',

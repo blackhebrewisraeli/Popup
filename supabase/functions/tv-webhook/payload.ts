@@ -19,12 +19,25 @@ export interface SignalInsert {
   /** ISO open time of the bar that fired. */
   bar_time?: string;
   model_version?: string;
+  /** Versioned, additive technical events that caused this notification. */
+  trigger_schema_version?: '1';
+  trigger_reasons?: TriggerReason[];
 }
 
 export type ParsedSignal = { ok: true; signal: SignalInsert } | { ok: false; error: string };
 
 /** What the Pine script sends until ZeroChart injects the user's token. */
 export const SECRET_PLACEHOLDER = 'USER_SECRET_PLACEHOLDER';
+
+export const TRIGGER_SCHEMA_VERSION = '1' as const;
+export const TRIGGER_REASONS = [
+  'long_setup_transition',
+  'low_score_risk_transition',
+  'high_volatility_risk_transition',
+  'atr_trailing_stop_breach',
+  'high_conviction_transition',
+] as const;
+export type TriggerReason = (typeof TRIGGER_REASONS)[number];
 
 const TICKER = /^[A-Z0-9.=-]{1,20}$/;
 const EXCHANGE = /^[A-Z0-9_]{1,20}$/;
@@ -35,6 +48,7 @@ const MAX_EVENT_ID = 64;
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 type SourceContext = Pick<SignalInsert, 'exchange' | 'timeframe' | 'bar_time' | 'model_version'>;
+type TriggerAttribution = Pick<SignalInsert, 'trigger_schema_version' | 'trigger_reasons'>;
 
 /** Pine's str.tostring() sends numbers as strings, so accept both. */
 function num(value: unknown): number {
@@ -108,6 +122,36 @@ function parseContext(fields: Record<string, unknown>): Parsed<SourceContext> {
   };
 }
 
+/** Legacy alerts omit both fields. New alerts must send one supported, non-duplicated reason. */
+function parseAttribution(fields: Record<string, unknown>): Parsed<TriggerAttribution> {
+  const version = fields['trigger_schema_version'];
+  const rawReasons = fields['trigger_reasons'];
+  if (version == null && rawReasons == null) return { ok: true, value: {} };
+  if (version == null || rawReasons == null) {
+    return { ok: false, error: 'trigger attribution must include version and reasons' };
+  }
+  if (version !== TRIGGER_SCHEMA_VERSION) {
+    return { ok: false, error: 'trigger_schema_version is unsupported' };
+  }
+  if (!Array.isArray(rawReasons) || rawReasons.length === 0 || rawReasons.length > 4) {
+    return { ok: false, error: 'trigger_reasons must contain 1-4 reasons' };
+  }
+  const supported = new Set<string>(TRIGGER_REASONS);
+  if (rawReasons.some((reason) => typeof reason !== 'string' || !supported.has(reason))) {
+    return { ok: false, error: 'trigger_reasons contains an unsupported reason' };
+  }
+  if (new Set(rawReasons).size !== rawReasons.length) {
+    return { ok: false, error: 'trigger_reasons must not contain duplicates' };
+  }
+  return {
+    ok: true,
+    value: {
+      trigger_schema_version: TRIGGER_SCHEMA_VERSION,
+      trigger_reasons: rawReasons as TriggerReason[],
+    },
+  };
+}
+
 /** Validates everything but the token; `now` buckets alerts that carry no event_id. */
 export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
   if (typeof body !== 'object' || body === null) {
@@ -143,6 +187,8 @@ export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
   if (!eventId.ok) return eventId;
   const context = parseContext(fields);
   if (!context.ok) return context;
+  const attribution = parseAttribution(fields);
+  if (!attribution.ok) return attribution;
   return {
     ok: true,
     signal: {
@@ -155,6 +201,7 @@ export function parseSignal(body: unknown, now = new Date()): ParsedSignal {
       stop_loss: stop,
       event_id: eventId.value,
       ...context.value,
+      ...attribution.value,
     },
   };
 }

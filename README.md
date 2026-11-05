@@ -178,7 +178,7 @@ Open [http://localhost:8080](http://localhost:8080).
    ```
 
 2. In the app, open any asset and click **TradingView Indicator**, then click **Generate webhook token**. Copy the Pine Script after that: your token replaces `USER_SECRET_PLACEHOLDER` in its alert payloads.
-3. Add the indicator to a TradingView chart on the daily (`1D`) timeframe, create an alert with the condition **Any alert() function call**, and paste the webhook URL into it. Signals from other timeframes are recorded but can't be executed.
+3. Follow [TradingView notification meaning and secure setup](./docs/TRADINGVIEW_NOTIFICATIONS.md) to create separate machine and phone alerts. The machine alert uses **Machine JSON**, **Any alert() function call**, and the webhook only; the phone alert uses **Human readable** and has no webhook. Signals from other timeframes are recorded but can't be executed.
 
 ### Scripts
 
@@ -211,18 +211,19 @@ Vercel production builds also check that the production database has every migra
 
 ## Documentation
 
-| Document                                                 | What's inside                                                                                                  |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [Architecture](./ARCHITECTURE.md)                        | File tree and where each feature lives                                                                         |
-| [Hybrid architecture](./docs/hybrid-architecture.md)     | Target architecture, reusable engine inventory, and the path from JSONB snapshots to a normalized domain model |
-| [Hybrid roadmap](./docs/hybrid-roadmap.md)               | Milestone 1 and 2 plans, execution checkpoints, and open questions                                             |
-| [Roadmap](./docs/roadmap.md)                             | Completed launch milestones                                                                                    |
-| [Engineering audit](./docs/engineering-audit.md)         | Milestone 0 findings register and remediation log                                                              |
-| [Strategy validation lab](./docs/STRATEGY_VALIDATION.md) | Private, browser-independent decision replay and observation contract                                          |
-| [Supabase connection](./docs/CONNECTION.md)              | Data contract for the `assets_status` market table                                                             |
-| [Releasing database changes](./docs/RELEASE.md)          | Release order for migrations, the production build's database gate, rollback                                   |
-| [Agent conventions](./docs/AGENTS.md)                    | Architecture rules for coding agents working in this repo                                                      |
-| [Contributing](./CONTRIBUTING.md)                        | Dev setup, coding standards, and the pull request process                                                      |
+| Document                                                         | What's inside                                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| [Architecture](./ARCHITECTURE.md)                                | File tree and where each feature lives                                                                         |
+| [Hybrid architecture](./docs/hybrid-architecture.md)             | Target architecture, reusable engine inventory, and the path from JSONB snapshots to a normalized domain model |
+| [Hybrid roadmap](./docs/hybrid-roadmap.md)                       | Milestone 1 and 2 plans, execution checkpoints, and open questions                                             |
+| [Roadmap](./docs/roadmap.md)                                     | Completed launch milestones                                                                                    |
+| [Engineering audit](./docs/engineering-audit.md)                 | Milestone 0 findings register and remediation log                                                              |
+| [Strategy validation lab](./docs/STRATEGY_VALIDATION.md)         | Private, browser-independent decision replay and observation contract                                          |
+| [Supabase connection](./docs/CONNECTION.md)                      | Data contract for the `assets_status` market table                                                             |
+| [Releasing database changes](./docs/RELEASE.md)                  | Release order for migrations, the production build's database gate, rollback                                   |
+| [Agent conventions](./docs/AGENTS.md)                            | Architecture rules for coding agents working in this repo                                                      |
+| [TradingView notifications](./docs/TRADINGVIEW_NOTIFICATIONS.md) | Trigger meanings, sanitized diagnosis, separate phone/webhook setup and owner-only credential rotation         |
+| [Contributing](./CONTRIBUTING.md)                                | Dev setup, coding standards, and the pull request process                                                      |
 
 ## Contributing
 

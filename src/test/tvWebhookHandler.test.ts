@@ -11,6 +11,8 @@ const alert = {
   price: 84_000,
   quantity: 0.119047619,
   event_id: '2026-10-22T00:00:22Z',
+  trigger_schema_version: '1',
+  trigger_reasons: ['high_volatility_risk_transition', 'atr_trailing_stop_breach'],
 };
 
 function deliver(body: unknown, answer: Ingested | Error = 'accepted', method = 'POST') {
@@ -66,7 +68,7 @@ describe('tv-webhook handler', () => {
     expect(log[0]).toMatchObject({ outcome: 'identity_conflict' });
   });
 
-  it('rejects an unknown token before revealing validation errors', async () => {
+  it('rejects an unknown or rotated-out token before revealing validation errors', async () => {
     const { status, body, ingest, log } = await deliver(
       { ...alert, action: 'HOLD' },
       'unauthorized',
@@ -122,6 +124,7 @@ describe('tv-webhook handler', () => {
     for (const answer of ['accepted', 'unauthorized', new Error('boom')] as const) {
       const { log } = await deliver(alert, answer);
       expect(JSON.stringify(log)).not.toContain('tok-secret');
+      expect(JSON.stringify(log)).not.toContain('trigger_reasons');
     }
   });
 });

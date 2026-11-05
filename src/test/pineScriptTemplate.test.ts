@@ -40,6 +40,7 @@ describe('buildPineScript', () => {
       'input.string("Top Right", "HUD Position"',
       'input.bool(true, "Plot ATR Trailing Stop"',
       'input.bool(true, "Show High-Conviction Signal Labels"',
+      'input.string("Machine JSON", "Alert output"',
     ]) {
       expect(source).toContain(input);
     }
@@ -91,6 +92,13 @@ describe('buildPineScript', () => {
       'score >= 78',
       'score <= 28',
       'score >= 80',
+      'trigger_schema_version',
+      'long_setup_transition',
+      'low_score_risk_transition',
+      'high_volatility_risk_transition',
+      'atr_trailing_stop_breach',
+      'Machine JSON',
+      'Human readable',
       // alert(): live values through string concatenation.
       '\\"signal_score\\": " + str.tostring(score)',
       '\\"quantity\\": " + str.tostring(suggestedShares)',
@@ -130,6 +138,19 @@ describe('buildPineScript', () => {
     expect(Number(multiplier)).toBe(DEFAULT_ATR_STOP_MULTIPLIER);
   });
 
+  it('attributes the existing transitions additively without changing their thresholds', () => {
+    expect(source).toContain('bool longSignal = longSetup and not longSetup[1]');
+    expect(source).toContain('bool riskSignal = riskSetup and not riskSetup[1]');
+    expect(source).toContain('bool stopBreached = trailDir == -1 and trailDir[1] == 1');
+    expect(source).toContain('riskSignal and score <= 28, "low_score_risk_transition"');
+    expect(source).toContain(
+      'riskSignal and regime == "HIGH_VOLATILITY", "high_volatility_risk_transition"',
+    );
+    expect(source).toContain('stopBreached, "atr_trailing_stop_breach"');
+    expect(source).toContain('alertMessage("SELL", sellJsonReasons, sellHumanReasons)');
+    expect(source.match(/sellJsonReasons := appendJsonReason/g)).toHaveLength(3);
+  });
+
   it('sends alertcondition JSON that tv-webhook accepts once TradingView fills it in', () => {
     const script = buildPineScript(null, 'tok123');
     // Evaluates a Pine const-string expression: "literal" + NAME + "literal".
@@ -158,7 +179,7 @@ describe('buildPineScript', () => {
     );
     expect(messages).toHaveLength(3);
     expect(messages.map((body) => parseSignal(body))).toEqual(
-      ['BUY', 'SELL', 'SELL'].map((action) => ({
+      ['BUY', 'SELL', 'SELL'].map((action, index) => ({
         ok: true,
         signal: {
           ticker: 'BTCUSDT',
@@ -173,6 +194,14 @@ describe('buildPineScript', () => {
           timeframe: '1D',
           bar_time: '2026-10-20T11:00:00.000Z',
           model_version: PINE_MODEL_VERSION,
+          trigger_schema_version: '1',
+          trigger_reasons: [
+            [
+              'high_conviction_transition',
+              'high_volatility_risk_transition',
+              'atr_trailing_stop_breach',
+            ][index],
+          ],
         },
       })),
     );
@@ -254,6 +283,10 @@ describe('Connect TradingView', () => {
       'https://demo.supabase.co/functions/v1/tv-webhook',
     );
     expect(screen.getByText(/replaces your old one/)).toBeInTheDocument();
+    expect(screen.getByText(/create two TradingView alerts/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/never enable phone notifications on the machine alert/i),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText('Webhook token')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Generate webhook token/ }));
