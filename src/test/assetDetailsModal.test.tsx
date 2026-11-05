@@ -113,10 +113,10 @@ describe('AssetDetailsModal quant breakdown', () => {
 });
 
 describe('AssetDetailsModal chart mode', () => {
-  it('switches between ZeroChart Quant and TradingView Pro, keeping the quant breakdown', async () => {
+  it('switches between Popup Quant and TradingView Pro, keeping the quant breakdown', async () => {
     render(<AssetDetailsModal asset={makeAsset('BTC')} onClose={() => {}} />);
 
-    const quantTab = screen.getByRole('tab', { name: 'ZeroChart Quant' });
+    const quantTab = screen.getByRole('tab', { name: 'Popup Quant' });
     const tvTab = screen.getByRole('tab', { name: 'TradingView Pro' });
     expect(quantTab).toHaveAttribute('aria-selected', 'true');
     expect(await screen.findByTestId('quant-chart')).toBeInTheDocument();
@@ -153,9 +153,7 @@ describe('AssetDetailsModal chart mode', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'TradingView Indicator' }));
-    expect(
-      screen.getByRole('dialog', { name: 'ZeroChart Quant HUD for TradingView' }),
-    ).toBeVisible();
+    expect(screen.getByRole('dialog', { name: 'Popup Quant HUD for TradingView' })).toBeVisible();
     expect(screen.getByText(/pre-filled from your portfolio: \$50,000\.00/)).toBeInTheDocument();
   });
 });

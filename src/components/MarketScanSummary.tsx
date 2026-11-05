@@ -70,7 +70,7 @@ function DevSourceNotes({
     alerts =
       alerted.length === 0
         ? `No TradingView alert exists on any of these symbols (checked ${UTC_TIME.format(Date.parse(source.pineAlerts.checkedAt))} UTC), so none of these setups was emitted by Pine.`
-        : `TradingView alerts exist on ${alerted.join(', ')}; a setup here is still ZeroChart's calculation, not proof an alert fired.`;
+        : `TradingView alerts exist on ${alerted.join(', ')}; a setup here is still Popup's calculation, not proof an alert fired.`;
   }
   return (
     <section className="market-scan-coverage" aria-label="Source and limitations">

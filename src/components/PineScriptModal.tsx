@@ -103,7 +103,7 @@ function ConnectTradingView({
   );
 }
 
-/** One-click export of the ZeroChart Quant HUD Pine Script v6 indicator. */
+/** One-click export of the Popup Quant HUD Pine Script v6 indicator. */
 export function PineScriptModal({ open, onOpenChange, capital }: Readonly<PineScriptModalProps>) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -157,10 +157,10 @@ function PineExport({ capital }: Readonly<{ capital: number | null | undefined }
           <LineChart size={18} />
         </span>
         <div>
-          <Dialog.Title className="pricing-title">ZeroChart Quant HUD for TradingView</Dialog.Title>
+          <Dialog.Title className="pricing-title">Popup Quant HUD for TradingView</Dialog.Title>
           <Dialog.Description id="pine-description" className="pricing-description">
             Pine Script v6 overlay running the same RSI · MACD · ATR multi-factor score,
-            market-regime detection and ATR position sizing as ZeroChart.
+            market-regime detection and ATR position sizing as Popup.
           </Dialog.Description>
         </div>
       </header>

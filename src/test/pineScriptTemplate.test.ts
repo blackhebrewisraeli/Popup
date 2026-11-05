@@ -29,14 +29,14 @@ describe('buildPineScript', () => {
   it('emits a Pine Script v6 overlay indicator with the required inputs', () => {
     expect(source.startsWith('//@version=6\n')).toBe(true);
     expect(source).toContain(
-      'indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant pw200", overlay = true, max_bars_back = 300)',
+      'indicator("Popup Quant HUD & Risk Engine", shorttitle = "Popup Quant", overlay = true, max_bars_back = 300)',
     );
     for (const input of [
       DEFAULT_CAPITAL_INPUT,
       'input.float(2.0, "Risk per Trade (%)"',
       'input.int(14, "ATR Period"',
       'input.float(2.0, "ATR Trailing Stop Multiplier"',
-      'input.bool(true, "Show ZeroChart Quant HUD Table"',
+      'input.bool(true, "Show Popup Quant HUD Table"',
       'input.string("Top Right", "HUD Position"',
       'input.bool(true, "Plot ATR Trailing Stop"',
       'input.bool(true, "Show High-Conviction Signal Labels"',

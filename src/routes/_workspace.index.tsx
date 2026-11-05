@@ -3,16 +3,16 @@ import { createFileRoute } from '@tanstack/react-router';
 export const Route = createFileRoute('/_workspace/')({
   head: () => ({
     meta: [
-      { title: 'ZeroChart — Quant research and paper trading' },
+      { title: 'Popup — Signals worth opening' },
       {
         name: 'description',
         content:
-          'A quantitative research and paper trading environment. Understand, backtest, and simulate multifactor signals with live charts.',
+          'Surface explainable market signals, investigate the factors, and test ideas with backtesting and simulated trading.',
       },
-      { property: 'og:title', content: 'ZeroChart — Quant research and paper trading' },
+      { property: 'og:title', content: 'Popup — Signals worth opening' },
       {
         property: 'og:description',
-        content: 'Understand, backtest, and simulate multifactor signals.',
+        content: 'See what matters. Test what follows.',
       },
       { property: 'og:type', content: 'website' },
       { name: 'twitter:card', content: 'summary_large_image' },

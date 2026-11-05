@@ -14,7 +14,7 @@ export const tourSteps: TourStep[] = [
   {
     id: 'welcome',
     target: '.terminal-header',
-    title: 'Welcome to ZeroChart',
+    title: 'Welcome to Popup',
     content:
       'A quantitative research and paper trading environment: research signals, then test them with simulated money. This tour switches between Research and the Paper Desk for you.',
     placement: 'bottom',

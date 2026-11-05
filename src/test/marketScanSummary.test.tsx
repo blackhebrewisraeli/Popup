@@ -294,7 +294,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     const { panel } = renderDev([equity('AAPL', wave)], { ...source, pineAlerts });
     expect(
       within(panel).getByText(
-        "TradingView alerts exist on NASDAQ:AAPL; a setup here is still ZeroChart's calculation, not proof an alert fired.",
+        "TradingView alerts exist on NASDAQ:AAPL; a setup here is still Popup's calculation, not proof an alert fired.",
       ),
     ).toBeInTheDocument();
   });

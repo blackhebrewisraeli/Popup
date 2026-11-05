@@ -174,7 +174,7 @@ export function AuthModal({
         className="auth-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="ZeroChart account"
+        aria-label="Popup account"
         onSubmit={handleSubmit}
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={closing ? { opacity: 0, scale: 0.96, y: 12 } : { opacity: 1, scale: 1, y: 0 }}
@@ -182,7 +182,7 @@ export function AuthModal({
       >
         <header className="auth-header">
           <div>
-            <span className="auth-eyebrow">ZeroChart Account</span>
+            <span className="auth-eyebrow">Popup Account</span>
             <h3 className="auth-title">{mode === 'signin' ? 'Sign in' : 'Create account'}</h3>
           </div>
           <button type="button" className="auth-close" onClick={close} aria-label="Close">

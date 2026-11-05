@@ -1,6 +1,6 @@
 //@version=6
-// ZeroChart Quant HUD & ATR Risk Engine, model_version 1.0.0-pw200
-// Factor and decision port of the ZeroChart quant engine. RSI(14), MACD(12, 26, 9)
+// Popup Quant HUD & ATR Risk Engine, model_version 1.0.0-pw200
+// Factor and decision port of the Popup quant engine. RSI(14), MACD(12, 26, 9)
 // and ATR(14) are recomputed on every bar over the last min(200, bars) bars with
 // src/lib/indicators.ts's seeds and operation order, like the app re-scoring its
 // latest 200 daily candles, and the score needs the same 34 bars. On
@@ -12,18 +12,18 @@
 //   src/lib/risk.ts        - ATR position sizing (budget-capped notional, 2x ATR stop floored at 0)
 // HUD shows plain-English actions. Alerts emit JSON for the tv-webhook pipeline.
 // Quantitative analysis is informational. Not financial advice.
-indicator("ZeroChart Quant HUD & Risk Engine", shorttitle = "ZC Quant pw200", overlay = true, max_bars_back = 300)
+indicator("Popup Quant HUD & Risk Engine", shorttitle = "Popup Quant", overlay = true, max_bars_back = 300)
 
 // ===== Inputs =====
 accountCapital   = input.float(10000, "Account Capital ($)", minval = 1.0, group = "Risk Engine")
 riskPct          = input.float(2.0, "Risk per Trade (%)", minval = 0.01, maxval = 100.0, step = 0.25, group = "Risk Engine")
 atrPeriod        = input.int(14, "ATR Period", minval = 1, group = "Risk Engine")
 atrStopMult      = input.float(2.0, "ATR Trailing Stop Multiplier", minval = 0.1, step = 0.1, group = "Risk Engine")
-showHud          = input.bool(true, "Show ZeroChart Quant HUD Table", group = "Display")
+showHud          = input.bool(true, "Show Popup Quant HUD Table", group = "Display")
 hudPosition      = input.string("Top Right", "HUD Position", options = ["Top Right", "Bottom Right", "Bottom Left", "Top Left"], group = "Display")
 showTrailingStop = input.bool(true, "Plot ATR Trailing Stop", group = "Display")
 showSignals      = input.bool(true, "Show High-Conviction Signal Labels", group = "Display")
-alertOutput      = input.string("Machine JSON", "Alert output", options = ["Machine JSON", "Human readable"], group = "Alerts", tooltip = "Use Machine JSON only for the ZeroChart webhook. Use Human readable for a separate phone alert with no webhook URL.")
+alertOutput      = input.string("Machine JSON", "Alert output", options = ["Machine JSON", "Human readable"], group = "Alerts", tooltip = "Use Machine JSON only for the Popup webhook. Use Human readable for a separate phone alert with no webhook URL.")
 
 // ===== Semantic tokens =====
 color C_BG     = #101828
@@ -254,7 +254,7 @@ plot(suggestedShares, "ZC Quantity", display = display.none)
 plot(stopPrice, "ZC Stop", display = display.none)
 
 // ===== Webhook alerts: the tv-webhook JSON contract =====
-// quantity is in units (shares / coins), never dollars. ZeroChart swaps
+// quantity is in units (shares / coins), never dollars. Popup swaps
 // USER_SECRET_PLACEHOLDER for your webhook token when you copy the script.
 const string WEBHOOK_SECRET = "USER_SECRET_PLACEHOLDER"
 
@@ -268,7 +268,7 @@ webhookJson(string side, string reasons) =>
     "{\"signal_kind\": \"strategy\", \"ticker\": \"" + syminfo.ticker + "\", \"action\": \"" + side + "\", \"signal_score\": " + str.tostring(score) + ", \"price\": " + str.tostring(close) + ", \"quantity\": " + str.tostring(suggestedShares) + ", \"stop_loss\": " + str.tostring(stopPrice) + ", \"secret_token\": \"" + WEBHOOK_SECRET + "\", \"event_id\": \"" + str.format_time(timenow, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"exchange\": \"" + syminfo.prefix + "\", \"timeframe\": \"" + timeframe.period + "\", \"bar_time\": \"" + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'", "UTC") + "\", \"model_version\": \"" + MODEL_VERSION + "\", \"trigger_schema_version\": \"" + TRIGGER_SCHEMA_VERSION + "\", \"trigger_reasons\": [" + reasons + "]}"
 
 humanMessage(string side, string reasons) =>
-    "ZeroChart technical event — " + syminfo.prefix + ":" + syminfo.ticker + " " + timeframe.period + " · " + side + " · model score " + str.tostring(score) + "/100. " + reasons + " Informational only; no order was placed."
+    "Popup technical event — " + syminfo.prefix + ":" + syminfo.ticker + " " + timeframe.period + " · " + side + " · model score " + str.tostring(score) + "/100. " + reasons + " Informational only; no order was placed."
 
 alertMessage(string side, string jsonReasons, string humanReasons) =>
     alertOutput == "Human readable" ? humanMessage(side, humanReasons) : webhookJson(side, jsonReasons)

@@ -186,8 +186,7 @@ export function BrokerModal({
               </div>
 
               <footer className="broker-footer">
-                Fees are indicative and may vary by region. ZeroChart may earn a referral
-                commission.
+                Fees are indicative and may vary by region. Popup may earn a referral commission.
               </footer>
             </dialog>
           </div>,

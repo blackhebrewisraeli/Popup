@@ -21,12 +21,12 @@ const INDICATOR_OPTIONS = [
 type ChartMode = 'quant' | 'tradingview';
 
 const CHART_MODES: SegmentOption<ChartMode>[] = [
-  { value: 'quant', label: 'ZeroChart Quant' },
+  { value: 'quant', label: 'Popup Quant' },
   { value: 'tradingview', label: 'TradingView Pro' },
 ];
 
 /**
- * ZeroChart Quant (Binance daily candles + indicators, crypto only) ↔
+ * Popup Quant (Binance daily candles + indicators, crypto only) ↔
  * TradingView Pro (theme-synced embed) chart switcher, shared by the asset
  * details modal and the Paper Trading terminal. Key it by ticker to reset the
  * mode when the symbol changes.

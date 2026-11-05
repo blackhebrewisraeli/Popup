@@ -68,6 +68,7 @@ import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
 import { useAlertEngine } from '@/hooks/useAlertEngine';
 import { usePriceFlash } from '@/hooks/usePriceFlash';
 import { AssetsStatusContext } from '@/hooks/usePaperRisk';
+import { BrandLogo } from '@/components/Brand';
 
 // Loaded on demand so the zone panels, modals, recharts and lightweight-charts stay out of
 // the Workspace chunk. SSR is unaffected: the server always renders the auth-loading shell.
@@ -649,21 +650,8 @@ function Terminal() {
       )}
       <header className="terminal-header">
         <div className="page-width flex h-full items-center justify-between gap-3 sm:gap-4">
-          <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="ZeroChart home">
-            <span className="brand-mark">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-                <path
-                  d="M4 6.5h16L4 17.5h16"
-                  stroke="currentColor"
-                  strokeWidth="2.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span className="brand-wordmark font-semibold">
-              zerochart<span className="text-primary">.</span>
-            </span>
+          <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="Popup home">
+            <BrandLogo />
             <span className="terminal-tag">SIGNALS</span>
           </a>
           <Segmented
@@ -806,11 +794,11 @@ function Terminal() {
       <footer className="terminal-footer page-width">
         <div className="flex items-center gap-2">
           <Zap size={13} />
-          <span>Quantitative research and paper trading environment.</span>
+          <span>Signals worth opening.</span>
         </div>
         <span>Quantitative analysis is informational. Not financial advice.</span>
         <span className="font-mono text-[10px]">
-          ZEROCHART
+          POPUP
           <ArrowDown size={10} className="ml-1 inline" />
         </span>
       </footer>

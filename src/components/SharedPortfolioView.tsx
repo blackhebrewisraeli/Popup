@@ -6,6 +6,7 @@ import { NoScoreBadge, type NoScoreStatus } from '@/components/NoScoreBadge';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import type { SharedPortfolioRecord, SharedPortfolioHolding } from '@/lib/sharedPortfolio';
 import { cn } from '@/lib/utils';
+import { BrandLogo } from '@/components/Brand';
 
 function formatPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
@@ -59,7 +60,7 @@ function AllocationTooltip({
 function BrandCta({ compact = false }: Readonly<{ compact?: boolean }>) {
   return (
     <Link to="/" className={cn('shared-portfolio-cta', compact && 'is-compact')}>
-      <span>Built with ZeroChart - Create your own Quant Portfolio</span>
+      <span>Built with Popup — Create your own Quant Portfolio</span>
       <ArrowRight size={16} aria-hidden="true" />
     </Link>
   );
@@ -82,9 +83,8 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
     <main className="shared-portfolio-page">
       <div className="shared-portfolio-shell">
         <header className="shared-portfolio-header">
-          <Link to="/" className="shared-portfolio-brand" aria-label="ZeroChart home">
-            <span className="shared-portfolio-brand-mark">Z</span>
-            <span>ZEROCHART</span>
+          <Link to="/" className="shared-portfolio-brand" aria-label="Popup home">
+            <BrandLogo uppercase markClassName="shared-portfolio-brand-mark" />
           </Link>
           <BrandCta compact />
         </header>
@@ -254,7 +254,7 @@ export function SharedPortfolioView({ record }: Readonly<{ record: SharedPortfol
           </section>
         </div>
 
-        <section className="shared-bottom-cta" aria-label="Create a ZeroChart portfolio">
+        <section className="shared-bottom-cta" aria-label="Create a Popup portfolio">
           <span className="shared-panel-kicker">YOUR TURN</span>
           <h2>Build a portfolio that explains itself.</h2>
           <p>Track allocation, P&amp;L, and quant signals in one focused terminal.</p>

@@ -46,7 +46,7 @@ import { cn } from '@/lib/utils';
 
 /** Share of the open position one +/− click adds or trims. */
 const SIZE_STEP = 0.25;
-const LEDGER_FILENAME = 'zerochart-ledger-paper.csv';
+const LEDGER_FILENAME = 'popup-ledger-paper.csv';
 
 /** "+$12.00 · +3.40%": the dollar P&L and its return on what the position cost. */
 function pnlLabel(pnl: number, costBasis: number): string {

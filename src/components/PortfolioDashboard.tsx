@@ -100,7 +100,7 @@ const LEDGER_COPY = {
     eyebrowClass: 'paper-eyebrow real-eyebrow',
     eyebrow: 'Real holdings · Tracking only',
     title: 'Tracked Holdings',
-    subtitle: 'Positions you hold at your broker, logged by hand. ZeroChart places no orders.',
+    subtitle: 'Positions you hold at your broker, logged by hand. Popup places no orders.',
     emptyTitle: 'No tracked holdings yet',
     emptySub: 'Add a position you hold at your broker to track it here.',
     csvSlug: 'live',
@@ -1019,10 +1019,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
             className="portfolio-cash-btn ledger-export analytics-export"
             disabled={ledger.transactions.length === 0}
             onClick={() =>
-              downloadCsv(
-                `zerochart-ledger-${copy.csvSlug}.csv`,
-                tradeLedgerCsv(ledger.transactions),
-              )
+              downloadCsv(`popup-ledger-${copy.csvSlug}.csv`, tradeLedgerCsv(ledger.transactions))
             }
           >
             <Download size={13} /> Export CSV
@@ -1039,7 +1036,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
               <TradeLedger
                 embedded
                 transactions={ledger.transactions}
-                filename={`zerochart-ledger-${live ? 'live' : 'simulation'}.csv`}
+                filename={`popup-ledger-${live ? 'live' : 'simulation'}.csv`}
               />
             </div>
           )}

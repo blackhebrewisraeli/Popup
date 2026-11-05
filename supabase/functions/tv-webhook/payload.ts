@@ -26,7 +26,7 @@ export interface SignalInsert {
 
 export type ParsedSignal = { ok: true; signal: SignalInsert } | { ok: false; error: string };
 
-/** What the Pine script sends until ZeroChart injects the user's token. */
+/** What the Pine script sends until Popup injects the user's token. */
 export const SECRET_PLACEHOLDER = 'USER_SECRET_PLACEHOLDER';
 
 export const TRIGGER_SCHEMA_VERSION = '1' as const;

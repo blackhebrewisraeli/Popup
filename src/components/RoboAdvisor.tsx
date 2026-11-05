@@ -493,7 +493,7 @@ function EmptyPortfolioState({
   const allStale = hasCandidates && diagnostics.staleData === diagnostics.totalCandidates;
 
   let heading = 'No qualifying assets';
-  let explanation = `No asset met the ${riskLabel} profile requirements in this analysis. This can be a normal result; ZeroChart does not lower the rules just to create a proposal.`;
+  let explanation = `No asset met the ${riskLabel} profile requirements in this analysis. This can be a normal result; Popup does not lower the rules just to create a proposal.`;
   if (allNetworkFailed) {
     heading = 'Market history unavailable';
     explanation =

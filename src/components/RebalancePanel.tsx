@@ -124,7 +124,7 @@ export function RebalancePanel({
         <div>
           <span className="suggestion-empty-title">No target allocation yet</span>
           <span className="suggestion-empty-sub">
-            Set target weights and ZeroChart suggests trades whenever a holding drifts more than{' '}
+            Set target weights and Popup suggests trades whenever a holding drifts more than{' '}
             {BAND_POINTS} pts from its target.
           </span>
         </div>

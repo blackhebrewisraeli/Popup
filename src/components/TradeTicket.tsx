@@ -44,7 +44,7 @@ function ticketFootnote(portfolioType: PortfolioType | undefined): string {
     return 'Mock execution — no real funds move. Slippage controls ship with the broker integration.';
   }
   if (portfolioType === 'real_tracking') {
-    return 'Recorded in your Live Tracking ledger and cash at the live price. ZeroChart places no real orders — log trades you made at your broker.';
+    return 'Recorded in your Live Tracking ledger and cash at the live price. Popup places no real orders — log trades you made at your broker.';
   }
   return `Simulated fill at the live price, recorded in your ${LEDGER_NAMES[portfolioType]} ledger. No real funds move.`;
 }

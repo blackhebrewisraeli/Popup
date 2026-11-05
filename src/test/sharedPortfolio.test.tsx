@@ -461,7 +461,7 @@ describe('public portfolio view', () => {
     expect(screen.getByRole('heading', { name: 'Quant scores' })).toBeVisible();
     expect(
       screen.getAllByRole('link', {
-        name: /Built with ZeroChart - Create your own Quant Portfolio/i,
+        name: /Built with Popup — Create your own Quant Portfolio/i,
       }),
     ).toHaveLength(2);
     expect(screen.queryByRole('button', { name: /trade/i })).not.toBeInTheDocument();

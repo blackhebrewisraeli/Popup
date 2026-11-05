@@ -31,7 +31,7 @@ export interface PositionLot {
 
 /**
  * Compatibility position shared by the legacy UI and the v3 accounting
- * model. `isSimulation` is the established ZeroChart field;
+ * model. `isSimulation` is the established legacy field;
  * `isSimulated` is accepted as a migration alias for older/external payloads.
  */
 export interface Position {

@@ -1,6 +1,6 @@
 <div align="center">
 
-# ZeroChart
+# Popup
 
 **Quantitative research and paper trading environment.**
 
@@ -20,13 +20,13 @@ A TradingView Pine Script HUD that scores every bar, and a React + Supabase comm
 </div>
 
 > [!NOTE]
-> ZeroChart is research and paper-trading software. Its scores, position sizes, and backtests are informational, not financial advice, and no real orders are ever placed.
+> Popup is research and paper-trading software. Its scores, position sizes, and backtests are informational, not financial advice, and no real orders are ever placed.
 
 ## The ecosystem
 
-ZeroChart is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. Like the app, the Pine script (model `1.0.0-pw200`) re-scores the latest 200 bars on every bar. On TradingView's `BINANCE:BTCUSDT` daily chart it matched every app decision at runtime, though not bit for bit, and other timeframes aren't comparable with the app's daily scores. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
+Popup is two products built on one quant model. The RSI / MACD / ATR model is implemented in TypeScript for the web app and ported to Pine Script. Like the app, the Pine script (model `1.0.0-pw200`) re-scores the latest 200 bars on every bar. On TradingView's `BINANCE:BTCUSDT` daily chart it matched every app decision at runtime, though not bit for bit, and other timeframes aren't comparable with the app's daily scores. [docs/PINE_PARITY_ASSESSMENT.md](./docs/PINE_PARITY_ASSESSMENT.md) states the comparison contract and measures the gap.
 
-|                      | **ZeroChart Quant HUD**                                                                                    | **ZeroChart Command Center**                                                                             |
+|                      | **Popup Quant HUD**                                                                                        | **Popup Workspace**                                                                                      |
 | -------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **Runs on**          | TradingView, as a Pine Script v6 overlay                                                                   | The browser: React 19 on TanStack Start, backed by Supabase                                              |
 | **Job**              | Live visual signals on any chart                                                                           | Portfolio accounting, strategy backtesting, paper-trade execution                                        |
@@ -37,7 +37,7 @@ ZeroChart is two products built on one quant model. The RSI / MACD / ATR model i
 ```mermaid
 flowchart TB
     subgraph TV["TradingView"]
-        HUD["ZeroChart Quant HUD<br/>Pine Script v6"]
+        HUD["Popup Quant HUD<br/>Pine Script v6"]
     end
 
     subgraph SB["Supabase"]
@@ -45,7 +45,7 @@ flowchart TB
         DB[("trading_signals<br/>Postgres + RLS")]
     end
 
-    subgraph APP["ZeroChart Command Center"]
+    subgraph APP["Popup Workspace"]
         AC["Action Center"]
         LEDGER["v3 portfolio ledgers"]
         WORKER["Finance Web Worker"]
@@ -235,7 +235,7 @@ Released under the [MIT License](./LICENSE).
 
 <div align="center">
 
-**ZeroChart: signal over noise.**
+**Popup: signals worth opening.**
 
 [Back to top](#zerochart)
 
