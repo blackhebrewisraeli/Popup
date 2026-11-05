@@ -217,7 +217,7 @@ export function opportunityMessage(
   const regime = (value: string | null | undefined) =>
     (value ?? 'unknown').replaceAll('_', ' ').toLowerCase();
   return [
-    'ZeroChart Opportunity Radar · research signal',
+    'Popup Opportunity Radar · research signal',
     `${opportunity.ticker} (${opportunity.instrument}) · score ${opportunity.score} · ${regime(opportunity.regime)} regime`,
     `Entry zone ${price(opportunity.entryZone.low)} – ${price(opportunity.entryZone.high)} (first ${opportunity.validDailyOpens} daily opens)`,
     `Invalidation ${price(opportunity.invalidation)}`,
@@ -422,4 +422,4 @@ export async function deliverOpportunityNotifications(options: {
 
 /** The owner's manual delivery check: clearly synthetic, touches no campaign. */
 export const SYNTHETIC_NOTIFICATION =
-  'ZeroChart Opportunity Radar · SYNTHETIC DELIVERY TEST\nNot a signal. If you can read this, Telegram delivery works.';
+  'Popup Opportunity Radar · SYNTHETIC DELIVERY TEST\nNot a signal. If you can read this, Telegram delivery works.';

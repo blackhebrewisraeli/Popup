@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 export const Route = createFileRoute('/_workspace/paper-trading')({
   head: () => ({
     meta: [
-      { title: 'Paper Trading Terminal — ZeroChart' },
+      { title: 'Paper Trading Terminal — Popup' },
       {
         name: 'description',
         content:

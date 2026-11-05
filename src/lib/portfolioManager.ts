@@ -113,7 +113,7 @@ export function generateShareText(positions: Position[], assets: Asset[]): strin
     }
   }
 
-  const lines = ['My ZeroChart Portfolio 🚀'];
+  const lines = ['My Popup Portfolio ↗'];
   lines.push(
     `Risk: ${deriveRiskLabel(weightedRiskWeight > 0 ? weightedRiskSum / weightedRiskWeight : null)}`,
   );
@@ -131,7 +131,7 @@ export function generateShareText(positions: Position[], assets: Asset[]): strin
     }
   }
 
-  lines.push('Simulated with ZeroChart.');
+  lines.push('Simulated with Popup.');
 
   return lines.join('\n');
 }

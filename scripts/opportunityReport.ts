@@ -347,7 +347,7 @@ export function renderOpportunityReport(report: OpportunityReport): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>ZeroChart · Opportunity Radar</title>
+<title>Popup · Opportunity Radar</title>
 <style>
 ${REPORT_STYLES}
 table{min-width:0}td{overflow-wrap:anywhere}#horizons table{min-width:1200px}#horizons td{white-space:nowrap}ul{margin:0;padding-left:20px}li{margin:6px 0}

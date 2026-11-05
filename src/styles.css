@@ -18,7 +18,7 @@
  * 2. Register it in @theme inline as --color-<name>: var(--<name>)
  *
  * Color roles:
- * - --brand-blue: brand actions, navigation, active states, glows (Electric Cyan).
+ * - --brand-blue: Popup brand actions, navigation, active states, glows (Signal Coral).
  * - --signal-green / --signal-yellow / --signal-red: semantic financial
  *   indicators ONLY (positive P/L, upward ticks, bullish signals).
  */
@@ -92,11 +92,11 @@
     0 1px 2px oklch(0.21 0.006 285.885 / 0.05), 0 24px 48px -16px oklch(0.21 0.006 285.885 / 0.16);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.74 0.14 215);
-  --primary-foreground: oklch(0.13 0.02 230);
-  --brand-blue: oklch(0.58 0.17 225);
-  --brand-blue-soft: oklch(0.94 0.035 225);
-  --brand-blue-border: oklch(0.8 0.075 225);
+  --primary: oklch(0.65 0.19 35);
+  --primary-foreground: oklch(0.16 0.02 35);
+  --brand-blue: oklch(0.62 0.21 32);
+  --brand-blue-soft: oklch(0.95 0.035 35);
+  --brand-blue-border: oklch(0.81 0.08 35);
   --accent-violet: oklch(0.53 0.21 285);
   --accent-violet-soft: oklch(0.95 0.028 285);
   --accent-violet-border: oklch(0.82 0.065 285);
@@ -149,11 +149,11 @@
   --overlay-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 48px -16px rgb(0 0 0 / 0.6);
   --popover: var(--card);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.78 0.11 220);
+  --primary: oklch(0.74 0.17 38);
   --primary-foreground: oklch(0.141 0.005 285.823);
-  --brand-blue: oklch(0.8 0.11 220);
-  --brand-blue-soft: oklch(0.24 0.035 225);
-  --brand-blue-border: oklch(0.42 0.06 225);
+  --brand-blue: oklch(0.75 0.17 38);
+  --brand-blue-soft: oklch(0.25 0.045 35);
+  --brand-blue-border: oklch(0.45 0.085 35);
   --accent-violet: oklch(0.72 0.13 285);
   --accent-violet-soft: oklch(0.24 0.035 285);
   --accent-violet-border: oklch(0.42 0.06 285);
@@ -269,18 +269,33 @@ body {
   height: 24px;
   background: color-mix(in oklch, var(--foreground) 18%, transparent);
 }
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
 .brand-mark {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  width: 32px;
   height: 32px;
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 48%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
   color: var(--primary);
-  filter: drop-shadow(0 0 10px color-mix(in oklch, var(--primary) 45%, transparent));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 0 18px color-mix(in oklch, var(--primary) 16%, transparent);
 }
 .brand-wordmark {
   font-size: 1.25rem;
+  letter-spacing: -0.045em;
+}
+.brand-wordmark-uppercase {
+  font: 600 13px/1 'JetBrains Mono', monospace;
+  letter-spacing: 0.16em;
 }
 .terminal-tag {
   margin-left: 12px;
@@ -7373,14 +7388,17 @@ button.paper-ticker:hover {
   background:
     radial-gradient(
       640px 320px at 18% 0%,
-      color-mix(in oklch, var(--brand-blue) 15%, transparent),
+      color-mix(in oklch, var(--brand-blue) 18%, transparent),
       transparent 70%
     ),
     radial-gradient(
       520px 300px at 85% 10%,
-      color-mix(in oklch, var(--primary) 12%, transparent),
+      color-mix(in oklch, var(--accent-amber) 9%, transparent),
       transparent 70%
-    );
+    ),
+    linear-gradient(color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px);
+  background-size: auto, auto, 42px 42px, 42px 42px;
 }
 .landing-hero-inner {
   position: relative;
@@ -7408,10 +7426,10 @@ button.paper-ticker:hover {
 .landing-headline {
   max-width: 860px;
   font:
-    600 clamp(34px, 6vw, 64px) 'DM Sans',
+    650 clamp(38px, 6.5vw, 72px) 'DM Sans',
     sans-serif;
   line-height: 1.05;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.045em;
 }
 .landing-headline-accent {
   color: var(--brand-blue);
@@ -7845,7 +7863,7 @@ button.paper-ticker:hover {
   width: 100%;
 }
 
-/* ===== Chart mode (ZeroChart Quant / TradingView Pro) ===== */
+/* ===== Chart mode (Popup Quant / TradingView Pro) ===== */
 .chart-mode-bar {
   display: flex;
   flex-wrap: wrap;

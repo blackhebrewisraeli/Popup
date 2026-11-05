@@ -255,7 +255,7 @@ function page(
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>ZeroChart · Scanner study</title>
+<title>Popup · Scanner study</title>
 <style>
 ${REPORT_STYLES}
 h3{font-size:14px;margin:18px 0 8px}table{min-width:900px}td{white-space:nowrap}.meta dd{white-space:normal}ul{margin:0;padding-left:20px}li{margin:4px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}

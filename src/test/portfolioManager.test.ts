@@ -146,12 +146,12 @@ describe('generateShareText', () => {
 
     expect(text).toBe(
       [
-        'My ZeroChart Portfolio 🚀',
+        'My Popup Portfolio ↗',
         'Risk: Moderate',
         '• 40% BTC-USD',
         '• 30% ETH-USD',
         '• 30% AAPL',
-        'Simulated with ZeroChart.',
+        'Simulated with Popup.',
       ].join('\n'),
     );
   });
@@ -162,19 +162,17 @@ describe('generateShareText', () => {
     const text = generateShareText(positions, []);
 
     expect(text).toBe(
-      ['My ZeroChart Portfolio 🚀', 'Risk: Moderate', '• 100% X', 'Simulated with ZeroChart.'].join(
-        '\n',
-      ),
+      ['My Popup Portfolio ↗', 'Risk: Moderate', '• 100% X', 'Simulated with Popup.'].join('\n'),
     );
   });
 
   it('reports an empty portfolio without fabricating allocations', () => {
     expect(generateShareText([], [])).toBe(
       [
-        'My ZeroChart Portfolio 🚀',
+        'My Popup Portfolio ↗',
         'Risk: Moderate',
         '• No positions yet',
-        'Simulated with ZeroChart.',
+        'Simulated with Popup.',
       ].join('\n'),
     );
   });

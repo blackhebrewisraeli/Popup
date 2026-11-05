@@ -92,9 +92,7 @@ describe('AdInterstitialModal', () => {
     render(<AdInterstitialModal />);
     heavyActions();
 
-    fireEvent.click(
-      screen.getByRole('button', { name: /tired of ads\? upgrade to zerochart pro/i }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /tired of ads\? upgrade to popup pro/i }));
 
     expect(adDialog()).toBeNull();
     expect(

@@ -303,7 +303,7 @@ describe('production Pine, the tested candidate and diagnostics (source checks, 
         .filter(
           (line) =>
             !line.startsWith('//') &&
-            !/^indicator\(|^alertOutput\s+=|^const string (MODEL_VERSION|TRIGGER_SCHEMA_VERSION)/.test(
+            !/^indicator\(|^showHud\s+=|^alertOutput\s+=|^const string (MODEL_VERSION|TRIGGER_SCHEMA_VERSION)/.test(
               line,
             ),
         )

@@ -9,6 +9,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { BrandLogo } from '@/components/Brand';
 
 interface Feature {
   icon: LucideIcon;
@@ -50,27 +51,6 @@ const STATS = [
   { value: 'Cloud', label: 'Synced portfolios' },
 ];
 
-function BrandMark() {
-  return (
-    <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="ZeroChart home">
-      <span className="brand-mark">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-          <path
-            d="M4 6.5h16L4 17.5h16"
-            stroke="currentColor"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-      <span className="brand-wordmark font-semibold">
-        zerochart<span className="text-primary">.</span>
-      </span>
-    </a>
-  );
-}
-
 export function LandingPage({
   onSignIn,
   onGetStarted,
@@ -82,7 +62,9 @@ export function LandingPage({
     <div className="landing">
       <header className="landing-header">
         <div className="page-width landing-nav">
-          <BrandMark />
+          <a href="/" className="shrink-0" aria-label="Popup home">
+            <BrandLogo />
+          </a>
           <div className="landing-nav-actions">
             <button type="button" className="landing-ghost-button" onClick={onSignIn}>
               Sign In
@@ -99,16 +81,15 @@ export function LandingPage({
           <div className="landing-hero-glow" aria-hidden="true" />
           <div className="page-width landing-hero-inner">
             <span className="landing-badge">
-              <Sparkles size={14} /> Quantitative research and paper trading environment
+              <Sparkles size={14} /> Signals worth opening
             </span>
             <h1 className="landing-headline">
-              {'Understand, backtest, and simulate'}
-              <span className="landing-headline-accent"> multifactor signals.</span>
+              {'See what matters.'}
+              <span className="landing-headline-accent"> Test what follows.</span>
             </h1>
             <p className="landing-subheadline">
-              Research assets with an explainable multi-factor score, replay strategies against a
-              year of history, and test them on a paper desk with simulated money. No real orders,
-              no real funds.
+              Popup surfaces explainable market signals, then gives you the tools to investigate,
+              backtest, and simulate them before you make a real-world decision.
             </p>
             <div className="landing-cta">
               <button
@@ -136,10 +117,9 @@ export function LandingPage({
         <section id="features" className="landing-features">
           <div className="page-width">
             <div className="landing-section-head">
-              <h2 className="landing-section-title">Research first, then simulate</h2>
+              <h2 className="landing-section-title">From signal to simulation</h2>
               <p className="landing-section-sub">
-                Score signals, stress-test an allocation, and paper trade it before any real
-                decision.
+                Open the setup, understand the factors, and test the idea with simulated money.
               </p>
             </div>
             <div className="landing-grid">
@@ -160,7 +140,7 @@ export function LandingPage({
           <div className="page-width">
             <div className="landing-final-card">
               <ShieldCheck size={22} className="landing-final-icon" />
-              <h2 className="landing-final-title">Start in simulation mode</h2>
+              <h2 className="landing-final-title">Open your first signal</h2>
               <p className="landing-final-sub">
                 Create a free account and start simulating your first portfolio in seconds.
               </p>
@@ -180,10 +160,10 @@ export function LandingPage({
         <div className="page-width landing-footer-inner">
           <div className="flex items-center gap-2">
             <Zap size={13} />
-            <span>Quantitative research and paper trading environment.</span>
+            <span>Signals worth opening.</span>
           </div>
           <span>Quantitative analysis is informational. Not financial advice.</span>
-          <span className="font-mono text-[10px]">ZEROCHART</span>
+          <span className="font-mono text-[10px]">POPUP</span>
         </div>
       </footer>
     </div>

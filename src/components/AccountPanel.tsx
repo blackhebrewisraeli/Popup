@@ -12,9 +12,9 @@ import { PricingModal } from '@/components/PricingModal';
 
 /** Same filenames the Paper Desk and Core dashboards export under. */
 const EXPORTS: { type: PortfolioType; filename: string }[] = [
-  { type: 'paper_trading', filename: 'zerochart-ledger-paper.csv' },
-  { type: 'long_term_sim', filename: 'zerochart-ledger-simulation.csv' },
-  { type: 'real_tracking', filename: 'zerochart-ledger-live.csv' },
+  { type: 'paper_trading', filename: 'popup-ledger-paper.csv' },
+  { type: 'long_term_sim', filename: 'popup-ledger-simulation.csv' },
+  { type: 'real_tracking', filename: 'popup-ledger-live.csv' },
 ];
 
 /**
@@ -102,7 +102,7 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
                 type="button"
                 className="portfolio-cash-btn"
                 onClick={() =>
-                  downloadCsv('zerochart-beta-audit.csv', walkForwardCsv(loadWalkForward(user.id)))
+                  downloadCsv('popup-beta-audit.csv', walkForwardCsv(loadWalkForward(user.id)))
                 }
               >
                 <Download size={13} /> Export Beta Audit CSV

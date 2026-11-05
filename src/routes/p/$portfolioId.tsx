@@ -7,15 +7,15 @@ import { fetchSharedPortfolio } from '@/lib/sharedPortfolio';
 export const Route = createFileRoute('/p/$portfolioId')({
   head: () => ({
     meta: [
-      { title: 'Public Quant Portfolio — ZeroChart' },
+      { title: 'Public Quant Portfolio — Popup' },
       {
         name: 'description',
-        content: 'View a read-only ZeroChart portfolio snapshot with allocation and quant scores.',
+        content: 'View a read-only Popup portfolio snapshot with allocation and quant scores.',
       },
-      { property: 'og:title', content: 'Public Quant Portfolio — ZeroChart' },
+      { property: 'og:title', content: 'Public Quant Portfolio — Popup' },
       {
         property: 'og:description',
-        content: 'A public, read-only portfolio snapshot built with ZeroChart.',
+        content: 'A public, read-only portfolio snapshot built with Popup.',
       },
     ],
   }),
@@ -47,7 +47,7 @@ function SharedPortfolioRoute() {
         <h1>Portfolio link unavailable</h1>
         <p>This link may be invalid, expired, or temporarily unavailable.</p>
         <Link to="/" className="shared-portfolio-cta">
-          Built with ZeroChart - Create your own Quant Portfolio
+          Built with Popup — Create your own Quant Portfolio
         </Link>
       </main>
     );

@@ -72,7 +72,7 @@ function AdDialog({ onUpgrade }: Readonly<{ onUpgrade: () => void }>) {
             </div>
           </header>
           <button type="button" className="pricing-upgrade-button" onClick={onUpgrade}>
-            <Sparkles size={16} /> Tired of ads? Upgrade to ZeroChart Pro
+            <Sparkles size={16} /> Tired of ads? Upgrade to Popup Pro
           </button>
           <Dialog.Close className="pricing-basic-button ad-dismiss-button" disabled={locked}>
             {locked ? `Dismiss in ${secondsLeft}s` : 'Dismiss'}

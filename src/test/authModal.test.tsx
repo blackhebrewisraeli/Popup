@@ -18,7 +18,7 @@ afterEach(cleanup);
 describe('AuthModal', () => {
   it('keeps OAuth prominent and uses one compact primary action for the email form', () => {
     const { container } = render(<AuthModal open onOpenChange={vi.fn()} />);
-    const dialog = screen.getByRole('dialog', { name: 'ZeroChart account' });
+    const dialog = screen.getByRole('dialog', { name: 'Popup account' });
 
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue with GitHub' })).toBeInTheDocument();

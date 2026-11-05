@@ -83,9 +83,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'ZeroChart' },
-      { name: 'description', content: 'The algorithmic signal terminal with live charts.' },
-      { name: 'author', content: 'ZeroChart' },
+      { title: 'Popup' },
+      {
+        name: 'description',
+        content:
+          'Explainable market signals, backtesting, and paper trading in one focused workspace.',
+      },
+      { name: 'author', content: 'Popup' },
       { property: 'og:type', content: 'website' },
       { name: 'twitter:card', content: 'summary_large_image' },
     ],

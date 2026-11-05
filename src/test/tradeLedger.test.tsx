@@ -242,7 +242,7 @@ describe('portfolio P&L attribution and trade ledger', () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
       this: HTMLAnchorElement,
     ) {
-      expect(this.download).toBe('zerochart-ledger-simulation.csv');
+      expect(this.download).toBe('popup-ledger-simulation.csv');
       expect(this.href).toBe('blob:ledger');
       expect(this.isConnected).toBe(true);
     });

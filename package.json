@@ -1,6 +1,6 @@
 {
-  "name": "zerochart",
-  "description": "Quantitative research and paper trading environment: a TradingView Pine Script HUD plus a React + Supabase app to understand, backtest, and simulate multifactor signals.",
+  "name": "popup",
+  "description": "Popup surfaces explainable market signals for research, backtesting, and simulated trading.",
   "author": "blackhebrewisraeli (https://github.com/blackhebrewisraeli)",
   "license": "MIT",
   "homepage": "https://zero-chart.vercel.app",
