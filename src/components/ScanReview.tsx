@@ -944,9 +944,7 @@ function EvidencePanel({
       tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
       aria-label={ticker ? `${ticker} evidence` : 'Evidence'}
     >
-      <p className="sr-only" role="status">
-        {ticker ? `Showing ${ticker} evidence` : ''}
-      </p>
+      <output className="sr-only">{ticker ? `Showing ${ticker} evidence` : ''}</output>
       {selection ? (
         <>
           <header className="scan-evidence-head">
@@ -1016,7 +1014,7 @@ export function ScanReview({
   const closeSheet = useCallback(() => setSheetOpen(false), []);
   const focusSelectedRow = useCallback(() => {
     const rows = reviewRef.current?.querySelectorAll<HTMLElement>('[data-scan-row]') ?? [];
-    [...rows].find((row) => row.getAttribute('data-scan-row') === selected)?.focus();
+    [...rows].find((row) => row.dataset['scanRow'] === selected)?.focus();
   }, [selected]);
   const toggleCompare = useCallback((ticker: string) => {
     setCompare((current) => {
