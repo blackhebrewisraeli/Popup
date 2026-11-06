@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { CandleProviderDataError } from '@/lib/binance';
 import {
@@ -19,13 +19,15 @@ import {
 } from '@/lib/tradingViewDevScan';
 import {
   latestFinalSession,
+  sessionFinalAt,
   sessionOpen,
+  tradingSessions,
   US_EQUITY_INSTRUMENTS,
   usEquityInstrument,
   type EquityDailyBar,
   type EquityDailySeries,
 } from '@/lib/usEquityDaily';
-import { saveScan, type ScanSnapshot } from './marketScanStore';
+import { reproduceScan, saveScan, type ScanSnapshot } from './marketScanStore';
 
 /**
  * The local handoff between the owner's agent session and the scanner. The
@@ -350,4 +352,406 @@ export async function publishTradingViewDevScan(
       if (error.code !== 'ENOENT') throw error;
     });
   }
+}
+
+/*
+ * Capture: from the agent's saved `get_ohlcv` results to an export, without
+ * retyping a byte. Claude Code names a saved tool result by the millisecond,
+ * and parallel calls can land on the same name and overwrite each other, so a
+ * file name proves nothing. Each file is bound to the symbol the agent
+ * requested it for: the response's own symbol and interval must match, and the
+ * file must have been written after the retrieval started. The agent stays
+ * responsible for retrieval; nothing here calls TradingView or sees a credential.
+ */
+
+export const RETRIEVAL_STORE = '.zerochart-tradingview';
+const RETRIEVAL_ID = /^\d{8}T\d{6}Z$/;
+const MANIFEST = 'retrieval.json';
+const ALERTS = 'alerts.json';
+const TICKER_BY_SYMBOL = new Map(
+  Object.entries(TRADINGVIEW_SYMBOLS).map(([ticker, symbol]) => [symbol, ticker]),
+);
+
+interface CapturedResponse {
+  symbol: string;
+  /** The saved file's modification time: when the agent's client wrote the response. */
+  receivedAt: string;
+  source: string;
+  sha256: string;
+  response: unknown;
+}
+type CaptureRecord = CapturedResponse | { symbol: string; recordedAt: string; error: string };
+
+export type CaptureOutcome =
+  'CAPTURED' | 'RETRIED' | 'FAILED' | 'DUPLICATE' | 'CONFLICT' | 'IGNORED' | 'REJECTED';
+
+export interface RetrievalStatus {
+  retrievalId: string;
+  startedAt: string;
+  /** The session every symbol must rest on. */
+  requiredSession: string | null;
+  /** When the next session becomes final; a retrieval that reaches it is refused at import. */
+  validUntil: string | null;
+  window: 'OPEN' | 'CLOSED';
+  requested: number;
+  captured: number;
+  missing: string[];
+  failed: Array<{ symbol: string; reason: string }>;
+  conflicting: string[];
+  /** Missing and failed symbols, while the window is open; nothing once it has closed. */
+  retry: string[];
+}
+
+export interface RetrievalReport {
+  outcome: 'COMPLETE' | 'PARTIAL' | 'FAILED' | 'REFUSED' | 'NOT_REPRODUCED';
+  retrievalId: string;
+  exportPath: string;
+  retrieval: TradingViewOhlcvExport['retrieval'];
+  requested: number;
+  evaluated: number | null;
+  failed: number | null;
+  failures: Array<{ ticker: string; symbol: string; status: string; detail: string | null }>;
+  evaluatedSession: string | null;
+  scanId: string | null;
+  importStatus: 'IMPORTED' | 'ALREADY_IMPORTED' | null;
+  reproduction: string | null;
+  refusal?: string;
+  research: string | null;
+}
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const json = (value: unknown) => `${JSON.stringify(value)}\n`;
+const isCaptured = (record: CaptureRecord | undefined): record is CapturedResponse =>
+  record !== undefined &&
+  'response' in record &&
+  (record.response as OhlcvResponse | null)?.success === true;
+
+function retrievalDir(store: string, retrievalId: string): string {
+  if (!RETRIEVAL_ID.test(retrievalId)) {
+    throw new Error(`${retrievalId} is not a retrieval ID (YYYYMMDDTHHMMSSZ)`);
+  }
+  return join(resolve(store), retrievalId);
+}
+
+async function writeAtomic(path: string, content: string): Promise<void> {
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  await writeFile(temporary, content, { flag: 'wx' });
+  await rename(temporary, path);
+}
+
+async function readJson<T>(path: string): Promise<T | undefined> {
+  try {
+    return JSON.parse(await readFile(path, 'utf8')) as T;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+
+async function readRetrieval(store: string, retrievalId: string) {
+  const dir = retrievalDir(store, retrievalId);
+  const manifest = JSON.parse(await readFile(join(dir, MANIFEST), 'utf8')) as {
+    schemaVersion?: unknown;
+    startedAt?: unknown;
+  };
+  const startedAt = typeof manifest.startedAt === 'string' ? Date.parse(manifest.startedAt) : NaN;
+  if (manifest.schemaVersion !== '1' || !Number.isFinite(startedAt)) {
+    throw new Error(`${retrievalId}: unreadable ${MANIFEST}`);
+  }
+  const names = await readdir(dir);
+  const records = new Map<string, CaptureRecord>();
+  /** Digest prefixes of every differing response captured for a ticker. */
+  const conflicts = new Map<string, string[]>();
+  for (const ticker of selectDevScanUniverse()) {
+    const record = await readJson<CaptureRecord>(join(dir, `${ticker}.json`));
+    if (record) records.set(ticker, record);
+    const others = names
+      .filter((name) => name.startsWith(`${ticker}.conflict-`) && name.endsWith('.json'))
+      .map((name) => name.slice(`${ticker}.conflict-`.length, -'.json'.length));
+    if (others.length > 0 && isCaptured(record)) {
+      conflicts.set(ticker, [record.sha256.slice(0, 12), ...others]);
+    }
+  }
+  return { dir, startedAt, records, conflicts };
+}
+
+/** When the session after `required` becomes final, so the required session changes. */
+function windowCloses(required: string): number | null {
+  const next = tradingSessions(required, '9999-12-31')[1];
+  return next === undefined ? null : sessionFinalAt(next);
+}
+
+export async function retrievalStatus(options: {
+  store: string;
+  retrievalId: string;
+  now?: () => number;
+}): Promise<RetrievalStatus> {
+  const { startedAt, records, conflicts } = await readRetrieval(options.store, options.retrievalId);
+  const requiredSession = latestFinalSession(startedAt);
+  const closes = requiredSession === null ? null : windowCloses(requiredSession);
+  const received = [...records.values()].flatMap((record) =>
+    'receivedAt' in record ? [Date.parse(record.receivedAt)] : [],
+  );
+  const latest = Math.max((options.now ?? Date.now)(), ...received);
+  const open = closes === null || latest < closes;
+  const missing: string[] = [];
+  const failed: RetrievalStatus['failed'] = [];
+  const conflicting: string[] = [];
+  let captured = 0;
+  for (const ticker of selectDevScanUniverse()) {
+    const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+    const record = records.get(ticker);
+    if (conflicts.has(ticker)) conflicting.push(symbol);
+    else if (isCaptured(record)) captured += 1;
+    else if (record === undefined) missing.push(symbol);
+    else
+      failed.push({
+        symbol,
+        reason: 'error' in record ? record.error : 'get_ohlcv did not succeed',
+      });
+  }
+  return {
+    retrievalId: options.retrievalId,
+    startedAt: iso(startedAt),
+    requiredSession,
+    validUntil: closes === null ? null : iso(closes),
+    window: open ? 'OPEN' : 'CLOSED',
+    requested: DEV_SCAN_SIZE,
+    captured,
+    missing,
+    failed,
+    conflicting,
+    retry: open ? [...missing, ...failed.map(({ symbol }) => symbol)] : [],
+  };
+}
+
+/** Opens a retrieval window: its start time is taken here, before the agent fetches anything. */
+export async function startRetrieval(options: {
+  store: string;
+  now?: () => number;
+}): Promise<RetrievalStatus> {
+  const startedAt = (options.now ?? Date.now)();
+  if (latestFinalSession(startedAt) === null) {
+    throw new Error('The time is outside the published US equity calendar; nothing can be scored.');
+  }
+  const retrievalId = new Date(startedAt).toISOString().replace(/[-:]|\.\d{3}/g, '');
+  const dir = retrievalDir(options.store, retrievalId);
+  await mkdir(resolve(options.store), { recursive: true });
+  await mkdir(dir);
+  await writeFile(join(dir, MANIFEST), json({ schemaVersion: '1', startedAt: iso(startedAt) }), {
+    flag: 'wx',
+  });
+  return retrievalStatus({ store: options.store, retrievalId, now: () => startedAt });
+}
+
+async function captureOne(
+  dir: string,
+  startedAt: number,
+  symbol: string,
+  file: string,
+): Promise<{ outcome: CaptureOutcome; detail?: string }> {
+  const rejected = (detail: string) => ({ outcome: 'REJECTED' as const, detail });
+  const ticker = TICKER_BY_SYMBOL.get(symbol);
+  if (ticker === undefined) return rejected(`${symbol} is not one of the 50 requested symbols`);
+  let text: string;
+  let receivedAt: number;
+  try {
+    [text, receivedAt] = await Promise.all([
+      readFile(file, 'utf8'),
+      stat(file).then(({ mtimeMs }) => Math.floor(mtimeMs)),
+    ]);
+  } catch (error) {
+    return rejected(`cannot read ${file}: ${message(error)}`);
+  }
+  let body: OhlcvResponse | null;
+  try {
+    body = JSON.parse(text) as OhlcvResponse | null;
+  } catch {
+    return rejected(`${file} is not a JSON get_ohlcv response`);
+  }
+  if (body?.symbol !== symbol) {
+    return rejected(
+      `${file} holds ${String(body?.symbol)}, not ${symbol}: another call's result or the wrong path`,
+    );
+  }
+  if (body.interval !== '1D') return rejected(`${file} holds interval ${String(body.interval)}`);
+  if (receivedAt < startedAt) {
+    return rejected(`${file} was written at ${iso(receivedAt)}, before this retrieval started`);
+  }
+  const record: CapturedResponse = {
+    symbol,
+    receivedAt: iso(receivedAt),
+    source: resolve(file),
+    sha256: sha256(text),
+    response: body,
+  };
+  const path = join(dir, `${ticker}.json`);
+  const existing = await readJson<CaptureRecord>(path);
+  const succeeded = body.success === true;
+  if (isCaptured(existing)) {
+    if (!succeeded) return { outcome: 'IGNORED', detail: 'a response is already captured' };
+    if (existing.sha256 === record.sha256) return { outcome: 'DUPLICATE' };
+    await writeAtomic(
+      join(dir, `${ticker}.conflict-${record.sha256.slice(0, 12)}.json`),
+      json(record),
+    );
+    return {
+      outcome: 'CONFLICT',
+      detail: `${symbol} already has a different response; neither will be scored`,
+    };
+  }
+  await writeAtomic(path, json(record));
+  if (!succeeded) return { outcome: 'FAILED', detail: 'get_ohlcv did not succeed' };
+  return { outcome: existing ? 'RETRIED' : 'CAPTURED' };
+}
+
+/**
+ * Binds saved responses to the symbols they were requested for, and records
+ * the agent's read-only alert check when given. A rejected file changes nothing.
+ */
+export async function captureResponses(options: {
+  store: string;
+  retrievalId: string;
+  pairs: ReadonlyArray<{ symbol: string; file: string }>;
+  alerts?: readonly string[];
+  now?: () => number;
+}) {
+  const { dir, startedAt } = await readRetrieval(options.store, options.retrievalId);
+  const results: Array<{ symbol: string; file: string; outcome: CaptureOutcome; detail?: string }> =
+    [];
+  for (const { symbol, file } of options.pairs) {
+    results.push({ symbol, file, ...(await captureOne(dir, startedAt, symbol, file)) });
+  }
+  if (options.alerts) {
+    const checkedAt = iso((options.now ?? Date.now)());
+    await writeAtomic(join(dir, ALERTS), json({ checkedAt, symbols: options.alerts }));
+  }
+  return { results, status: await retrievalStatus(options) };
+}
+
+/** Records the error a `get_ohlcv` call returned; a captured response always wins. */
+export async function recordFailure(options: {
+  store: string;
+  retrievalId: string;
+  symbol: string;
+  error: string;
+  now?: () => number;
+}) {
+  const { dir } = await readRetrieval(options.store, options.retrievalId);
+  const ticker = TICKER_BY_SYMBOL.get(options.symbol);
+  if (ticker === undefined)
+    throw new Error(`${options.symbol} is not one of the 50 requested symbols`);
+  if (!options.error.trim()) throw new Error('Record the error the call returned');
+  const path = join(dir, `${ticker}.json`);
+  const outcome: CaptureOutcome = isCaptured(await readJson<CaptureRecord>(path))
+    ? 'IGNORED'
+    : 'FAILED';
+  if (outcome === 'FAILED') {
+    const recordedAt = iso((options.now ?? Date.now)());
+    await writeAtomic(path, json({ symbol: options.symbol, recordedAt, error: options.error }));
+  }
+  return { symbol: options.symbol, outcome, status: await retrievalStatus(options) };
+}
+
+/**
+ * Assembles the export from the captured files, imports it and reproduces the
+ * scan offline. Missing, failed and conflicting symbols stay in the scan as
+ * failures. The import's own refusal applies when a session became final
+ * during retrieval. Success is never reported without a MATCH.
+ */
+export async function finishRetrieval(options: {
+  store: string;
+  scanStore: string;
+  retrievalId: string;
+  repositoryCommit: string;
+  now?: () => number;
+}): Promise<RetrievalReport> {
+  const { dir, startedAt, records, conflicts } = await readRetrieval(
+    options.store,
+    options.retrievalId,
+  );
+  const alerts = await readJson<NonNullable<TradingViewOhlcvExport['pineAlerts']>>(
+    join(dir, ALERTS),
+  );
+  let completedAt = startedAt;
+  const instruments: TradingViewOhlcvExport['instruments'] = [];
+  for (const ticker of selectDevScanUniverse()) {
+    const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+    const record = records.get(ticker);
+    const digests = conflicts.get(ticker);
+    if (digests) {
+      const error = `conflicting get_ohlcv responses were captured (${digests.join(', ')}); none is scored`;
+      instruments.push({ ticker, symbol, error });
+    } else if (record && 'response' in record) {
+      completedAt = Math.max(completedAt, Date.parse(record.receivedAt));
+      instruments.push({
+        ticker,
+        symbol,
+        receivedAt: record.receivedAt,
+        response: record.response,
+      });
+    } else if (record) {
+      instruments.push({ ticker, symbol, error: record.error });
+    }
+  }
+  const file: TradingViewOhlcvExport = {
+    schemaVersion: '1',
+    source: 'tradingview-mcp',
+    retrieval: { startedAt: iso(startedAt), completedAt: iso(completedAt) },
+    pineAlerts: alerts ?? null,
+    instruments,
+  };
+  const exportPath = join(resolve(options.store), `${options.retrievalId}.json`);
+  await writeAtomic(exportPath, json(file));
+  const report = {
+    retrievalId: options.retrievalId,
+    exportPath,
+    retrieval: file.retrieval,
+    requested: DEV_SCAN_SIZE,
+    evaluated: null,
+    failed: null,
+    failures: [],
+    evaluatedSession: null,
+    scanId: null,
+    importStatus: null,
+    reproduction: null,
+    research: null,
+  };
+  let imported: Awaited<ReturnType<typeof importTradingViewScan>>;
+  try {
+    imported = await importTradingViewScan({
+      file: exportPath,
+      store: options.scanStore,
+      repositoryCommit: options.repositoryCommit,
+      now: options.now ?? Date.now,
+    });
+  } catch (error) {
+    return { ...report, outcome: 'REFUSED', refusal: message(error) };
+  }
+  const { scan, scanId } = imported.snapshot;
+  const reproduced = await reproduceScan(scanId, options.scanStore);
+  const matched = reproduced.status === 'MATCH';
+  const newest = scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.dataAsOf.newest;
+  return {
+    ...report,
+    outcome: matched ? scan.status : 'NOT_REPRODUCED',
+    evaluated: scan.coverage.evaluated,
+    failed: scan.coverage.notEvaluated,
+    failures: scan.results
+      .filter((result) => result.status !== 'EVALUATED')
+      .map((result) => ({
+        ticker: result.ticker,
+        symbol: TRADINGVIEW_SYMBOLS[result.ticker]!,
+        status: result.status,
+        detail: result.detail ?? null,
+      })),
+    evaluatedSession: newest == null ? null : NEW_YORK_DATE.format(newest),
+    scanId,
+    importStatus: imported.status,
+    reproduction: matched ? 'MATCH' : `MISMATCH (${reproduced.reason})`,
+    research: matched
+      ? `npm run dev, open http://localhost:8080/?devAuth=1, Research, TradingView import (scan ${scanId})`
+      : null,
+  };
 }

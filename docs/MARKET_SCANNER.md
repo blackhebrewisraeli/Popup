@@ -204,40 +204,75 @@ while live market data is loading or has failed. The selector
 names the import's state (evaluated count, `Loading`, `None` or `Unreadable`). It does not change
 live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
-| Step                    | Who                      | How                                                                                                                                                                                                       |
-| ----------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Choose the universe     | Code, before any data    | `selectDevScanUniverse`: the 50 of the 90 configured equities with the lowest `sha256(ticker)`                                                                                                            |
-| Resolve instruments     | Agent (`search_symbols`) | One listing per ticker on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca, CBOE); committed as `TRADINGVIEW_SYMBOLS`. Off-exchange, CFD and foreign listings excluded                                  |
-| Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. Each response is copied verbatim into one export file in git-ignored `.zerochart-tradingview/`                    |
-| Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                      |
-| Validate, score, record | App (CLI)                | `tradingview-import`: `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
-| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route            |
-| Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                         |
+| Step                    | Who                      | How                                                                                                                                                                                                                                                         |
+| ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Choose the universe     | Code, before any data    | `selectDevScanUniverse`: the 50 of the 90 configured equities with the lowest `sha256(ticker)`                                                                                                                                                              |
+| Resolve instruments     | Agent (`search_symbols`) | One listing per ticker on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca, CBOE); committed as `TRADINGVIEW_SYMBOLS`. Off-exchange, CFD and foreign listings excluded                                                                                    |
+| Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. `tradingview-capture` binds each saved response to its symbol in git-ignored `.zerochart-tradingview/`                                                              |
+| Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                                                                        |
+| Validate, score, record | App (CLI)                | `tradingview-finish` (or `tradingview-import` for a hand-built export): `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
+| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route                                                              |
+| Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                                                                           |
 
 ### Refreshing it (owner runbook)
 
 Reloading the page re-reads the last import. It never fetches TradingView bars, and nothing
 re-scans on a schedule. The agent's TradingView MCP session is the owner's, signed in with the
-owner's account; it is not a backend connection the app can call. A new scan is these five steps,
-started by the owner:
+owner's account; it is not a backend connection the app can call. To start a new scan, the owner
+pastes this prompt into an agent session that has TradingView's MCP server connected, opened in this
+repository:
 
-1. **Retrieve** (agent session with TradingView's MCP server connected). Start outside the
-   finalization boundary: a session becomes final 9h after the New York close (01:00 New York on a
-   normal day), and a retrieval that spans it is refused at import. Note the start time, then call
-   `get_ohlcv` with `interval` `1D` and `count` 1000 for each of the 50 symbols in
-   `TRADINGVIEW_SYMBOLS`, in batches of about 8 (well under ~100 calls a minute), and
-   `list_alerts` once (read only). Keep every response verbatim. A failed call is recorded as that
-   ticker's `error`; never substitute another symbol or provider. Claude Code saves each ~72 KB
-   response to a tool-results file named by the millisecond; parallel calls can land on the same
-   millisecond and overwrite each other, so check every symbol is present and re-fetch any missing.
-2. **Export.** Write one `TradingViewOhlcvExport` file to git-ignored
-   `.zerochart-tradingview/<YYYYMMDDTHHMMSSZ>.json` (shape below): the retrieval start, the last
-   response time as `completedAt`, each response with its `receivedAt`, and the alert check.
-3. **Import.** `npm run evaluate -- tradingview-import .zerochart-tradingview/<RETRIEVAL_ID>.json`
-   prints the scan ID, coverage, setups and every failure, and writes the snapshot and the view.
-4. **Reproduce offline.** `npm run evaluate -- scan-reproduce <SCAN_ID>` must print `MATCH`.
-5. **Inspect.** `npm run dev`, open <http://localhost:8080/?devAuth=1>, Research,
-   **TradingView import**.
+```text
+Run Popup's TradingView development scan. You retrieve; the repository's helper binds, imports
+and reproduces. Local only: never commit, publish or send anything you retrieve.
+
+1. Run `npm run evaluate -- tradingview-start`. Note RETRIEVAL_ID, validUntil and the symbols
+   under `retry`. If validUntil is less than 15 minutes away, stop and start again after it.
+2. For each symbol under `retry`, call TradingView `get_ohlcv` with exactly that symbol,
+   interval "1D", count 1000, in batches of at most 8 calls (well under 100 a minute).
+3. After each batch run
+   `npm run evaluate -- tradingview-capture RETRIEVAL_ID SYMBOL=PATH SYMBOL=PATH ...`,
+   pairing each symbol with the file its own call's result was saved to. Never retype, edit or
+   merge response data. For a call that returned an error, run
+   `npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "<the error>"`.
+4. Repeat steps 2-3 for the symbols the last capture lists under `retry`, at most three rounds,
+   while `window` is OPEN. Never substitute another symbol, venue, provider or remembered value.
+5. Call TradingView `list_alerts` once (read only), then run
+   `npm run evaluate -- tradingview-capture RETRIEVAL_ID --alerts <symbols holding any alert, comma-separated, or none>`.
+6. Run `npm run evaluate -- tradingview-finish RETRIEVAL_ID`. Report its outcome, the requested,
+   evaluated and failed counts, every failure with its reason, evaluatedSession, scanId and
+   reproduction. Only outcome COMPLETE with reproduction MATCH is a full success; state PARTIAL,
+   REFUSED or NOT_REPRODUCED plainly.
+7. If a scanId was printed, run `npm run dev`, open http://localhost:8080/?devAuth=1, go to
+   Research, choose TradingView import, and check that its retrieval window and counts match.
+```
+
+What the helper (`scripts/tradingViewImport.ts`) does at each step:
+
+- **`tradingview-start`** takes the retrieval start before anything is fetched, creates
+  `.zerochart-tradingview/<RETRIEVAL_ID>/` and prints the required session and `validUntil`, the
+  moment the next session becomes final.
+- **`tradingview-capture`** binds each saved result to the symbol it was requested for. Claude
+  Code names a saved tool result by the millisecond, and parallel calls can land on one name and
+  overwrite each other, so a file name is never trusted. The response's own `symbol` and
+  `interval` must match the request, and the file must have been written after the start; its
+  modification time becomes `receivedAt`. A file holding another symbol's response is `REJECTED`
+  and that symbol stays under `retry`. An identical second copy is a `DUPLICATE`. A different
+  successful response for a symbol already captured is a `CONFLICT`: that symbol fails instead of
+  one response being chosen. A later success replaces a recorded failure (`RETRIED`); a later
+  failure never replaces a success.
+- **`retry`** lists missing and failed symbols only while the window is open. Once another session
+  has become final it is empty: the import refuses a retrieval that crossed the boundary, as before,
+  and a new start is needed.
+- **`tradingview-finish`** writes the export `.zerochart-tradingview/<RETRIEVAL_ID>.json` from the
+  captured files (`completedAt` is the latest `receivedAt`), runs the same import as
+  `tradingview-import`, reproduces the scan offline as `scan-reproduce` does, and prints the report.
+  It exits non-zero unless the outcome is `COMPLETE` with `MATCH`. Running it again on the same
+  captures prints `ALREADY_IMPORTED` and leaves the export and the view byte-identical.
+
+The helper never calls TradingView, holds no credential and runs nothing unattended. A hand-built
+export still imports with `npm run evaluate -- tradingview-import EXPORT.json`, followed by
+`scan-reproduce`.
 
 Importing the same export again prints `ALREADY_IMPORTED` / `REUSED` and leaves the view
 byte-identical. An earlier export is a historical scan, not a refresh.
