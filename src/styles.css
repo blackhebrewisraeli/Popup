@@ -294,7 +294,9 @@ body {
   letter-spacing: -0.045em;
 }
 .brand-wordmark-uppercase {
-  font: 600 13px/1 'JetBrains Mono', monospace;
+  font:
+    600 13px/1 'JetBrains Mono',
+    monospace;
   letter-spacing: 0.16em;
 }
 .terminal-tag {
@@ -7269,8 +7271,16 @@ button.paper-ticker:hover {
       transparent 70%
     ),
     linear-gradient(color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px);
-  background-size: auto, auto, 42px 42px, 42px 42px;
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--foreground) 3%, transparent) 1px,
+      transparent 1px
+    );
+  background-size:
+    auto,
+    auto,
+    42px 42px,
+    42px 42px;
 }
 .landing-hero-inner {
   position: relative;
