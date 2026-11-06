@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
-import { MarketsSection } from '@/components/Workspace';
+import { MarketsSection, ResearchZone } from '@/components/Workspace';
 import type { Candle } from '@/lib/binance';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
@@ -146,6 +146,8 @@ function serve(respond: () => Promise<Response>) {
 
 const json = (body: unknown) => () => Promise.resolve(new Response(JSON.stringify(body)));
 
+const escape = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+
 function rowsOf(panel: HTMLElement) {
   return [...panel.querySelectorAll<HTMLElement>('.scan-row')];
 }
@@ -194,18 +196,19 @@ describe('Markets source: market data or the local TradingView import', () => {
     rows.forEach((row, index) => {
       const result = evaluated[index]!;
       const model = result.model!;
-      const head = row.querySelector('.market-scan-item-head')!;
-      expect(head.querySelector('.market-scan-rank')).toHaveTextContent(`#${result.rank}`);
-      expect(head.querySelector('.market-scan-ticker')).toHaveTextContent(result.ticker);
-      expect(head.querySelector('.market-scan-score')).toHaveTextContent(
-        String(model.signal_score),
+      expect(row.querySelector('.market-scan-rank')).toHaveTextContent(`#${result.rank}`);
+      expect(row.querySelector('.market-scan-ticker')).toHaveTextContent(result.ticker);
+      expect(row.querySelector('.market-scan-score')).toHaveTextContent(
+        `Score ${model.signal_score}`,
       );
-      expect(head.querySelector('.market-scan-regime')).toHaveTextContent(
-        REGIME_LABELS[model.regime],
+      // The recorded reason names the regime itself.
+      expect(row.querySelector('.market-scan-rationale')).toHaveTextContent(
+        new RegExp(`^${escape(model.rationale)}$`),
       );
-      expect(head.querySelector('.is-long') !== null).toBe(result.setups!.long);
-      expect(head.querySelector('.is-risk') !== null).toBe(result.setups!.risk);
-      expect(row).toHaveTextContent(model.rationale);
+      expect(model.rationale).toContain(`${REGIME_LABELS[model.regime]} regime`);
+      expect(row.querySelector('.is-long') !== null).toBe(result.setups!.long);
+      expect(row.querySelector('.is-risk') !== null).toBe(result.setups!.risk);
+      if (!result.setups!.long && !result.setups!.risk) expect(row).toHaveTextContent('No setup');
     });
     expect(panel.textContent).not.toMatch(/BTC|ETH|Binance spot/);
   });
@@ -316,7 +319,7 @@ describe('Markets source: import states', () => {
     const { open } = serve(json(partial));
     const panel = await open('2');
     expect(within(panel).getAllByText('Incomplete').length).toBeGreaterThan(0);
-    expect(within(panel).getByText('Failed').nextSibling).toHaveTextContent('1');
+    expect(panel.querySelector('.market-scan-head')).toHaveTextContent('3 requested · 1 failed');
     expect(
       within(within(panel).getByRole('region', { name: 'Not evaluated this scan' })).getByText(
         /HTTP 429/,
@@ -334,21 +337,20 @@ describe('Markets source: import states', () => {
   });
 });
 
-describe('Markets section', () => {
-  function Section() {
-    const [source, setSource] = useState<MarketsSource>('market-data');
-    return (
+describe('Research zone', () => {
+  const marketData = {
+    scan: (
+      <MarketScanSummary
+        scan={MARKET_SCAN}
+        completedAt={EQUITY_NOW}
+        scanning={false}
+        failed={false}
+      />
+    ),
+    markets: (
       <MarketsSection
         rows={[]}
         scores={new Map()}
-        scan={
-          <MarketScanSummary
-            scan={MARKET_SCAN}
-            completedAt={EQUITY_NOW}
-            scanning={false}
-            failed={false}
-          />
-        }
         assets={[]}
         marketView="signals"
         onMarketView={() => {}}
@@ -356,47 +358,83 @@ describe('Markets section', () => {
         onAssetClass={() => {}}
         onSelect={() => {}}
         onInvest={() => {}}
+      />
+    ),
+    alerts: <section aria-label="Price alerts" />,
+  };
+
+  function Research(state: Readonly<{ pending?: boolean; failed?: boolean; empty?: boolean }>) {
+    const [source, setSource] = useState<MarketsSource>('market-data');
+    return (
+      <ResearchZone
+        pending={state.pending ?? false}
+        failed={state.failed ?? false}
+        empty={state.empty ?? false}
+        onPreview={() => {}}
+        {...marketData}
         source={source}
         onSource={setSource}
       />
     );
   }
 
-  it('keeps the market-data count, controls and advisor out of the TradingView review', async () => {
-    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+  function renderResearch(state: Parameters<typeof Research>[0] = {}) {
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <Section />
+        <Research {...state} />
       </QueryClientProvider>,
     );
+  }
+
+  it('puts the scan first and keeps the market list, advisor and alerts out of the TradingView review', async () => {
+    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+    renderResearch();
+    const scan = screen.getByRole('region', { name: 'Market scan' });
     const markets = screen.getByRole('region', { name: 'Markets' });
+    expect(scan.compareDocumentPosition(markets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(markets).getByText('0 ASSETS')).toBeInTheDocument();
     expect(await within(markets).findByRole('button', { name: 'Build Portfolio' })).toBeVisible();
     expect(within(markets).getByRole('group', { name: 'Market view' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Price alerts' })).toBeInTheDocument();
 
-    await within(markets).findByRole('tab', { name: 'TradingView import 4' });
-    fireEvent.click(within(markets).getByRole('tab', { name: /TradingView import/ }));
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
     expect(
-      within(markets).getByRole('region', { name: 'TradingView development scan' }),
+      screen.getByRole('region', { name: 'TradingView development scan' }),
     ).toBeInTheDocument();
-    expect(within(markets).queryByText('0 ASSETS')).not.toBeInTheDocument();
-    expect(within(markets).queryByRole('button', { name: 'Build Portfolio' })).toBeNull();
-    expect(within(markets).queryByRole('group', { name: 'Market view' })).toBeNull();
-    expect(within(markets).queryByRole('region', { name: 'Market scan' })).toBeNull();
-    expect(within(markets).queryByText('No assets match this filter.')).toBeNull();
+    for (const name of ['Market scan', 'Markets', 'Price alerts']) {
+      expect(screen.queryByRole('region', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: 'Build Portfolio' })).toBeNull();
+  });
+
+  it.each([
+    ['still loading', { pending: true }],
+    ['failed with nothing to show', { failed: true, empty: true }],
+  ])('shows the local import while market data is %s', async (_, state) => {
+    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+    renderResearch(state);
+    expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
+    const panel = screen.getByRole('region', { name: 'TradingView development scan' });
+    expect(rowsOf(panel)).toHaveLength(4);
   });
 
   it('has no source picker in a production build, and never reads the import', () => {
     vi.stubEnv('DEV', false);
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <Section />
-      </QueryClientProvider>,
-    );
+    renderResearch();
     expect(screen.queryByRole('tablist', { name: 'Markets source' })).toBeNull();
     expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('holds the scan place while market data loads, in a production build too', () => {
+    vi.stubEnv('DEV', false);
+    renderResearch({ pending: true });
+    expect(screen.getByLabelText('Loading market data')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('region', { name: 'Markets' })).toBeNull();
   });
 });

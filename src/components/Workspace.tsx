@@ -6,7 +6,6 @@ import {
   ArrowDown,
   ArrowUpRight,
   CandlestickChart,
-  Flame,
   LogOut,
   Radio,
   RefreshCw,
@@ -27,22 +26,15 @@ import { Segmented } from '@/components/Segmented';
 import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { TradeTicket } from '@/components/TradeTicket';
-import { TacticalSignals } from '@/components/TacticalSignals';
-import { TradingViewWidget } from '@/components/TradingViewWidget';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
 import {
   fetchAssets,
   formatChange,
   formatPrice,
-  formatReward,
-  formatRisk,
-  formatTradingViewSymbol,
   generateTrendData,
   getAssetClass,
   sampleAssets,
-  scoreTone,
   type Asset,
   type AssetClass,
 } from '@/lib/assets';
@@ -118,104 +110,14 @@ function NotScoredBadge({
   );
 }
 
-function ScoreRing({ result }: Readonly<{ result: ScanAssetResult | undefined }>) {
-  const score = scanScore(result);
-  if (score === null) {
-    const notScored = result !== undefined && result.status !== 'EVALUATED';
-    return (
-      <div
-        className="score-ring score-none"
-        role="img"
-        aria-label={
-          notScored
-            ? `Signal score: ${scanStatusLabel(result).toLowerCase()}`
-            : 'Signal score loading'
-        }
-      >
-        {notScored ? (
-          <NotScoredBadge result={result} />
-        ) : (
-          <span className="score-ring-value">—</span>
-        )}
-        <span className="score-ring-label">SIGNAL</span>
-      </div>
-    );
-  }
-  return (
-    <div
-      className={cn('score-ring', scoreTone(score))}
-      role="img"
-      aria-label={`Signal score ${score} out of 100`}
-    >
-      <span className="score-ring-value">{score}</span>
-      <span className="score-ring-label">SIGNAL</span>
-    </div>
-  );
-}
-
-function Hero({ asset, result }: Readonly<{ asset: Asset; result: ScanAssetResult | undefined }>) {
-  const surging = asset.volume_spike !== null && asset.volume_spike > 1;
-  return (
-    <section className="hero" data-tour="hero" aria-label="Top signal">
-      <div className="hero-glow" aria-hidden="true" />
-      <div className="hero-content">
-        <span className="hero-badge">
-          <Flame size={14} /> TOP SIGNAL RIGHT NOW
-        </span>
-        <div className="hero-headline">
-          <div>
-            <div className="hero-ticker-row">
-              <AssetIcon symbol={asset.ticker} name={asset.name} size="lg" />
-              <h2 className="hero-ticker">{asset.ticker}</h2>
-            </div>
-            <div className="hero-price">{formatPrice(asset.current_price)}</div>
-          </div>
-          <ScoreRing result={result} />
-        </div>
-        <p className="hero-name">{asset.name || 'Asset'}</p>
-        <div className="hero-stats">
-          <div className="hero-stat">
-            <span className="hero-stat-label">Upside Potential</span>
-            <span className="hero-stat-value">{formatReward(asset.reward_pct)}</span>
-          </div>
-          <div className="hero-stat">
-            <span className="hero-stat-label">Risk</span>
-            <span className="hero-stat-value hero-stat-risk">{formatRisk(asset.risk_pct)}</span>
-          </div>
-          {surging && (
-            <span className="volume-badge">
-              <TrendingUp size={15} /> Volume is surging
-            </span>
-          )}
-        </div>
-        <div className="hero-action">
-          <TradeTicket
-            asset={asset}
-            variant="hero"
-            portfolioType="paper_trading"
-            intent="tactical"
-          />
-          <BrokerModal asset={asset} variant="hero" />
-        </div>
-      </div>
-      <div className="hero-chart">
-        <TradingViewWidget symbol={formatTradingViewSymbol(asset.ticker)} />
-      </div>
-    </section>
-  );
-}
-
 type MarketView = 'signals' | 'gainers' | 'losers';
 type AssetClassFilter = 'All' | AssetClass;
 
 const MARKET_VIEWS: { id: MarketView; label: ReactNode }[] = [
   {
     id: 'signals',
-    label: (
-      <>
-        <Flame size={14} /> Top Signals
-      </>
-    ),
+    // The scan's own order: each asset class's ranking in turn, never a recommendation.
+    label: 'Scan rank',
   },
   {
     id: 'gainers',
@@ -268,7 +170,7 @@ function sortMarkets(assets: Asset[], view: MarketView, scores: ScanResults): As
 function MarketScore({ result }: Readonly<{ result: ScanAssetResult | undefined }>) {
   const score = scanScore(result);
   if (score !== null) {
-    return <span className={cn('markets-score', scoreTone(score))}>{score}</span>;
+    return <span className="markets-score">{score}</span>;
   }
   if (result && result.status !== 'EVALUATED') return <NotScoredBadge result={result} compact />;
   return (
@@ -395,22 +297,15 @@ function HeaderProfile({ user, onSignOut }: Readonly<{ user: User; onSignOut: ()
   );
 }
 
+/** Holds the scan's place while the market universe loads: a header and a few rows. */
 function MarketsSkeleton() {
   return (
-    <div aria-busy="true">
-      <div className="hero skeleton-hero">
-        <div className="skeleton h-7 w-56" />
-        <div className="skeleton mt-5 h-14 w-44" />
-        <div className="skeleton mt-6 h-9 w-64" />
-        <div className="skeleton mt-6 h-4 w-full max-w-md" />
-      </div>
-      <div className="markets-table mt-14">
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="markets-row markets-row-skeleton">
-            <div className="skeleton markets-skeleton" />
-          </div>
-        ))}
-      </div>
+    <div className="market-scan" aria-busy="true" aria-label="Loading market data">
+      <div className="skeleton h-6 w-40" />
+      <div className="skeleton mt-4 h-10 w-full" />
+      {Array.from({ length: 5 }, (_, i) => (
+        <div key={i} className="skeleton mt-3 h-8 w-full" />
+      ))}
     </div>
   );
 }
@@ -430,10 +325,10 @@ function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
   );
 }
 
+/** Every asset in the universe with its price and 24h move; opening a row shows its details. */
 export function MarketsSection({
   rows,
   scores,
-  scan,
   assets,
   marketView,
   onMarketView,
@@ -441,12 +336,9 @@ export function MarketsSection({
   onAssetClass,
   onSelect,
   onInvest,
-  source,
-  onSource,
 }: Readonly<{
   rows: Asset[];
   scores: ScanResults;
-  scan: ReactNode;
   assets: Asset[];
   marketView: MarketView;
   onMarketView: (view: MarketView) => void;
@@ -454,12 +346,26 @@ export function MarketsSection({
   onAssetClass: (filter: AssetClassFilter) => void;
   onSelect: (asset: Asset) => void;
   onInvest: () => void;
-  source: MarketsSource;
-  onSource: (source: MarketsSource) => void;
 }>) {
-  const marketData = (
-    <>
-      {scan}
+  return (
+    <section className="markets" data-tour="markets" aria-label="Markets">
+      <div className="markets-head">
+        <div>
+          <h2 className="markets-title">Markets</h2>
+          <p className="markets-score-help">
+            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
+            performance forecast.
+          </p>
+        </div>
+        <div className="markets-head-actions">
+          <span className="markets-count font-mono">
+            {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
+          </span>
+          <Suspense fallback={null}>
+            <RoboAdvisor assets={assets} onInvest={onInvest} />
+          </Suspense>
+        </div>
+      </div>
       <div className="markets-controls">
         <fieldset className="markets-pills" aria-label="Market view">
           {MARKET_VIEWS.map((view) => (
@@ -506,79 +412,63 @@ export function MarketsSection({
               key={asset.ticker}
               asset={asset}
               result={scores.get(asset.ticker)}
-              // Top Signals ranks only what the scan scored; the movers views rank by 24h change.
+              // Scan rank shows only what the scan scored; the movers views rank by 24h change.
               rank={marketView === 'signals' ? (scores.get(asset.ticker)?.rank ?? null) : index + 1}
               onSelect={onSelect}
             />
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+/**
+ * Research is the scan first, then the market list and price alerts. Under `vite dev` the
+ * local TradingView import is a second source, picked above the live-data gate: it never
+ * waits on, or disappears with, the market-data query, and the two never render together.
+ */
+export function ResearchZone({
+  pending,
+  failed,
+  empty,
+  onPreview,
+  scan,
+  markets,
+  alerts,
+  source,
+  onSource,
+}: Readonly<{
+  /** The market universe is still loading. */
+  pending: boolean;
+  failed: boolean;
+  /** The market universe loaded with no assets. */
+  empty: boolean;
+  onPreview: () => void;
+  scan: ReactNode;
+  markets: ReactNode;
+  alerts: ReactNode;
+  source: MarketsSource;
+  onSource: (source: MarketsSource) => void;
+}>) {
+  let marketData: ReactNode = (
+    <>
+      {scan}
+      {markets}
+      {alerts}
     </>
   );
-  // The TradingView review is a local, dev-only source: its count and the allocation
-  // advisor below belong to the market-data view and would mix the two.
-  const tradingView = import.meta.env.DEV && source === 'tradingview';
+  if (pending) marketData = <MarketsSkeleton />;
+  // A failed load already shows its error banner above, with Retry.
+  else if (empty) marketData = failed ? null : <NoSignals onPreview={onPreview} />;
   return (
-    <section className="markets" data-tour="markets" aria-label="Markets">
-      <div className="markets-head">
-        <div>
-          <h2 className="markets-title">Markets</h2>
-          <p className="markets-score-help">
-            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
-            performance forecast.
-          </p>
-        </div>
-        {!tradingView && (
-          <div className="markets-head-actions">
-            <span className="markets-count font-mono">
-              {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
-            </span>
-            <Suspense fallback={null}>
-              <RoboAdvisor assets={assets} onInvest={onInvest} />
-            </Suspense>
-          </div>
-        )}
-      </div>
+    <div className="research">
       {import.meta.env.DEV ? (
         <MarketsSources source={source} onSource={onSource} marketData={marketData} />
       ) : (
         marketData
       )}
-    </section>
-  );
-}
-
-/** Research: a loading skeleton, the markets with today's top pick, or an empty watchlist. */
-function ResearchZone({
-  pending,
-  failed,
-  topPick,
-  scores,
-  assets,
-  user,
-  onPreview,
-  markets,
-}: Readonly<{
-  pending: boolean;
-  failed: boolean;
-  topPick: Asset | undefined;
-  scores: ScanResults;
-  assets: Asset[];
-  user: User | null;
-  onPreview: () => void;
-  markets: ReactNode;
-}>) {
-  if (pending) return <MarketsSkeleton />;
-  if (!topPick) return failed ? null : <NoSignals onPreview={onPreview} />;
-  return (
-    <>
-      <Hero asset={topPick} result={scores.get(topPick.ticker)} />
-      <TacticalSignals assets={assets} />
-      {markets}
-      <section className="portfolio-section" aria-label="Price alerts">
-        <PriceAlerts assets={assets} user={user} />
-      </section>
-    </>
+    </div>
   );
 }
 
@@ -635,9 +525,6 @@ function Terminal() {
     assetClass === 'All'
       ? baseAssets
       : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
-  const best = (list: Asset[]) => [...list].sort((a, b) => compareByScan(scores, a, b))[0];
-  // The hero follows the asset-class filter, so it opens on the top crypto pick.
-  const topPick = best(filtered) ?? best(baseAssets);
   const rows = sortMarkets(filtered, marketView, scores);
 
   const page = (
@@ -760,23 +647,20 @@ function Terminal() {
           <ResearchZone
             pending={query.isPending && !preview}
             failed={query.isError}
-            topPick={topPick}
-            scores={scores}
-            assets={baseAssets}
-            user={user}
+            empty={baseAssets.length === 0}
             onPreview={() => setSource('sample')}
+            scan={
+              <MarketScanSummary
+                scan={scan}
+                completedAt={scanQuery.dataUpdatedAt}
+                scanning={scanQuery.isFetching}
+                failed={scanQuery.isError}
+              />
+            }
             markets={
               <MarketsSection
                 rows={rows}
                 scores={scores}
-                scan={
-                  <MarketScanSummary
-                    scan={scan}
-                    completedAt={scanQuery.dataUpdatedAt}
-                    scanning={scanQuery.isFetching}
-                    failed={scanQuery.isError}
-                  />
-                }
                 assets={baseAssets}
                 marketView={marketView}
                 onMarketView={setMarketView}
@@ -784,10 +668,15 @@ function Terminal() {
                 onAssetClass={setAssetClass}
                 onSelect={setSelectedAsset}
                 onInvest={() => setView('paper')}
-                source={marketsSource}
-                onSource={setMarketsSource}
               />
             }
+            alerts={
+              <section className="portfolio-section" aria-label="Price alerts">
+                <PriceAlerts assets={baseAssets} user={user} />
+              </section>
+            }
+            source={marketsSource}
+            onSource={setMarketsSource}
           />
         )}
       </main>
