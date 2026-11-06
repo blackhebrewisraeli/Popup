@@ -455,7 +455,8 @@ async function readRetrieval(store: string, retrievalId: string) {
     schemaVersion?: unknown;
     startedAt?: unknown;
   };
-  const startedAt = typeof manifest.startedAt === 'string' ? Date.parse(manifest.startedAt) : NaN;
+  const startedAt =
+    typeof manifest.startedAt === 'string' ? Date.parse(manifest.startedAt) : Number.NaN;
   if (manifest.schemaVersion !== '1' || !Number.isFinite(startedAt)) {
     throw new Error(`${retrievalId}: unreadable ${MANIFEST}`);
   }
@@ -463,8 +464,12 @@ async function readRetrieval(store: string, retrievalId: string) {
   const records = new Map<string, CaptureRecord>();
   /** Digest prefixes of every differing response captured for a ticker. */
   const conflicts = new Map<string, string[]>();
-  for (const ticker of selectDevScanUniverse()) {
-    const record = await readJson<CaptureRecord>(join(dir, `${ticker}.json`));
+  const tickers = selectDevScanUniverse();
+  const read = await Promise.all(
+    tickers.map((ticker) => readJson<CaptureRecord>(join(dir, `${ticker}.json`))),
+  );
+  for (const [index, ticker] of tickers.entries()) {
+    const record = read[index];
     if (record) records.set(ticker, record);
     const others = names
       .filter((name) => name.startsWith(`${ticker}.conflict-`) && name.endsWith('.json'))
@@ -621,7 +626,9 @@ export async function captureResponses(options: {
   const results: Array<{ symbol: string; file: string; outcome: CaptureOutcome; detail?: string }> =
     [];
   for (const { symbol, file } of options.pairs) {
-    results.push({ symbol, file, ...(await captureOne(dir, startedAt, symbol, file)) });
+    // Sequential on purpose: a second file for the same symbol must see the first one's record.
+    const captured = await captureOne(dir, startedAt, symbol, file); // NOSONAR(S9382)
+    results.push({ symbol, file, ...captured });
   }
   if (options.alerts) {
     const checkedAt = iso((options.now ?? Date.now)());
