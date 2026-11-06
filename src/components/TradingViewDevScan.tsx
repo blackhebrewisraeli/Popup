@@ -93,44 +93,36 @@ export function TradingViewDevScan() {
 export type MarketsSource = 'market-data' | 'tradingview';
 
 /**
- * Which source the Markets section reviews, under `vite dev` only. Each source
- * renders its own list, scores, ranks and coverage; switching unmounts the
- * other, so no selection, explanation or comparison carries across.
+ * Which source the scan reviews, under `vite dev` only. Research renders one
+ * source's review at a time; switching unmounts the other, so no selection,
+ * explanation or comparison carries across.
  */
-export function MarketsSources({
+export function MarketsSourcePicker({
   source,
   onSource,
-  marketData,
-}: Readonly<{
-  source: MarketsSource;
-  onSource: (source: MarketsSource) => void;
-  marketData: ReactNode;
-}>) {
+}: Readonly<{ source: MarketsSource; onSource: (source: MarketsSource) => void }>) {
   const query = useTradingViewDevScan();
   let state = 'None';
   if (query.isPending) state = 'Loading';
   else if (query.isError) state = 'Unreadable';
   else if (query.data) state = String(query.data.scan.coverage.evaluated);
   return (
-    <>
-      <Segmented
-        value={source}
-        ariaLabel="Markets source"
-        className="scan-views markets-source"
-        onChange={onSource}
-        options={[
-          { value: 'market-data', label: 'Market data' },
-          {
-            value: 'tradingview',
-            label: (
-              <>
-                TradingView import <span className="segment-tag">{state}</span>
-              </>
-            ),
-          },
-        ]}
-      />
-      {source === 'tradingview' ? <TradingViewDevScan /> : marketData}
-    </>
+    <Segmented
+      value={source}
+      ariaLabel="Markets source"
+      className="scan-views markets-source"
+      onChange={onSource}
+      options={[
+        { value: 'market-data', label: 'Market data' },
+        {
+          value: 'tradingview',
+          label: (
+            <>
+              TradingView import <span className="segment-tag">{state}</span>
+            </>
+          ),
+        },
+      ]}
+    />
   );
 }

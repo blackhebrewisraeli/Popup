@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
 import { Segmented } from '@/components/Segmented';
@@ -80,20 +88,6 @@ export function FactorBars({ model }: Readonly<{ model: Pick<CanonicalScore, 'co
   );
 }
 
-/** The three factor readings, their 0–100 scores and the regime weights that blend them. */
-function ComponentLine({ model }: Readonly<{ model: CanonicalScore }>) {
-  const { inputs, components } = model;
-  const { weights } = components;
-  return (
-    <span className="market-scan-fit font-mono">
-      RSI {inputs.rsi.toFixed(1)} → {components.rsiScore.toFixed(0)} ×{weights.rsi.toFixed(2)} ·
-      MACD hist {percent(inputs.momentumPercent)} → {components.momentumScore.toFixed(0)} ×
-      {weights.momentum.toFixed(2)} · ATR {(inputs.volatilityPercent * 100).toFixed(2)}% →{' '}
-      {components.volatilityScore.toFixed(0)} ×{weights.volatility.toFixed(2)}
-    </span>
-  );
-}
-
 function SetupTags({ result }: Readonly<{ result: ScanAssetResult }>) {
   return (
     <>
@@ -160,64 +154,96 @@ function ReadingGuide({
   );
 }
 
+function setupWords(result: ScanAssetResult): string {
+  const words = [result.setups?.long && 'Long setup', result.setups?.risk && 'Risk warning'];
+  return words.filter(Boolean).join(' and ') || 'No setup';
+}
+
+/** Up and Down move between the rows of one list, so a review needs no Tab per row. */
+function moveBetweenRows(event: ReactKeyboardEvent<HTMLButtonElement>) {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+  const rows = [
+    ...(event.currentTarget
+      .closest('.scan-results')
+      ?.querySelectorAll<HTMLButtonElement>('.scan-row-main') ?? []),
+  ];
+  const next = rows[rows.indexOf(event.currentTarget) + (event.key === 'ArrowDown' ? 1 : -1)];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+}
+
+/**
+ * One ranked asset. The row itself opens its evidence: beside the list on a wide
+ * screen, in the explanation sheet on a narrow one. Compare is a small checkbox.
+ */
 function ResultRow({
   result,
   symbol,
-  detailed,
+  selected,
+  wide,
+  evidenceId,
   compared,
   compareDisabled,
   onCompare,
-  onExplain,
+  onSelect,
 }: Readonly<{
   result: ScanAssetResult;
   symbol: string | undefined;
-  detailed: boolean;
+  selected: boolean;
+  wide: boolean;
+  evidenceId: string;
   compared: boolean;
   compareDisabled: string | null;
   onCompare: (ticker: string) => void;
-  onExplain: (ticker: string) => void;
+  onSelect: (ticker: string) => void;
 }>) {
   const setup = result.setups?.long || result.setups?.risk;
+  const reasonId = useId();
+  const score = result.model?.signal_score;
   return (
-    <li className="scan-row">
-      <span className="market-scan-rank">#{result.rank}</span>
-      <span className="scan-row-asset">
-        <span className="market-scan-ticker">{result.ticker}</span>
-        {symbol && <span className="scan-row-symbol">{symbol}</span>}
-      </span>
-      <span className="market-scan-score">
-        <span className="scan-score-label">Score </span>
-        {result.model?.signal_score}
-      </span>
-      <span className="scan-row-setup">
-        {setup ? <SetupTags result={result} /> : <span className="market-scan-tag">No setup</span>}
-      </span>
-      <span className="scan-row-reason">
-        {/* The recorded rationale already ends with the regime. */}
-        <span className="market-scan-rationale">{result.model?.rationale}</span>
-        <span className="market-scan-fit">{profileFit(result)}</span>
-        {detailed && result.model && <ComponentLine model={result.model} />}
-      </span>
-      <div className="scan-row-actions">
-        <button
-          type="button"
-          className="portfolio-cash-btn"
-          aria-label={`Explain ${result.ticker}`}
-          onClick={() => onExplain(result.ticker)}
-        >
-          Explain
-        </button>
-        <label className="scan-compare-toggle" title={compareDisabled ?? undefined}>
-          <input
-            type="checkbox"
-            aria-label={`Compare ${result.ticker}`}
-            checked={compared}
-            disabled={compareDisabled !== null}
-            onChange={() => onCompare(result.ticker)}
-          />
-          <span>Compare</span>
-        </label>
-      </div>
+    <li className={cn('scan-row', selected && 'is-selected')}>
+      <button
+        type="button"
+        className="scan-row-main"
+        data-scan-row={result.ticker}
+        aria-label={`${result.ticker}, rank ${result.rank}, score ${score}, ${setupWords(result)}`}
+        aria-describedby={reasonId}
+        aria-current={selected ? 'true' : undefined}
+        aria-controls={wide ? evidenceId : undefined}
+        aria-haspopup={wide ? undefined : 'dialog'}
+        onClick={() => onSelect(result.ticker)}
+        onKeyDown={moveBetweenRows}
+      >
+        <span className="market-scan-rank">#{result.rank}</span>
+        <span className="scan-row-asset">
+          <span className="market-scan-ticker">{result.ticker}</span>
+          {symbol && <span className="scan-row-symbol">{symbol}</span>}
+        </span>
+        <span className="market-scan-score">
+          <span className="scan-score-label">Score </span>
+          {score}
+        </span>
+        <span className="scan-row-setup">
+          {setup ? (
+            <SetupTags result={result} />
+          ) : (
+            <span className="market-scan-tag">No setup</span>
+          )}
+        </span>
+        <span id={reasonId} className="scan-row-reason">
+          {result.model && result.setups && rowReason(explainResult(result.model, result.setups))}
+        </span>
+      </button>
+      <label className="scan-compare-toggle" title={compareDisabled ?? undefined}>
+        <input
+          type="checkbox"
+          aria-label={`Compare ${result.ticker}`}
+          checked={compared}
+          disabled={compareDisabled !== null}
+          onChange={() => onCompare(result.ticker)}
+        />
+      </label>
     </li>
   );
 }
@@ -228,6 +254,26 @@ function clauseValue(clause: SetupClause): string {
 
 function clauseShortfall(clause: SetupClause): string {
   return `${clauseValue(clause)}, needs ${clause.rule}`;
+}
+
+/**
+ * A row's short reason: the recorded clauses that decide its setup state, worded
+ * from the same explanation the evidence shows. Long holds on every clause, risk
+ * on any; otherwise it names what ZC LONG is short of.
+ */
+function rowReason({ long, risk, regimeRule }: ScanExplanation): string {
+  const met = (clause: SetupClause) =>
+    clause.label === 'Regime'
+      ? `High-volatility: ${regimeRule}`
+      : `${clauseValue(clause)} ${clause.rule}`;
+  if (long.holds) return long.clauses.map(met).join(', ');
+  if (risk.holds)
+    return risk.clauses
+      .filter((clause) => clause.met)
+      .map(met)
+      .join(', ');
+  const unmet = long.clauses.filter((clause) => !clause.met);
+  return `Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`;
 }
 
 function setupCell(check: SetupCheck): string {
@@ -369,10 +415,13 @@ function CohortResults({
   view,
   filters,
   source,
-  detailed,
+  solo,
+  selected,
+  wide,
+  evidenceId,
   compare,
   onCompare,
-  onExplain,
+  onSelect,
   onClearCompare,
   onClearFilters,
 }: Readonly<{
@@ -381,10 +430,14 @@ function CohortResults({
   view: ScanView;
   filters: ScanFilters;
   source: TradingViewDevSource | undefined;
-  detailed: boolean;
+  /** The scan's only cohort: its status, coverage and data time are the scan header's. */
+  solo: boolean;
+  selected: string | null;
+  wide: boolean;
+  evidenceId: string;
   compare: readonly string[];
   onCompare: (ticker: string) => void;
-  onExplain: (ticker: string) => void;
+  onSelect: (ticker: string) => void;
   onClearCompare: () => void;
   onClearFilters: () => void;
 }>) {
@@ -423,42 +476,42 @@ function CohortResults({
       <h3 className="market-scan-label">
         {label} <span className="market-scan-rule">ranked only among {label.toLowerCase()}</span>
       </h3>
-      <p className="scan-asof">
-        <span className={cn('market-scan-status', `market-scan-${cohort.status.toLowerCase()}`)}>
-          {cohort.status === 'COMPLETE' ? 'Complete' : 'Incomplete'}
-        </span>
-        <span>
-          {coverage.evaluated} of {coverage.supported} evaluated
-        </span>
-        <span>{dataAsOfLabel(cohort) ?? 'No evaluated data'}</span>
-        {freshness && (
-          <span className={cn(freshness.stale && 'scan-stale')}>{freshness.detail}</span>
-        )}
-      </p>
-      <p className="market-scan-rule scan-view-rule">
-        {VIEW_RULE[view]}
-        {compared.length > 0 && (
-          <>
-            {' · '}
-            <button
-              type="button"
-              className="scan-link-button"
-              onClick={() => document.getElementById(compareId)?.focus()}
-            >
-              Comparing {compared.length}: go to comparison
-            </button>
-          </>
-        )}
-      </p>
+      {!solo && (
+        <p className="scan-asof">
+          <span className={cn('market-scan-status', `market-scan-${cohort.status.toLowerCase()}`)}>
+            {cohort.status === 'COMPLETE' ? 'Complete' : 'Incomplete'}
+          </span>
+          <span>
+            {coverage.evaluated} of {coverage.supported} evaluated
+          </span>
+          <span>{dataAsOfLabel(cohort) ?? 'No evaluated data'}</span>
+          {freshness && (
+            <span className={cn(freshness.stale && 'scan-stale')}>{freshness.detail}</span>
+          )}
+        </p>
+      )}
+      {compared.length > 0 && (
+        <p className="market-scan-rule scan-view-rule">
+          <button
+            type="button"
+            className="scan-link-button"
+            onClick={() => document.getElementById(compareId)?.focus()}
+          >
+            Comparing {compared.length}: go to comparison
+          </button>
+        </p>
+      )}
       {shown.length > 0 && (
         // Column labels for sighted readers; each row names its own score for screen readers.
         <div className="scan-list-head" aria-hidden="true">
-          <span>Rank</span>
-          <span>Asset</span>
-          <span>Score</span>
-          <span>Setup</span>
-          <span>Recorded reason</span>
-          <span />
+          <span className="scan-list-cols">
+            <span>#</span>
+            <span>Asset</span>
+            <span>Score</span>
+            <span>Setup</span>
+            <span>Reason</span>
+          </span>
+          <span>Compare</span>
         </div>
       )}
       {shown.length > 0 ? (
@@ -468,11 +521,13 @@ function CohortResults({
               key={result.ticker}
               result={result}
               symbol={source?.symbols[result.ticker]}
-              detailed={detailed}
+              selected={selected === result.ticker}
+              wide={wide}
+              evidenceId={evidenceId}
               compared={compare.includes(result.ticker)}
               compareDisabled={disabledReason(result)}
               onCompare={onCompare}
-              onExplain={onExplain}
+              onSelect={onSelect}
             />
           ))}
         </ul>
@@ -626,30 +681,191 @@ function limitations(
   return items;
 }
 
-/** One evaluated asset, explained from its recorded values only. Nothing here is an action. */
-function ExplanationSheet({
-  result,
-  model,
-  setups,
-  cohort,
-  scan,
-  source,
-  onClose,
-}: Readonly<{
+/** One evaluated asset and where it sits in its cohort. */
+interface Selection {
   result: ScanAssetResult;
   model: CanonicalScore;
   setups: ModelSetups;
   cohort: ScanCohort;
+}
+
+/** "Crypto · 1D · #2 of 5" over the ticker: the asset's place, shared by the panel and the sheet. */
+function EvidenceTitle({
+  selection: { result, cohort },
+  scan,
+}: Readonly<{ selection: Selection; scan: MarketScan }>) {
+  return (
+    <div>
+      <span className="asset-details-eyebrow">
+        {CLASS_LABEL[cohort.assetClass]} · {scan.timeframe.toUpperCase()} · #{result.rank} of{' '}
+        {cohort.coverage.evaluated}
+      </span>
+      <h3 className="asset-details-name">{result.ticker}</h3>
+    </div>
+  );
+}
+
+/**
+ * One evaluated asset, explained from its recorded values only. Nothing here is an
+ * action. `scanFacts` repeats the scan's source, model and time for the sheet, which
+ * covers the scan header; beside the list the header already shows them.
+ */
+function Evidence({
+  selection: { result, model, setups, cohort },
+  scan,
+  source,
+  scanFacts,
+}: Readonly<{
+  selection: Selection;
+  scan: MarketScan;
+  source: TradingViewDevSource | undefined;
+  scanFacts: boolean;
+}>) {
+  const titleId = useId();
+  const explanation = explainResult(model, setups);
+  const symbol = source?.symbols[result.ticker];
+  const raw = model.components.weights;
+  const unrounded =
+    raw.rsi * model.components.rsiScore +
+    raw.momentum * model.components.momentumScore +
+    raw.volatility * model.components.volatilityScore;
+  const scanRow = (row: [string, string]) => (scanFacts ? [row] : []);
+  const sourceRows: [string, string][] = [
+    ...scanRow([
+      'Source',
+      PROVIDER_LABEL[cohort.provider ?? ''] ?? cohort.provider ?? 'Not recorded',
+    ]),
+    ['Instrument', [result.instrument, symbol].filter(Boolean).join(' · ') || 'Not recorded'],
+    ...scanRow(['Timeframe', `${scan.timeframe.toUpperCase()} · ${cohort.calendar}`]),
+    ...scanRow(['Model', `${model.version} · scanner ${scan.scannerVersion}`]),
+    ...scanRow(['Candle policy', cohort.candlePolicyVersion ?? 'Not recorded']),
+    ['Last evaluated', resultAsOfLabel(result)],
+    [
+      'Window',
+      `${result.closedCandles} closed ${cohort.assetClass === 'equity' ? 'sessions' : 'candles'}`,
+    ],
+    ...scanRow(['Scored', `${UTC_TIME.format(scan.evaluationTime)} UTC`]),
+    ['Fetched', fetchedLabel(result, scan)],
+  ];
+
+  return (
+    <div className="scan-explain-body">
+      <div className="quant-insight-summary">
+        <span className="quant-breakdown-score" title="Signal Score (0–100)">
+          {model.signal_score}
+        </span>
+        <span className="regime-badge" data-regime={model.regime}>
+          {REGIME_LABELS[model.regime]}
+        </span>
+        <SetupTags result={result} />
+        {!result.setups?.long && !result.setups?.risk && (
+          <span className="market-scan-tag">No setup</span>
+        )}
+        {source && <span className="market-scan-status market-scan-dev">Historical import</span>}
+      </div>
+      <p className="quant-rationale">{model.rationale}</p>
+
+      <section aria-labelledby={`${titleId}-setups`}>
+        <h4 id={`${titleId}-setups`} className="quant-breakdown-title">
+          Setup conditions on the last closed bar
+        </h4>
+        <ClauseList check={explanation.long} />
+        <ClauseList check={explanation.risk} />
+        <p className="market-scan-fit">
+          A standing condition, not a transition: Pine alerts only on the bar a condition turns
+          true. {pineAlertNote(source, result.ticker)}
+        </p>
+      </section>
+
+      <section aria-labelledby={`${titleId}-readings`}>
+        <h4 id={`${titleId}-readings`} className="quant-breakdown-title">
+          Readings and factor scores
+        </h4>
+        <dl className="scan-facts">
+          <div>
+            <dt>RSI(14)</dt>
+            <dd>{model.inputs.rsi.toFixed(1)}</dd>
+          </div>
+          <div>
+            <dt>MACD hist / price</dt>
+            <dd>{percent(model.inputs.momentumPercent)}</dd>
+          </div>
+          <div>
+            <dt>ATR(14) / price</dt>
+            <dd>{ratio(model.inputs.volatilityPercent)}</dd>
+          </div>
+          <div>
+            <dt>Regime</dt>
+            <dd>
+              {REGIME_LABELS[model.regime]}: {explanation.regimeRule}
+            </dd>
+          </div>
+          <div>
+            <dt>Risk profiles</dt>
+            <dd>{profileFit(result)}</dd>
+          </div>
+        </dl>
+        <FactorBars model={model} />
+        <p className="market-scan-fit">
+          Score {model.signal_score} is the weighted blend {unrounded.toFixed(1)}, rounded. Weights
+          are the {REGIME_LABELS[model.regime].toLowerCase()} regime&rsquo;s.
+        </p>
+      </section>
+
+      <section aria-labelledby={`${titleId}-effects`}>
+        <h4 id={`${titleId}-effects`} className="quant-breakdown-title">
+          What supports and weakens it
+        </h4>
+        <FactorEffects explanation={explanation} />
+      </section>
+
+      <section aria-labelledby={`${titleId}-source`}>
+        <h4 id={`${titleId}-source`} className="quant-breakdown-title">
+          {scanFacts ? 'Source and freshness' : 'This asset’s data'}
+        </h4>
+        <dl className="scan-facts">
+          {sourceRows.map(([name, value]) => (
+            <div key={name}>
+              <dt>{name}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section aria-labelledby={`${titleId}-limits`}>
+        <h4 id={`${titleId}-limits`} className="quant-breakdown-title">
+          Limitations
+        </h4>
+        <ul className="market-scan-notes">
+          {limitations(result, cohort, scan, source).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+/** The evidence as a modal sheet, on screens too narrow to show it beside the list. */
+function ExplanationSheet({
+  selection,
+  scan,
+  source,
+  onClose,
+  returnFocus,
+}: Readonly<{
+  selection: Selection;
   scan: MarketScan;
   source: TradingViewDevSource | undefined;
   onClose: () => void;
+  /** Called once the sheet is gone; the review puts focus back on the selected row. */
+  returnFocus: () => void;
 }>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const titleId = useId();
 
   useEffect(() => {
-    const returnFocus = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -661,31 +877,9 @@ function ExplanationSheet({
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = previous;
-      returnFocus?.focus();
+      returnFocus();
     };
-  }, [onClose]);
-
-  const explanation = explainResult(model, setups);
-  const symbol = source?.symbols[result.ticker];
-  const raw = model.components.weights;
-  const unrounded =
-    raw.rsi * model.components.rsiScore +
-    raw.momentum * model.components.momentumScore +
-    raw.volatility * model.components.volatilityScore;
-  const sourceRows: [string, string][] = [
-    ['Source', PROVIDER_LABEL[cohort.provider ?? ''] ?? cohort.provider ?? 'Not recorded'],
-    ['Instrument', [result.instrument, symbol].filter(Boolean).join(' · ') || 'Not recorded'],
-    ['Timeframe', `${scan.timeframe.toUpperCase()} · ${cohort.calendar}`],
-    ['Model', `${model.version} · scanner ${scan.scannerVersion}`],
-    ['Candle policy', cohort.candlePolicyVersion ?? 'Not recorded'],
-    ['Last evaluated', resultAsOfLabel(result)],
-    [
-      'Window',
-      `${result.closedCandles} closed ${cohort.assetClass === 'equity' ? 'sessions' : 'candles'}`,
-    ],
-    ['Scored', `${UTC_TIME.format(scan.evaluationTime)} UTC`],
-    ['Fetched', fetchedLabel(result, scan)],
-  ];
+  }, [onClose, returnFocus]);
 
   return createPortal(
     <div // NOSONAR(S6819): click-to-close backdrop, not an image; Escape closes it from the keyboard
@@ -698,16 +892,10 @@ function ExplanationSheet({
         open
         className="asset-details-sheet scan-explain"
         aria-modal="true"
-        aria-label={`${result.ticker} explanation`}
+        aria-label={`${selection.result.ticker} explanation`}
       >
         <header className="asset-details-header">
-          <div>
-            <span className="asset-details-eyebrow">
-              {CLASS_LABEL[cohort.assetClass]} · {scan.timeframe.toUpperCase()} · #{result.rank} of{' '}
-              {cohort.coverage.evaluated}
-            </span>
-            <h3 className="asset-details-name">{result.ticker}</h3>
-          </div>
+          <EvidenceTitle selection={selection} scan={scan} />
           <button
             ref={closeRef}
             type="button"
@@ -718,107 +906,89 @@ function ExplanationSheet({
             <X size={18} />
           </button>
         </header>
-        <div className="scan-explain-body">
-          <div className="quant-insight-summary">
-            <span className="quant-breakdown-score" title="Signal Score (0–100)">
-              {model.signal_score}
-            </span>
-            <span className="regime-badge" data-regime={model.regime}>
-              {REGIME_LABELS[model.regime]}
-            </span>
-            <SetupTags result={result} />
-            {!result.setups?.long && !result.setups?.risk && (
-              <span className="market-scan-tag">No setup</span>
-            )}
-            {source && (
-              <span className="market-scan-status market-scan-dev">Historical import</span>
-            )}
-          </div>
-          <p className="quant-rationale">{model.rationale}</p>
-
-          <section aria-labelledby={`${titleId}-setups`}>
-            <h4 id={`${titleId}-setups`} className="quant-breakdown-title">
-              Setup conditions on the last closed bar
-            </h4>
-            <ClauseList check={explanation.long} />
-            <ClauseList check={explanation.risk} />
-            <p className="market-scan-fit">
-              A standing condition, not a transition: Pine alerts only on the bar a condition turns
-              true. {pineAlertNote(source, result.ticker)}
-            </p>
-          </section>
-
-          <section aria-labelledby={`${titleId}-readings`}>
-            <h4 id={`${titleId}-readings`} className="quant-breakdown-title">
-              Readings and factor scores
-            </h4>
-            <dl className="scan-facts">
-              <div>
-                <dt>RSI(14)</dt>
-                <dd>{model.inputs.rsi.toFixed(1)}</dd>
-              </div>
-              <div>
-                <dt>MACD hist / price</dt>
-                <dd>{percent(model.inputs.momentumPercent)}</dd>
-              </div>
-              <div>
-                <dt>ATR(14) / price</dt>
-                <dd>{ratio(model.inputs.volatilityPercent)}</dd>
-              </div>
-              <div>
-                <dt>Regime</dt>
-                <dd>
-                  {REGIME_LABELS[model.regime]}: {explanation.regimeRule}
-                </dd>
-              </div>
-            </dl>
-            <FactorBars model={model} />
-            <p className="market-scan-fit">
-              Score {model.signal_score} is the weighted blend {unrounded.toFixed(1)}, rounded.
-              Weights are the {REGIME_LABELS[model.regime].toLowerCase()} regime&rsquo;s.
-            </p>
-          </section>
-
-          <section aria-labelledby={`${titleId}-effects`}>
-            <h4 id={`${titleId}-effects`} className="quant-breakdown-title">
-              What supports and weakens it
-            </h4>
-            <FactorEffects explanation={explanation} />
-          </section>
-
-          <section aria-labelledby={`${titleId}-source`}>
-            <h4 id={`${titleId}-source`} className="quant-breakdown-title">
-              Source and freshness
-            </h4>
-            <dl className="scan-facts">
-              {sourceRows.map(([name, value]) => (
-                <div key={name}>
-                  <dt>{name}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section aria-labelledby={`${titleId}-limits`}>
-            <h4 id={`${titleId}-limits`} className="quant-breakdown-title">
-              Limitations
-            </h4>
-            <ul className="market-scan-notes">
-              {limitations(result, cohort, scan, source).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </section>
-        </div>
+        <Evidence selection={selection} scan={scan} source={source} scanFacts />
       </dialog>
     </div>,
     document.body,
   );
 }
 
+/**
+ * The evidence beside the list on a wide screen. It keeps its own scroll, so
+ * reading one asset never moves the list, its filters or the page.
+ */
+function EvidencePanel({
+  id,
+  selection,
+  filteredOut,
+  scan,
+  source,
+}: Readonly<{
+  id: string;
+  selection: Selection | undefined;
+  /** The selected asset is outside the current view or filters. */
+  filteredOut: boolean;
+  scan: MarketScan;
+  source: TradingViewDevSource | undefined;
+}>) {
+  const ref = useRef<HTMLElement>(null);
+  const ticker = selection?.result.ticker;
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = 0;
+  }, [ticker]);
+  return (
+    <section
+      id={id}
+      ref={ref}
+      className="scan-evidence"
+      tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
+      aria-label={ticker ? `${ticker} evidence` : 'Evidence'}
+    >
+      <p className="sr-only" role="status">
+        {ticker ? `Showing ${ticker} evidence` : ''}
+      </p>
+      {selection ? (
+        <>
+          <header className="scan-evidence-head">
+            <EvidenceTitle selection={selection} scan={scan} />
+            {filteredOut && (
+              <p className="market-scan-fit">
+                Hidden from the list by the current view or filters.
+              </p>
+            )}
+          </header>
+          <Evidence selection={selection} scan={scan} source={source} scanFacts={false} />
+        </>
+      ) : (
+        <p className="scan-evidence-empty">
+          Select an asset to read its evidence: the setup conditions on its last closed bar, its
+          readings and factor weights, its data and its limitations. Up and Down move between rows.
+        </p>
+      )}
+    </section>
+  );
+}
+
 const REGIME_OPTIONS = Object.entries(REGIME_LABELS) as [MarketRegime, string][];
 const PROFILE_OPTIONS = Object.keys(RISK_PROFILE_POLICIES) as RiskProfile[];
+
+/** Wide enough for the evidence to sit beside the list. Matches `.scan-desk.is-wide` in styles.css. */
+const WIDE = '(min-width: 1024px)';
+
+function subscribeWide(onChange: () => void) {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+/** False on the server and wherever matchMedia says so: there the sheet carries the evidence. */
+function useWide(): boolean {
+  return useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE).matches,
+    () => false,
+  );
+}
 
 /**
  * The scan's results for review: long setups, risk warnings or every ranked
@@ -828,15 +998,26 @@ const PROFILE_OPTIONS = Object.keys(RISK_PROFILE_POLICIES) as RiskProfile[];
 export function ScanReview({
   scan,
   source,
-  detailed,
-}: Readonly<{ scan: MarketScan; source: TradingViewDevSource | undefined; detailed: boolean }>) {
+}: Readonly<{ scan: MarketScan; source: TradingViewDevSource | undefined }>) {
   // A scan opens on every ranked asset, so zero long setups never leaves an empty screen;
   // it stays a full answer under its own tab.
   const [view, setView] = useState<ScanView>('all');
   const [filters, setFilters] = useState<ScanFilters>(NO_FILTERS);
   const [compare, setCompare] = useState<readonly string[]>([]);
-  const [explaining, setExplaining] = useState<string | null>(null);
-  const closeExplanation = useCallback(() => setExplaining(null), []);
+  const wide = useWide();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const evidenceId = useId();
+  const select = (ticker: string) => {
+    setSelected(ticker);
+    if (!wide) setSheetOpen(true);
+  };
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
+  const focusSelectedRow = useCallback(() => {
+    const rows = reviewRef.current?.querySelectorAll<HTMLElement>('[data-scan-row]') ?? [];
+    [...rows].find((row) => row.getAttribute('data-scan-row') === selected)?.focus();
+  }, [selected]);
   const toggleCompare = useCallback((ticker: string) => {
     setCompare((current) => {
       if (current.includes(ticker)) return current.filter((item) => item !== ticker);
@@ -853,11 +1034,19 @@ export function ScanReview({
   const set = <K extends keyof ScanFilters>(key: K, value: ScanFilters[K]) =>
     setFilters((current) => ({ ...current, [key]: value }));
 
-  const explained = scan.results.find((result) => result.ticker === explaining);
-  const explainedCohort = cohorts.find((cohort) => cohort.assetClass === explained?.assetClass);
+  const picked = scan.results.find((result) => result.ticker === selected);
+  const pickedCohort = cohorts.find((cohort) => cohort.assetClass === picked?.assetClass);
+  const selection: Selection | undefined =
+    picked?.model && picked.setups && pickedCohort
+      ? { result: picked, model: picked.model, setups: picked.setups, cohort: pickedCohort }
+      : undefined;
+  const filteredOut =
+    picked !== undefined &&
+    ((view !== 'all' && picked.setups?.[view] !== true) ||
+      !matchesFilters(picked, filters, source?.symbols[picked.ticker]));
 
   return (
-    <div className="scan-review">
+    <div className="scan-review" ref={reviewRef}>
       <div className="scan-toolbar">
         <Segmented
           value={view}
@@ -933,35 +1122,49 @@ export function ScanReview({
         </div>
       </div>
       <p className="scan-caption">
-        Ranked by model score within each asset class. A rank is relative, not a recommendation; a
-        score is not a probability or an expected return.
+        {VIEW_RULE[view]}. Ranked by model score within each asset class: a rank is relative, not a
+        recommendation; a score is not a probability or an expected return.
       </p>
-      {cohorts.map((cohort) => (
-        <CohortResults
-          key={cohort.assetClass}
-          cohort={cohort}
-          scan={scan}
-          view={view}
-          filters={filters}
-          source={source}
-          detailed={detailed}
-          compare={compare}
-          onCompare={toggleCompare}
-          onExplain={setExplaining}
-          onClearCompare={() => setCompare([])}
-          onClearFilters={() => setFilters(NO_FILTERS)}
-        />
-      ))}
-      <ReadingGuide scan={scan} source={source} />
-      {explained?.model && explained.setups && explainedCohort && (
+      <div className={cn('scan-desk', wide && 'is-wide')}>
+        <div className="scan-desk-list">
+          {cohorts.map((cohort) => (
+            <CohortResults
+              key={cohort.assetClass}
+              cohort={cohort}
+              scan={scan}
+              view={view}
+              filters={filters}
+              source={source}
+              solo={cohorts.length === 1}
+              selected={selected}
+              wide={wide}
+              evidenceId={evidenceId}
+              compare={compare}
+              onCompare={toggleCompare}
+              onSelect={select}
+              onClearCompare={() => setCompare([])}
+              onClearFilters={() => setFilters(NO_FILTERS)}
+            />
+          ))}
+          <ReadingGuide scan={scan} source={source} />
+        </div>
+        {wide && (
+          <EvidencePanel
+            id={evidenceId}
+            selection={selection}
+            filteredOut={filteredOut}
+            scan={scan}
+            source={source}
+          />
+        )}
+      </div>
+      {!wide && sheetOpen && selection && (
         <ExplanationSheet
-          result={explained}
-          model={explained.model}
-          setups={explained.setups}
-          cohort={explainedCohort}
+          selection={selection}
           scan={scan}
           source={source}
-          onClose={closeExplanation}
+          onClose={closeSheet}
+          returnFocus={focusSelectedRow}
         />
       )}
     </div>
