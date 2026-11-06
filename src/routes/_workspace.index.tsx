@@ -7,12 +7,12 @@ export const Route = createFileRoute('/_workspace/')({
       {
         name: 'description',
         content:
-          'Surface explainable market signals, investigate the factors, and test ideas with backtesting and simulated trading.',
+          'A market scanner that explains every result: each asset’s score, rank, and the setup conditions it meets or misses.',
       },
       { property: 'og:title', content: 'Popup — Signals worth opening' },
       {
         property: 'og:description',
-        content: 'See what matters. Test what follows.',
+        content: 'A market scanner that explains every result.',
       },
       { property: 'og:type', content: 'website' },
       { name: 'twitter:card', content: 'summary_large_image' },

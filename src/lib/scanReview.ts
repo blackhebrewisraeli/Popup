@@ -363,6 +363,34 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
   };
 }
 
+export function clauseValue(clause: SetupClause): string {
+  return `${clause.label} ${clause.actual}`;
+}
+
+export function clauseShortfall(clause: SetupClause): string {
+  return `${clauseValue(clause)}, needs ${clause.rule}`;
+}
+
+/**
+ * A row's short reason: the recorded clauses that decide its setup state, worded
+ * from the same explanation the evidence shows. Long holds on every clause, risk
+ * on any; otherwise it names what ZC LONG is short of.
+ */
+export function rowReason({ long, risk, regimeRule }: ScanExplanation): string {
+  const met = (clause: SetupClause) =>
+    clause.label === 'Regime'
+      ? `High-volatility: ${regimeRule}`
+      : `${clauseValue(clause)} ${clause.rule}`;
+  if (long.holds) return long.clauses.map(met).join(', ');
+  if (risk.holds)
+    return risk.clauses
+      .filter((clause) => clause.met)
+      .map(met)
+      .join(', ');
+  const unmet = long.clauses.filter((clause) => !clause.met);
+  return `Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`;
+}
+
 export interface Freshness {
   stale: boolean;
   detail: string;

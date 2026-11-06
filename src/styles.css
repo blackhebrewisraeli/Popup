@@ -7240,20 +7240,23 @@ button.paper-ticker:hover {
 }
 
 /* ===== Marketing landing page ===== */
+/* Signed out: one example scan in Research's own language. Overrides of Research
+   classes stay under .landing, so Research itself is untouched. */
 .landing {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
+  font-variant-numeric: tabular-nums;
 }
 .landing-header {
   position: sticky;
   top: 0;
   z-index: 50;
-  height: 72px;
+  height: 64px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--background) 72%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: color-mix(in oklch, var(--background) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .landing-nav {
   display: flex;
@@ -7262,314 +7265,118 @@ button.paper-ticker:hover {
   height: 100%;
   gap: 16px;
 }
-.landing-nav-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.landing-ghost-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: transparent;
-  color: var(--foreground);
-  font:
-    600 12.5px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  text-decoration: none;
-  cursor: pointer;
-  transition:
-    transform 0.15s ease-out,
-    background 0.15s ease-out,
-    border-color 0.15s ease-out,
-    box-shadow 0.2s ease-out;
-}
-.landing-ghost-button:hover {
-  border-color: color-mix(in oklch, var(--brand-blue) 55%, transparent);
-  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  box-shadow: 0 0 22px color-mix(in oklch, var(--brand-blue) 10%, transparent);
-}
-.landing-ghost-button:active {
-  transform: scale(0.97);
-}
+.landing-ghost-button,
 .landing-cta-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 40px;
-  padding: 0 18px;
-  border: none;
-  border-radius: 12px;
-  background: var(--brand-blue);
-  color: var(--primary-foreground);
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
   font:
-    600 12.5px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+    600 14px 'DM Sans',
+    sans-serif;
   cursor: pointer;
-  box-shadow: 0 0 26px color-mix(in oklch, var(--brand-blue) 14%, transparent);
   transition:
-    transform 0.15s ease-out,
-    filter 0.15s ease-out,
-    box-shadow 0.2s ease-out;
+    transform 0.12s ease-out,
+    background 0.15s ease-out,
+    filter 0.15s ease-out;
+}
+.landing-ghost-button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+}
+.landing-ghost-button:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.landing-cta-button {
+  height: 44px;
+  padding: 0 20px;
+  border: none;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 .landing-cta-button:hover {
   filter: brightness(1.05);
-  box-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 22%, transparent);
 }
-.landing-cta-button:active {
-  transform: scale(0.97);
+.landing-cta-button:active,
+.landing-ghost-button:active {
+  transform: scale(0.98);
 }
 .landing-cta-button:focus-visible,
 .landing-ghost-button:focus-visible {
-  outline: 2px solid var(--brand-blue);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
-.landing-cta-button-lg {
-  height: 50px;
-  padding: 0 26px;
-  font-size: 13.5px;
-}
-.landing-ghost-button-lg {
-  height: 50px;
-  padding: 0 26px;
-  font-size: 13.5px;
-}
-.landing-hero {
-  position: relative;
-  overflow: hidden;
-  padding: 96px 0 72px;
-  border-bottom: 1px solid var(--border);
-}
-.landing-hero-glow {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(
-      640px 320px at 18% 0%,
-      color-mix(in oklch, var(--brand-blue) 18%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      520px 300px at 85% 10%,
-      color-mix(in oklch, var(--accent-amber) 9%, transparent),
-      transparent 70%
-    ),
-    linear-gradient(color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px),
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--foreground) 3%, transparent) 1px,
-      transparent 1px
-    );
-  background-size:
-    auto,
-    auto,
-    42px 42px,
-    42px 42px;
-}
-.landing-hero-inner {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-  text-align: center;
-}
-.landing-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 30%, transparent);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  color: var(--brand-blue);
-  font:
-    600 11px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.landing-intro {
+  display: grid;
+  justify-items: start;
+  gap: 14px;
+  max-width: 720px;
+  padding: 56px 0 40px;
 }
 .landing-headline {
-  max-width: 860px;
+  margin: 0;
   font:
-    650 clamp(38px, 6.5vw, 72px) 'DM Sans',
+    650 clamp(32px, 4.6vw, 52px) / 1.06 'DM Sans',
     sans-serif;
-  line-height: 1.05;
-  letter-spacing: -0.045em;
-}
-.landing-headline-accent {
-  color: var(--brand-blue);
-  text-shadow: 0 0 40px color-mix(in oklch, var(--brand-blue) 18%, transparent);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
 }
 .landing-subheadline {
-  max-width: 640px;
+  max-width: 600px;
+  margin: 0 0 8px;
   font-size: 17px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--muted-foreground);
 }
-.landing-cta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 12px;
-}
-.landing-stats {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 40px;
-  margin-top: 24px;
-}
-.landing-stat {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.landing-stat-value {
-  font:
-    600 24px 'JetBrains Mono',
-    monospace;
-  color: var(--foreground);
-}
-.landing-stat-label {
-  font:
-    600 10.5px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.landing-features {
-  padding: 88px 0;
-}
-.landing-section-head {
-  max-width: 640px;
-  margin: 0 auto 48px;
-  text-align: center;
-}
-.landing-section-title {
-  font:
-    600 clamp(26px, 4vw, 40px) 'DM Sans',
-    sans-serif;
-  letter-spacing: -0.02em;
-}
-.landing-section-sub {
-  margin-top: 12px;
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--muted-foreground);
-}
-.landing-grid {
+/* The example: Research's list beside its evidence, wide at the same 1024px (STACKED in LandingPage.tsx). */
+.landing-demo-desk {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 0 28px;
+  align-items: start;
 }
-.landing-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--card);
-  box-shadow: var(--card-shadow);
-  overflow: hidden;
-  transition:
-    border-color 0.2s ease-out,
-    box-shadow 0.2s ease-out;
+/* No Compare column here, so rows and their labels take the full width. */
+.landing-demo :is(.scan-list-head, .scan-row) {
+  grid-template-columns: minmax(0, 1fr);
 }
-.landing-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    280px 120px at 50% 0%,
-    color-mix(in oklch, var(--brand-blue) 8%, transparent),
-    transparent 70%
-  );
-  opacity: 0;
-  transition: opacity 0.2s ease-out;
+/* Research centers its last heading, "Compare"; here the last one is the labels themselves. */
+.landing-demo .scan-list-head > :last-child {
+  text-align: start;
 }
-.landing-card:hover {
-  border-color: color-mix(in oklch, var(--brand-blue) 35%, transparent);
-  box-shadow:
-    var(--card-shadow),
-    0 0 30px color-mix(in oklch, var(--brand-blue) 6%, transparent);
+.landing-demo-detail {
+  padding: 8px 0 4px 24px;
+  border-left: 1px solid var(--border);
+  scroll-margin: 80px 0 16px;
 }
-.landing-card:hover::after {
-  opacity: 1;
+.landing-demo-detail .scan-explain-body {
+  gap: 14px;
+  padding: 14px 0 0;
 }
-.landing-card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  color: var(--brand-blue);
-  background: color-mix(in oklch, var(--brand-blue) 10%, transparent);
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 24%, transparent);
-}
-.landing-card-title {
-  font:
-    600 17px 'DM Sans',
-    sans-serif;
-}
-.landing-card-desc {
-  font-size: 13.5px;
-  line-height: 1.6;
+.landing-demo-note {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.5;
   color: var(--muted-foreground);
 }
-.landing-final-cta {
-  padding: 32px 0 88px;
+.landing-guide {
+  margin-top: 40px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
-.landing-final-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 56px 28px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  text-align: center;
-  background:
-    radial-gradient(
-      520px 260px at 50% 0%,
-      color-mix(in oklch, var(--brand-blue) 12%, transparent),
-      transparent 70%
-    ),
-    var(--card);
-  box-shadow: var(--card-shadow);
+.landing-guide dd {
+  font-size: 13px;
 }
-.landing-final-icon {
-  color: var(--brand-blue);
-}
-.landing-final-title {
-  font:
-    600 clamp(26px, 4vw, 38px) 'DM Sans',
-    sans-serif;
-  letter-spacing: -0.02em;
-}
-.landing-final-sub {
-  max-width: 480px;
-  font-size: 15px;
-  line-height: 1.6;
+.landing-secondary {
+  margin: 28px 0 0;
+  padding-bottom: 64px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted-foreground);
 }
 .landing-footer {
@@ -7606,20 +7413,26 @@ button.paper-ticker:hover {
     opacity: 0;
   }
 }
-@media (max-width: 900px) {
-  .landing-grid {
-    grid-template-columns: repeat(2, 1fr);
+@media (max-width: 1023px) {
+  .landing-demo-desk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .landing-demo-detail {
+    margin-top: 20px;
+    padding: 0;
+    border-left: 0;
   }
 }
-@media (max-width: 560px) {
-  .landing-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 760px) {
+  /* Research keeps "Compare" as a label here; the example has nothing left to label. */
+  .landing-demo .scan-list-head {
+    display: none;
   }
-  .landing-hero {
-    padding: 64px 0 48px;
+  .landing-intro {
+    padding: 16px 0 28px;
   }
-  .landing-stats {
-    gap: 22px;
+  .landing-subheadline {
+    font-size: 16px;
   }
 }
 
