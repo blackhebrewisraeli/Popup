@@ -3,13 +3,13 @@
   "description": "Popup surfaces explainable market signals for research, backtesting, and simulated trading.",
   "author": "blackhebrewisraeli (https://github.com/blackhebrewisraeli)",
   "license": "MIT",
-  "homepage": "https://zero-chart.vercel.app",
+  "homepage": "https://popup-signals.vercel.app",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/blackhebrewisraeli/ZeroChart.git"
+    "url": "git+https://github.com/blackhebrewisraeli/Popup.git"
   },
   "bugs": {
-    "url": "https://github.com/blackhebrewisraeli/ZeroChart/issues"
+    "url": "https://github.com/blackhebrewisraeli/Popup/issues"
   },
   "keywords": [
     "quant",
