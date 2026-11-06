@@ -51,7 +51,6 @@ function ticketFootnote(portfolioType: PortfolioType | undefined): string {
 
 export function TradeTicket({
   asset,
-  variant = 'compact',
   portfolioType,
   intent = 'tactical',
   initialSide = 'buy',
@@ -59,7 +58,6 @@ export function TradeTicket({
   label,
 }: Readonly<{
   asset: Asset;
-  variant?: 'hero' | 'compact';
   /** Ledger that records fills (the active one). Omitted: mock execution only. */
   portfolioType?: PortfolioType;
   /** Core rebalance or Lab tactical trade — tagged on the recorded transaction. */
@@ -226,25 +224,14 @@ export function TradeTicket({
 
   return (
     <>
-      {variant === 'hero' ? (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="ticket-trigger ticket-trigger-hero"
-          onClick={openTicket}
-        >
-          <Zap size={16} /> Trade {asset.ticker}
-        </button>
-      ) : (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="ticket-trigger ticket-trigger-compact"
-          onClick={openTicket}
-        >
-          <Zap size={15} /> {label ?? 'Trade'}
-        </button>
-      )}
+      <button
+        ref={triggerRef}
+        type="button"
+        className="ticket-trigger ticket-trigger-compact"
+        onClick={openTicket}
+      >
+        <Zap size={15} /> {label ?? 'Trade'}
+      </button>
 
       {mounted &&
         createPortal(

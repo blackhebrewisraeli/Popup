@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
 import { classifyTicker } from '@/lib/ticker';
-import { toTradingViewSymbol } from '@/lib/tradingViewSymbol';
 
 export type Signal = 'Green' | 'Yellow' | 'Red';
 export interface AssetStatus {
@@ -78,14 +77,6 @@ export function scoreTone(score: number | null) {
   return 'score-low';
 }
 
-export function formatRisk(value: number | null) {
-  return value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`;
-}
-
-export function formatReward(value: number | null) {
-  return value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(1)}%`;
-}
-
 export function formatChange(value: number | null) {
   if (value === null || !Number.isFinite(value)) return '—';
   const pct = value * 100;
@@ -98,11 +89,6 @@ export function formatVolume(value: number | null) {
 
 export function formatRsi(value: number | null) {
   return value === null || !Number.isFinite(value) ? '—' : value.toFixed(1);
-}
-
-/** TradingView symbol — delegated to the canonical mapper (F-3.2d). */
-export function formatTradingViewSymbol(ticker: string) {
-  return toTradingViewSymbol(ticker);
 }
 
 export type AssetClass = 'Crypto' | 'Forex' | 'Stocks';

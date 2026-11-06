@@ -294,7 +294,9 @@ body {
   letter-spacing: -0.045em;
 }
 .brand-wordmark-uppercase {
-  font: 600 13px/1 'JetBrains Mono', monospace;
+  font:
+    600 13px/1 'JetBrains Mono',
+    monospace;
   letter-spacing: 0.16em;
 }
 .terminal-tag {
@@ -364,46 +366,6 @@ body {
   line-height: 1.15;
   text-align: center;
   white-space: normal;
-}
-
-.trade-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  height: 42px;
-  padding: 0 22px;
-  border-radius: 12px;
-  font:
-    600 13px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--primary-foreground);
-  border: none;
-  cursor: pointer;
-  background: var(--primary);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
-  text-decoration: none;
-  transition:
-    transform 0.15s,
-    box-shadow 0.2s,
-    filter 0.2s;
-}
-.trade-button:hover {
-  transform: translateY(-1px);
-  color: var(--primary-foreground);
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
-  filter: brightness(1.05);
-}
-.trade-button:active {
-  transform: scale(0.97);
-}
-.trade-button-lg {
-  height: 58px;
-  padding: 0 34px;
-  font-size: 15px;
-  border-radius: 14px;
 }
 
 .markets {
@@ -5601,16 +5563,6 @@ button.paper-ticker:hover {
 .ticket-trigger:active {
   transform: scale(0.96);
 }
-.ticket-trigger-hero {
-  height: 58px;
-  padding: 0 30px;
-  border-radius: 14px;
-  font-size: 15px;
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
-}
-.ticket-trigger-hero:hover {
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
-}
 .ticket-trigger-compact {
   height: 38px;
   padding: 0 18px;
@@ -7319,8 +7271,16 @@ button.paper-ticker:hover {
       transparent 70%
     ),
     linear-gradient(color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 3%, transparent) 1px, transparent 1px);
-  background-size: auto, auto, 42px 42px, 42px 42px;
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--foreground) 3%, transparent) 1px,
+      transparent 1px
+    );
+  background-size:
+    auto,
+    auto,
+    42px 42px,
+    42px 42px;
 }
 .landing-hero-inner {
   position: relative;
