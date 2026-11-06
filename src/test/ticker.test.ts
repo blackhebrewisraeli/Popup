@@ -7,7 +7,7 @@ import {
   toDisplayTicker,
 } from '@/lib/ticker';
 import { toTradingViewSymbol } from '@/lib/tradingViewSymbol';
-import { formatTradingViewSymbol, getAssetClass, getBrokerRoute } from '@/lib/assets';
+import { getAssetClass, getBrokerRoute } from '@/lib/assets';
 
 describe('classifyTicker (M1-T4, F-3.2d)', () => {
   it('classifies each ticker into exactly one kind', () => {
@@ -53,7 +53,7 @@ describe('classifyTicker (M1-T4, F-3.2d)', () => {
       expect(isBinanceCrypto(ticker)).toBe(true);
       expect(getAssetClass(ticker)).toBe('Crypto');
       expect(getBrokerRoute(ticker).label).toBe('Trade on Binance');
-      expect(formatTradingViewSymbol(ticker)).toBe('BINANCE:BTCUSDT');
+      expect(toTradingViewSymbol(ticker)).toBe('BINANCE:BTCUSDT');
     }
     expect(getAssetClass('AAPL')).toBe('Stocks');
     expect(getBrokerRoute('AAPL').label).toBe('Trade on eToro');

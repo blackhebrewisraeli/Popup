@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpRight, ExternalLink, X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { getAssetClass, type Asset } from '@/lib/assets';
 import { cn, closeOnBackdrop } from '@/lib/utils';
 
@@ -50,10 +50,8 @@ const TRADFI_BROKERS: BrokerOption[] = [
 
 export function BrokerModal({
   asset,
-  variant = 'row',
 }: Readonly<{
   asset: Asset;
-  variant?: 'hero' | 'row';
 }>) {
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -109,27 +107,16 @@ export function BrokerModal({
 
   return (
     <>
-      {variant === 'hero' ? (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="trade-button trade-button-lg"
-          onClick={openModal}
-        >
-          <ArrowUpRight size={16} /> Compare brokers
-        </button>
-      ) : (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="markets-trade-link"
-          onClick={openModal}
-          aria-label={`Compare brokers for ${asset.ticker}`}
-          title={`Compare brokers for ${asset.ticker}`}
-        >
-          <ExternalLink size={15} />
-        </button>
-      )}
+      <button
+        ref={triggerRef}
+        type="button"
+        className="markets-trade-link"
+        onClick={openModal}
+        aria-label={`Compare brokers for ${asset.ticker}`}
+        title={`Compare brokers for ${asset.ticker}`}
+      >
+        <ExternalLink size={15} />
+      </button>
 
       {open &&
         createPortal(

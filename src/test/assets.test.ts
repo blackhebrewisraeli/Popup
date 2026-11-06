@@ -18,10 +18,7 @@ import {
   fetchAssets,
   formatChange,
   formatPrice,
-  formatReward,
-  formatRisk,
   formatRsi,
-  formatTradingViewSymbol,
   formatVolume,
   generateTrendData,
   getAssetClass,
@@ -54,16 +51,11 @@ describe('asset data', () => {
     response.mockResolvedValueOnce({ data: null, error: { message: 'Permission denied' } });
     await expect(fetchAssets()).rejects.toThrow('Permission denied');
   });
-  it('formats percent points and handles missing values', () => {
-    expect(formatRisk(0.032)).toBe('3.2%');
-    expect(formatRisk(null)).toBe('—');
+  it('formats prices and handles missing values', () => {
     expect(formatPrice(null)).toBe('—');
     expect(formatPrice(67432.8)).toBe('$67,432.80');
   });
-  it('formats reward percentages and volume spikes', () => {
-    expect(formatReward(0.052)).toBe('5.2%');
-    expect(formatReward(0)).toBe('0.0%');
-    expect(formatReward(null)).toBe('—');
+  it('formats volume spikes', () => {
     expect(formatVolume(1.8)).toBe('1.8x');
     expect(formatVolume(null)).toBe('—');
   });
@@ -82,12 +74,6 @@ describe('asset data', () => {
     expect(formatChange(-0.031)).toBe('-3.10%');
     expect(formatChange(0)).toBe('+0.00%');
     expect(formatChange(null)).toBe('—');
-  });
-  it('maps tickers to TradingView symbols', () => {
-    expect(formatTradingViewSymbol('EURUSD=X')).toBe('FX:EURUSD');
-    expect(formatTradingViewSymbol('BTC-USD')).toBe('BINANCE:BTCUSDT');
-    expect(formatTradingViewSymbol('AAPL')).toBe('NASDAQ:AAPL');
-    expect(formatTradingViewSymbol('MSFT')).toBe('NASDAQ:MSFT');
   });
   it('routes tickers to external brokers', () => {
     expect(getBrokerRoute('BTC-USD')).toEqual({

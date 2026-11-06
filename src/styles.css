@@ -366,46 +366,6 @@ body {
   white-space: normal;
 }
 
-.trade-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  height: 42px;
-  padding: 0 22px;
-  border-radius: 12px;
-  font:
-    600 13px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--primary-foreground);
-  border: none;
-  cursor: pointer;
-  background: var(--primary);
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
-  text-decoration: none;
-  transition:
-    transform 0.15s,
-    box-shadow 0.2s,
-    filter 0.2s;
-}
-.trade-button:hover {
-  transform: translateY(-1px);
-  color: var(--primary-foreground);
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
-  filter: brightness(1.05);
-}
-.trade-button:active {
-  transform: scale(0.97);
-}
-.trade-button-lg {
-  height: 58px;
-  padding: 0 34px;
-  font-size: 15px;
-  border-radius: 14px;
-}
-
 .markets {
   margin-top: 60px;
 }
@@ -5600,16 +5560,6 @@ button.paper-ticker:hover {
 }
 .ticket-trigger:active {
   transform: scale(0.96);
-}
-.ticket-trigger-hero {
-  height: 58px;
-  padding: 0 30px;
-  border-radius: 14px;
-  font-size: 15px;
-  box-shadow: 0 0 30px color-mix(in oklch, var(--primary) 18%, transparent);
-}
-.ticket-trigger-hero:hover {
-  box-shadow: 0 0 44px color-mix(in oklch, var(--primary) 27%, transparent);
 }
 .ticket-trigger-compact {
   height: 38px;
