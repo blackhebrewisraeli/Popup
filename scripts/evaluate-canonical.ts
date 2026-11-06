@@ -59,7 +59,14 @@ import {
   ScanSnapshotConflictError,
   scanSummary,
 } from './marketScanStore';
-import { importTradingViewScan } from './tradingViewImport';
+import {
+  captureResponses,
+  finishRetrieval,
+  importTradingViewScan,
+  recordFailure,
+  RETRIEVAL_STORE,
+  startRetrieval,
+} from './tradingViewImport';
 import {
   initializeOpportunityCampaign,
   opportunityCampaignStatus,
@@ -103,6 +110,10 @@ const USAGE = `Usage:
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
   npm run evaluate -- tradingview-import EXPORT.json [--store DIR]
+  npm run evaluate -- tradingview-start [--store DIR]
+  npm run evaluate -- tradingview-capture RETRIEVAL_ID [SYMBOL=FILE ...] [--alerts SYMBOL,...|none] [--store DIR]
+  npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "ERROR" [--store DIR]
+  npm run evaluate -- tradingview-finish RETRIEVAL_ID [--store DIR] [--scan-store DIR]
   npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]`;
 
@@ -488,6 +499,61 @@ const commandHandlers: Record<string, CommandHandler> = {
       });
       process.exitCode = 1;
     }
+  },
+  // The owner's agent retrieves; these bind its saved get_ohlcv results, import and reproduce.
+  'tradingview-start': async (value, args) => {
+    const allArgs = [value, ...args].filter((item): item is string => Boolean(item));
+    assertOptions('tradingview-start', allArgs, ['--store']);
+    printJson(await startRetrieval({ store: storePath(allArgs, RETRIEVAL_STORE) }));
+  },
+  'tradingview-capture': async (value, args) => {
+    const pairs: Array<{ symbol: string; file: string }> = [];
+    for (let index = 0; index < args.length; index += 1) {
+      const arg = args[index]!;
+      if (arg === '--alerts' || arg === '--store') {
+        if (index + 1 >= args.length) throw new Error(`tradingview-capture: ${arg} needs a value`);
+        index += 1;
+      } else if (arg.indexOf('=') > 0) {
+        const at = arg.indexOf('=');
+        pairs.push({ symbol: arg.slice(0, at), file: resolve(arg.slice(at + 1)) });
+      } else {
+        throw new Error(`tradingview-capture: expected SYMBOL=FILE, got ${arg}`);
+      }
+    }
+    const alerts = option(args, '--alerts');
+    printJson(
+      await captureResponses({
+        store: storePath(args, RETRIEVAL_STORE),
+        retrievalId: requiredValue('tradingview-capture', value),
+        pairs,
+        ...(alerts === undefined
+          ? {}
+          : { alerts: alerts === 'none' ? [] : alerts.split(',').filter(Boolean) }),
+      }),
+    );
+  },
+  'tradingview-fail': async (value, args) => {
+    const [symbol, error, ...rest] = args;
+    assertOptions('tradingview-fail', rest, ['--store']);
+    printJson(
+      await recordFailure({
+        store: storePath(rest, RETRIEVAL_STORE),
+        retrievalId: requiredValue('tradingview-fail', value),
+        symbol: requiredValue('tradingview-fail SYMBOL', symbol),
+        error: requiredValue('tradingview-fail ERROR', error),
+      }),
+    );
+  },
+  'tradingview-finish': async (value, args) => {
+    assertOptions('tradingview-finish', args, ['--store', '--scan-store']);
+    const report = await finishRetrieval({
+      store: storePath(args, RETRIEVAL_STORE),
+      scanStore: safeCliPath(option(args, '--scan-store') ?? SCAN_STORE, '--scan-store'),
+      retrievalId: requiredValue('tradingview-finish', value),
+      repositoryCommit: `${await repositoryCommit()}${(await worktreeDirty()) ? '-dirty' : ''}`,
+    });
+    printJson(report);
+    if (report.outcome !== 'COMPLETE') process.exitCode = 1;
   },
   // Retrospective studies frozen in docs/scanner-research.v*.json; they write only git-ignored files.
   'scanner-research': (value, args) =>

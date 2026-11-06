@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, unlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,11 +8,16 @@ import { sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
 import { bars, EQUITY_NOW, falling, rising, wave } from '@/test/usEquityFixtures';
 import { reproduceScan, ScanSnapshotConflictError } from './marketScanStore';
 import {
+  captureResponses,
+  finishRetrieval,
   importInputs,
   importTradingViewScan,
   parseExport,
   publishTradingViewDevScan,
+  recordFailure,
+  retrievalStatus,
   selectDevScanUniverse,
+  startRetrieval,
   TRADINGVIEW_SYMBOLS,
   tradingViewSeries,
   type TradingViewOhlcvExport,
@@ -473,5 +478,169 @@ describe('importTradingViewScan', () => {
     expect(snapshot.scan.status).toBe('FAILED');
     expect(snapshot.scan.coverage.byStatus.FETCH_FAILED).toBe(50);
     expect(view.source.notice).toBe('No market-data notice was returned.');
+  });
+});
+
+describe('TradingView retrieval capture', () => {
+  const SYMBOLS = selectDevScanUniverse().map((ticker) => TRADINGVIEW_SYMBOLS[ticker]!);
+  const RECEIVED = EQUITY_NOW - 60_000;
+  let saves = 0;
+
+  /** A labeled synthetic `get_ohlcv` result saved the way the agent's client saves one. */
+  async function saved(root: string, symbol: string, path = wave, at = RECEIVED) {
+    const file = join(root, `get-ohlcv-${(saves += 1)}.txt`);
+    await writeFile(file, JSON.stringify(response(symbol, path)));
+    await utimes(file, new Date(at), new Date(at));
+    return file;
+  }
+
+  async function retrieval(startedAt = EQUITY_NOW - 120_000) {
+    const root = await mkdtemp(join(tmpdir(), 'zerochart-tv-capture-'));
+    const options = { store: join(root, 'tradingview'), now: () => EQUITY_NOW };
+    const started = await startRetrieval({ ...options, now: () => startedAt });
+    const ids = { ...options, retrievalId: started.retrievalId };
+    const capture = async (symbols: readonly string[], at = RECEIVED) =>
+      captureResponses({
+        ...ids,
+        pairs: await Promise.all(
+          symbols.map(async (symbol, i) => ({
+            symbol,
+            file: await saved(root, symbol, PATHS[i % PATHS.length], at),
+          })),
+        ),
+      });
+    const finish = () =>
+      finishRetrieval({
+        ...ids,
+        scanStore: join(root, 'scans'),
+        repositoryCommit: COMMIT,
+        now: () => EQUITY_NOW + 5 * 60_000,
+      });
+    return { root, started, ids, capture, finish };
+  }
+
+  it('binds each saved result to the symbol requested for it, never to a file name', async () => {
+    const { root, started, ids } = await retrieval();
+    expect(started).toMatchObject({ requiredSession: '2026-10-27', window: 'OPEN', captured: 0 });
+    expect(started.retry).toEqual(SYMBOLS);
+
+    // Two parallel calls saved to one name: the file holds only the later response.
+    const overwritten = await saved(root, SYMBOLS[1]!);
+    const earlier = await saved(root, SYMBOLS[2]!, wave, EQUITY_NOW - 10 * 60_000);
+    const { results, status } = await captureResponses({
+      ...ids,
+      pairs: [
+        { symbol: SYMBOLS[0]!, file: overwritten },
+        { symbol: SYMBOLS[1]!, file: overwritten },
+        { symbol: SYMBOLS[2]!, file: earlier },
+        { symbol: 'NYSE:XOM', file: overwritten },
+        { symbol: SYMBOLS[3]!, file: join(root, 'absent.txt') },
+      ],
+    });
+    expect(results.map(({ outcome }) => outcome)).toEqual([
+      'REJECTED',
+      'CAPTURED',
+      'REJECTED',
+      'REJECTED',
+      'REJECTED',
+    ]);
+    expect(results[0]!.detail).toMatch(`holds ${SYMBOLS[1]}, not ${SYMBOLS[0]}`);
+    expect(results[2]!.detail).toMatch(/before this retrieval started/);
+    expect(results[3]!.detail).toMatch(/not one of the 50 requested symbols/);
+    expect(status).toMatchObject({ captured: 1, window: 'OPEN', conflicting: [] });
+    expect(status.retry).toEqual(SYMBOLS.filter((symbol) => symbol !== SYMBOLS[1]));
+  });
+
+  it('retries only missing or failed symbols, then imports a complete scan that reproduces', async () => {
+    const { root, ids, capture, finish } = await retrieval();
+    const [first, second, , fourth] = SYMBOLS as [string, string, string, string];
+    await capture(SYMBOLS.slice(2));
+    await recordFailure({ ...ids, symbol: first, error: 'HTTP 429' });
+    const unsuccessful = join(root, 'unsuccessful.txt');
+    await writeFile(unsuccessful, JSON.stringify({ ...response(second), success: false }));
+    await utimes(unsuccessful, new Date(RECEIVED), new Date(RECEIVED));
+    const failed = await captureResponses({
+      ...ids,
+      pairs: [{ symbol: second, file: unsuccessful }],
+    });
+    expect(failed.results[0]!.outcome).toBe('FAILED');
+    expect(failed.status.failed).toEqual([
+      { symbol: first, reason: 'HTTP 429' },
+      { symbol: second, reason: 'get_ohlcv did not succeed' },
+    ]);
+    expect(failed.status.retry).toEqual([first, second]);
+
+    const retried = await capture([first, second]);
+    expect(retried.results.map(({ outcome }) => outcome)).toEqual(['RETRIED', 'RETRIED']);
+    const ignored = await recordFailure({ ...ids, symbol: fourth, error: 'late timeout' });
+    expect(ignored.outcome).toBe('IGNORED');
+    expect(ignored.status).toMatchObject({ captured: 50, retry: [], failed: [], missing: [] });
+
+    const report = await finish();
+    expect(report).toMatchObject({
+      outcome: 'COMPLETE',
+      requested: 50,
+      evaluated: 50,
+      failed: 0,
+      failures: [],
+      evaluatedSession: '2026-10-27',
+      importStatus: 'IMPORTED',
+      reproduction: 'MATCH',
+      retrieval: { completedAt: new Date(RECEIVED).toISOString() },
+    });
+    expect(report.research).toContain(report.scanId);
+
+    // Importing the same retrieval again changes nothing.
+    const exported = await readFile(report.exportPath, 'utf8');
+    const viewPath = join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE);
+    const view = await readFile(viewPath, 'utf8');
+    const duplicate = await finish();
+    expect(duplicate).toMatchObject({ importStatus: 'ALREADY_IMPORTED', scanId: report.scanId });
+    expect(await readFile(report.exportPath, 'utf8')).toBe(exported);
+    expect(await readFile(viewPath, 'utf8')).toBe(view);
+  });
+
+  it('keeps a symbol that was never captured visible as a failure in a partial scan', async () => {
+    const { capture, finish } = await retrieval();
+    await capture(SYMBOLS.slice(1));
+    const report = await finish();
+    expect(report).toMatchObject({ outcome: 'PARTIAL', evaluated: 49, failed: 1 });
+    expect(report.reproduction).toBe('MATCH');
+    expect(report.failures).toEqual([
+      expect.objectContaining({ symbol: SYMBOLS[0], status: 'FETCH_FAILED' }),
+    ]);
+    expect(report.failures[0]!.detail).toMatch(/never retrieved/);
+  });
+
+  it('fails a symbol with two differing responses rather than choosing one', async () => {
+    const { root, ids, capture, finish } = await retrieval();
+    await capture(SYMBOLS);
+    const identical = await saved(root, SYMBOLS[0]!, PATHS[0]);
+    const different = await saved(root, SYMBOLS[0]!, falling);
+    const { results, status } = await captureResponses({
+      ...ids,
+      pairs: [
+        { symbol: SYMBOLS[0]!, file: identical },
+        { symbol: SYMBOLS[0]!, file: different },
+      ],
+    });
+    expect(results.map(({ outcome }) => outcome)).toEqual(['DUPLICATE', 'CONFLICT']);
+    expect(status).toMatchObject({ captured: 49, conflicting: [SYMBOLS[0]], retry: [] });
+    const report = await finish();
+    expect(report).toMatchObject({ outcome: 'PARTIAL', evaluated: 49, reproduction: 'MATCH' });
+    expect(report.failures[0]!.detail).toMatch(/conflicting get_ohlcv responses/);
+  });
+
+  it('stops offering retries once a session becomes final, and the import refuses the retrieval', async () => {
+    // 04:00 UTC on 28 Oct: 27 Oct turns final at 05:00 UTC, before the responses arrive.
+    const { ids, capture, finish } = await retrieval(EQUITY_NOW - 13 * 3_600_000);
+    const early = await retrievalStatus({ ...ids, now: () => EQUITY_NOW - 12.5 * 3_600_000 });
+    expect(early).toMatchObject({ requiredSession: '2026-10-26', window: 'OPEN' });
+    expect(early.validUntil).toBe('2026-10-28T05:00:00.000Z');
+    const { status } = await capture(SYMBOLS);
+    expect(status).toMatchObject({ window: 'CLOSED', captured: 50, retry: [] });
+    const report = await finish();
+    expect(report).toMatchObject({ outcome: 'REFUSED', scanId: null, reproduction: null });
+    expect(report.refusal).toMatch(/became final during retrieval/);
   });
 });
