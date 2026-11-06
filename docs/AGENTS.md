@@ -1,4 +1,4 @@
-## ZeroChart architecture
+## Popup architecture
 
 - Keep the dashboard at the index route with local mode/filter state; this is a single trading workspace, not a marketing site.
 - Read public assets_status through the generated browser client and React Query, with ordered pagination; this keeps RLS and fetch lifecycle management intact.

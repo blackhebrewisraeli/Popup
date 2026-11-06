@@ -1,4 +1,4 @@
-# Contributing to ZeroChart
+# Contributing to Popup
 
 Thanks for helping out. This guide covers local setup, the standards every change is held to, and how to get a pull request merged.
 

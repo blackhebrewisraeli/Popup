@@ -1,6 +1,6 @@
 # Architecture
 
-ZeroChart is a TanStack Start (React 19, SSR) app deployed on Vercel, backed by
+Popup is a TanStack Start (React 19, SSR) app deployed on Vercel, backed by
 Supabase (Postgres + RLS, pg_cron, Deno Edge Functions), plus a TradingView Pine
 Script HUD that ports the scoring model to the chart (close to, but not identical with, the
 app's; see `docs/PINE_PARITY_ASSESSMENT.md`).

@@ -8,14 +8,14 @@ Understand, backtest, and simulate multifactor signals.
 
 A TradingView Pine Script HUD that scores every bar, and a React + Supabase command center that turns those scores into sized, audited paper trades.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/blackhebrewisraeli/ZeroChart/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/blackhebrewisraeli/ZeroChart/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/blackhebrewisraeli/Popup/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/blackhebrewisraeli/Popup/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres_%2B_RLS-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Pine Script](https://img.shields.io/badge/Pine_Script-v6-00E5FF?style=for-the-badge&logo=tradingview&logoColor=white)](https://www.tradingview.com/pine-script-docs/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F5C518?style=for-the-badge)](./LICENSE)
 
-[**Live app**](https://zero-chart.vercel.app) · [Architecture](#the-ecosystem) · [Features](#flagship-features) · [Getting started](#getting-started) · [Docs](#documentation)
+[**Live app**](https://popup-signals.vercel.app) · [Architecture](#the-ecosystem) · [Features](#flagship-features) · [Getting started](#getting-started) · [Docs](#documentation)
 
 </div>
 
@@ -128,8 +128,8 @@ flowchart TB
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/blackhebrewisraeli/ZeroChart.git
-cd ZeroChart
+git clone https://github.com/blackhebrewisraeli/Popup.git
+cd Popup
 npm install
 ```
 
@@ -237,6 +237,6 @@ Released under the [MIT License](./LICENSE).
 
 **Popup: signals worth opening.**
 
-[Back to top](#zerochart)
+[Back to top](#popup)
 
 </div>
