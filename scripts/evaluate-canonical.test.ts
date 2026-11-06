@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   buildSyntheticReportModel: vi.fn(),
   writeDecisionsReport: vi.fn(),
   importTradingViewScan: vi.fn(),
+  startRetrieval: vi.fn(),
+  captureResponses: vi.fn(),
+  recordFailure: vi.fn(),
+  finishRetrieval: vi.fn(),
   runScannerResearch: vi.fn(),
   runScannerResearchV2: vi.fn(),
 }));
@@ -71,7 +75,14 @@ vi.mock('./decisionsReport', () => ({
   buildSyntheticReportModel: mocks.buildSyntheticReportModel,
   writeDecisionsReport: mocks.writeDecisionsReport,
 }));
-vi.mock('./tradingViewImport', () => ({ importTradingViewScan: mocks.importTradingViewScan }));
+vi.mock('./tradingViewImport', () => ({
+  RETRIEVAL_STORE: '.zerochart-tradingview',
+  importTradingViewScan: mocks.importTradingViewScan,
+  startRetrieval: mocks.startRetrieval,
+  captureResponses: mocks.captureResponses,
+  recordFailure: mocks.recordFailure,
+  finishRetrieval: mocks.finishRetrieval,
+}));
 vi.mock('./scannerResearch', () => ({
   RESEARCH_OUTPUT_DIR: '.zerochart-reports',
   runScannerResearch: mocks.runScannerResearch,
@@ -153,6 +164,9 @@ describe('evaluate-canonical CLI', () => {
     'campaign-run',
     'outcome-collect',
     'tradingview-import',
+    'tradingview-capture',
+    'tradingview-fail',
+    'tradingview-finish',
     'scanner-research',
     'scanner-research-v2',
   ])('%s requires a value', async (command) => {
@@ -184,6 +198,62 @@ describe('evaluate-canonical CLI', () => {
     await expect(cli('tradingview-import', '../outside.json')).rejects.toThrow(
       'EXPORT must be inside the current workspace',
     );
+  });
+
+  it('wires the TradingView retrieval steps to the local stores and fails unless complete', async () => {
+    const store = join(workspace, '.zerochart-tradingview');
+    mocks.startRetrieval.mockResolvedValue({ retrievalId: 'R' });
+    await cli('tradingview-start');
+    expect(mocks.startRetrieval).toHaveBeenCalledWith({ store });
+    expect(printed()).toEqual({ retrievalId: 'R' });
+
+    mocks.captureResponses.mockResolvedValue({ results: [] });
+    await cli('tradingview-capture', 'R', 'NASDAQ:AAPL=/saved/a=1.txt', '--alerts', 'none');
+    expect(mocks.captureResponses).toHaveBeenCalledWith({
+      store,
+      retrievalId: 'R',
+      pairs: [{ symbol: 'NASDAQ:AAPL', file: '/saved/a=1.txt' }],
+      alerts: [],
+    });
+    await cli('tradingview-capture', 'R', '--alerts', 'BINANCE:BTCUSDT,', '--store', 'tv');
+    expect(mocks.captureResponses).toHaveBeenLastCalledWith({
+      store: join(workspace, 'tv'),
+      retrievalId: 'R',
+      pairs: [],
+      alerts: ['BINANCE:BTCUSDT'],
+    });
+    await expect(cli('tradingview-capture', 'R', 'NASDAQ:AAPL')).rejects.toThrow(
+      'expected SYMBOL=FILE, got NASDAQ:AAPL',
+    );
+    await expect(cli('tradingview-capture', 'R', '--alerts')).rejects.toThrow(
+      '--alerts needs a value',
+    );
+
+    mocks.recordFailure.mockResolvedValue({ outcome: 'FAILED' });
+    await cli('tradingview-fail', 'R', 'NASDAQ:AAPL', 'HTTP 429');
+    expect(mocks.recordFailure).toHaveBeenCalledWith({
+      store,
+      retrievalId: 'R',
+      symbol: 'NASDAQ:AAPL',
+      error: 'HTTP 429',
+    });
+    await expect(cli('tradingview-fail', 'R', 'NASDAQ:AAPL')).rejects.toThrow(
+      'tradingview-fail ERROR requires a value',
+    );
+
+    mocks.finishRetrieval.mockResolvedValue({ outcome: 'COMPLETE', reproduction: 'MATCH' });
+    await cli('tradingview-finish', 'R', '--scan-store', 'scans');
+    expect(mocks.finishRetrieval).toHaveBeenCalledWith({
+      store,
+      scanStore: join(workspace, 'scans'),
+      retrievalId: 'R',
+      repositoryCommit: expect.stringMatching(/^[0-9a-f]{40}(-dirty)?$/),
+    });
+    expect(process.exitCode).toBeUndefined();
+    mocks.finishRetrieval.mockResolvedValue({ outcome: 'PARTIAL', reproduction: 'MATCH' });
+    await cli('tradingview-finish', 'R');
+    expect(printed()).toMatchObject({ outcome: 'PARTIAL' });
+    expect(process.exitCode).toBe(1);
   });
 
   it('runs the frozen scanner study and fails when a rerun departs from its results', async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, unlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, unlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -600,16 +600,58 @@ describe('TradingView retrieval capture', () => {
     expect(await readFile(viewPath, 'utf8')).toBe(view);
   });
 
-  it('keeps a symbol that was never captured visible as a failure in a partial scan', async () => {
-    const { capture, finish } = await retrieval();
-    await capture(SYMBOLS.slice(1));
+  it('keeps missing and failed symbols visible as failures in a partial scan', async () => {
+    const { root, ids, capture, finish } = await retrieval();
+    await capture(SYMBOLS.slice(2));
+    await recordFailure({ ...ids, symbol: SYMBOLS[1]!, error: 'HTTP 429' });
+    await captureResponses({ ...ids, pairs: [], alerts: ['BINANCE:BTCUSDT'] });
     const report = await finish();
-    expect(report).toMatchObject({ outcome: 'PARTIAL', evaluated: 49, failed: 1 });
+    expect(report).toMatchObject({ outcome: 'PARTIAL', evaluated: 48, failed: 2 });
     expect(report.reproduction).toBe('MATCH');
     expect(report.failures).toEqual([
       expect.objectContaining({ symbol: SYMBOLS[0], status: 'FETCH_FAILED' }),
+      expect.objectContaining({ symbol: SYMBOLS[1], status: 'FETCH_FAILED' }),
     ]);
     expect(report.failures[0]!.detail).toMatch(/never retrieved/);
+    expect(report.failures[1]!.detail).toMatch(/HTTP 429/);
+    const view = parseTradingViewDevScan(
+      JSON.parse(await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8')),
+    );
+    expect(view.source.pineAlerts).toEqual({
+      checkedAt: new Date(EQUITY_NOW).toISOString(),
+      symbols: ['BINANCE:BTCUSDT'],
+    });
+  });
+
+  it('rejects malformed input at the boundary instead of guessing', async () => {
+    const { root, ids } = await retrieval();
+    const notJson = join(root, 'not-json.txt');
+    await writeFile(notJson, 'Error: result exceeds maximum allowed tokens');
+    const { results } = await captureResponses({
+      ...ids,
+      pairs: [{ symbol: SYMBOLS[0]!, file: notJson }],
+    });
+    expect(results[0]).toMatchObject({ outcome: 'REJECTED' });
+    expect(results[0]!.detail).toMatch(/not a JSON get_ohlcv response/);
+    await expect(recordFailure({ ...ids, symbol: 'NYSE:XOM', error: 'x' })).rejects.toThrow(
+      /not one of the 50 requested symbols/,
+    );
+    await expect(recordFailure({ ...ids, symbol: SYMBOLS[0]!, error: ' ' })).rejects.toThrow(
+      /Record the error/,
+    );
+    await expect(retrievalStatus({ ...ids, retrievalId: '../elsewhere' })).rejects.toThrow(
+      /not a retrieval ID/,
+    );
+    // A capture path that cannot be read as a file is an error, not an absent record.
+    const ticker = selectDevScanUniverse()[0]!;
+    await mkdir(join(ids.store, ids.retrievalId, `${ticker}.json`));
+    await expect(retrievalStatus(ids)).rejects.toThrow(/EISDIR/);
+
+    await writeFile(join(ids.store, ids.retrievalId, 'retrieval.json'), '{"schemaVersion":"2"}');
+    await expect(retrievalStatus(ids)).rejects.toThrow(/unreadable retrieval.json/);
+    await expect(
+      startRetrieval({ store: ids.store, now: () => Date.UTC(2100, 0, 1) }),
+    ).rejects.toThrow(/outside the published US equity calendar/);
   });
 
   it('fails a symbol with two differing responses rather than choosing one', async () => {
