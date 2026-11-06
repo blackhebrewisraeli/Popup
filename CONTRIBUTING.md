@@ -56,7 +56,7 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 3. Open the PR against `main` and complete the checklist in the [pull request template](./.github/pull_request_template.md).
 4. CI must pass before merge.
 5. A PR with migrations: apply them to production before you merge, as [docs/RELEASE.md](./docs/RELEASE.md) describes. Otherwise the production build refuses to go live.
-6. Screenshots for a PR description go on an orphan branch named `pr-assets/<topic>` that holds only images, so the PR's own diff stays free of binaries. The description loads the images from that branch, so keep it after the merge: deleting it breaks the images. The repository is public, so picture only synthetic or public data. For example, [#128](https://github.com/blackhebrewisraeli/Popup/pull/128) uses `pr-assets/research-scan-first`.
+6. Attach PR screenshots to the description as GitHub attachments (drag them into the editor), not to the diff or a branch. They stay with the PR, so nothing needs cleaning up after the merge. The repository is public, so picture only synthetic or public data.
 
 ## License
 
