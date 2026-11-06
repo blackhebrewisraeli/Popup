@@ -127,9 +127,13 @@ full answer only for a complete cohort.
 
 ## Reviewing a scan
 
-Each scan panel (the live Markets scan and the TradingView development scan) shows its results in
-three views: **Long setups** (ZC LONG holds), **Risk warnings** (ZC RISK holds) and **All ranked**
-(every evaluated asset by rank; most meet no setup). A search box (ticker, instrument or requested
+Research opens on the scan. Each scan panel (the live Market scan and the TradingView development
+scan) heads with its source, timeframe, data as of and coverage, then lists its results in three
+views: **Long setups** (ZC LONG holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every
+evaluated asset by rank; most meet no setup). Both open on **All ranked**, so zero long setups is a
+normal result, not an empty screen. Each row shows rank, asset, score, setup and the recorded
+reason. The scan offers no order, broker or paper-trading action; those stay in the Markets list below
+it (broker links, asset details, Build Portfolio) and on the Paper Desk. A search box (ticker, instrument or requested
 symbol) and filters on recorded fields narrow them: regime, the model's own momentum bias (±0.05% of
 price is flat) and risk-profile fit. "No setups" is a full answer only for a complete cohort; an
 empty filter result says how many it hid. Next to the results each cohort shows its coverage, data
@@ -179,9 +183,11 @@ to count incomplete scans. The snapshots keep that whole population.
 ## TradingView development scan (local, owner-initiated)
 
 A one-off local demonstration: 50 US equities and ETFs scored by this scanner on daily bars that the
-owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, the Markets
-section has a source selector: **Market data** (the Market scan above the price table, as before) or
-**TradingView import**, which replaces both with the **TradingView development scan**. The selector
+owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, Research
+has a source selector: **Market data** (the Market scan, then the Markets list and price alerts) or
+**TradingView import**, which replaces all three with the **TradingView development scan**. The
+selector sits above the market-data loading and error states, so the import shows even while live
+market data is loading or has failed. The selector
 names the import's state (evaluated count, `Loading`, `None` or `Unreadable`). It does not change
 live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
@@ -217,7 +223,7 @@ started by the owner:
 3. **Import.** `npm run evaluate -- tradingview-import .zerochart-tradingview/<RETRIEVAL_ID>.json`
    prints the scan ID, coverage, setups and every failure, and writes the snapshot and the view.
 4. **Reproduce offline.** `npm run evaluate -- scan-reproduce <SCAN_ID>` must print `MATCH`.
-5. **Inspect.** `npm run dev`, open <http://localhost:8080/?devAuth=1>, Research → Markets,
+5. **Inspect.** `npm run dev`, open <http://localhost:8080/?devAuth=1>, Research,
    **TradingView import**.
 
 Importing the same export again prints `ALREADY_IMPORTED` / `REUSED` and leaves the view
@@ -231,7 +237,7 @@ asset by its recorded rank, so zero long setups still leaves all of them to revi
 not relabeled a recommendation. The Market scan names its own source (`Binance spot klines`). Only
 one source shows at a time: the import view has no price table, asset count, Build Portfolio or
 asset details sheet, and Explain and Compare read the import alone, so reviewing it requests nothing
-from Binance or any other provider (the page's own feeds above Markets keep running). Switching
+from Binance or any other provider (the page's own price feeds keep running in the background). Switching
 sources discards the other's view, filters, comparison and open explanation.
 
 The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`

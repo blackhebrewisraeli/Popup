@@ -1,4 +1,4 @@
-import { Radar } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { ScanReview } from '@/components/ScanReview';
 import {
   scanStatusLabel,
@@ -13,7 +13,6 @@ import {
   cohortFreshness,
   dataAsOfLabel,
   PROVIDER_LABEL,
-  resultAsOfLabel,
   UTC_TIME,
 } from '@/lib/scanReview';
 import {
@@ -53,8 +52,30 @@ function sourcesLabel(scan: MarketScan): string {
 }
 
 function universeLabel(source: string): string {
-  if (source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) return 'Requested';
-  return source === 'assets_status' ? 'Markets universe' : 'Sample preview universe';
+  if (source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) return 'requested';
+  return source === 'assets_status' ? 'in the Markets universe' : 'in the sample preview universe';
+}
+
+/** How a timeframe's days are cut, per scanned class. */
+const DAY_BASIS: Record<ScanCohort['assetClass'], string> = {
+  crypto: 'UTC days',
+  equity: 'New York sessions',
+  forex: 'not scanned',
+};
+
+/** One fact in the scan header: a label, its value, and an optional quieter line under it. */
+function Fact({
+  label,
+  value,
+  detail,
+}: Readonly<{ label: string; value: ReactNode; detail?: ReactNode }>) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+      {detail && <dd className="market-scan-sub">{detail}</dd>}
+    </div>
+  );
 }
 
 /** Where a development scan's bars came from, and what it does not establish. */
@@ -187,7 +208,10 @@ export function MarketScanSummary({
   if (!scan) {
     return (
       <section className="market-scan" aria-label="Market scan" aria-busy={scanning}>
-        <p className="market-scan-empty">
+        <header className="market-scan-head">
+          <h2 className="market-scan-title">Market scan</h2>
+        </header>
+        <p className="market-scan-empty" role={failed ? 'alert' : 'status'}>
           {failed ? 'The market scan could not run. Scores are unavailable.' : 'Scanning…'}
         </p>
       </section>
@@ -198,78 +222,74 @@ export function MarketScanSummary({
   );
   const { coverage } = scan;
   const title = source ? 'TradingView development scan' : 'Market scan';
-  const firstCohort = scan.cohorts[0];
-  const latestSession =
-    firstCohort?.dataAsOf.newest == null
-      ? 'None evaluated'
-      : resultAsOfLabel({
-          assetClass: firstCohort.assetClass,
-          dataAsOf: firstCohort.dataAsOf.newest,
-        });
-  const stale = source && firstCohort ? cohortFreshness(firstCohort, Date.now())?.stale : false;
+  const scanned = scan.cohorts.filter((cohort) => cohort.status !== 'UNSUPPORTED');
+  const now = Date.now();
+  const freshness = scanned.flatMap((cohort) => cohortFreshness(cohort, now) ?? []);
+  const stale = freshness.some((item) => item.stale);
+  const policies = [...new Set(scanned.map((cohort) => cohort.candlePolicyVersion))];
+  const coverageDetail = [
+    `${coverage.configured} ${universeLabel(scan.universe.source)}`,
+    coverage.notEvaluated > 0 && `${coverage.notEvaluated} failed`,
+    coverage.unsupported > 0 &&
+      `${coverage.unsupported} not scanned (${unsupportedBreakdown(scan.results)})`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <section className={cn('market-scan', source && 'market-scan-devscan')} aria-label={title}>
-      <div className="market-scan-head">
-        <span className="market-scan-title">
-          <Radar size={14} /> {title}
-        </span>
-        <span className="market-scan-rule">{sourcesLabel(scan)}</span>
-        <span className={cn('market-scan-status', `market-scan-${scan.status.toLowerCase()}`)}>
-          {STATUS_LABEL[scan.status]}
-        </span>
-        {stale && <span className="market-scan-status market-scan-partial">Stale</span>}
-        {source && (
-          <span className="market-scan-status market-scan-dev">Historical dev import</span>
-        )}
-        <span className="market-scan-meta font-mono">
-          {scanning ? 'Re-scanning… · ' : ''}
-          {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
-        </span>
-      </div>
-      <dl className="market-scan-stats">
-        {source && (
-          <>
-            <div>
-              <dt>Retrieved</dt>
-              <dd>{retrievalLabel(source.retrieval)}</dd>
-            </div>
-            <div>
-              <dt>Latest session</dt>
-              <dd>{latestSession}</dd>
-            </div>
-          </>
-        )}
-        <div>
-          <dt>{universeLabel(scan.universe.source)}</dt>
-          <dd>{coverage.configured} assets</dd>
+      <header className="market-scan-head">
+        <div className="market-scan-heading">
+          <h2 className="market-scan-title">{title}</h2>
+          <p className="market-scan-state">
+            <span className={cn('market-scan-status', `market-scan-${scan.status.toLowerCase()}`)}>
+              {STATUS_LABEL[scan.status]}
+            </span>
+            {stale && <span className="market-scan-status market-scan-partial">Stale</span>}
+            {source && (
+              <span className="market-scan-status market-scan-dev">Historical dev import</span>
+            )}
+            <span>
+              {scanning ? 'Re-scanning… · ' : ''}
+              {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
+            </span>
+          </p>
         </div>
-        <div>
-          <dt>Evaluated</dt>
-          <dd>
-            {coverage.evaluated} of {coverage.supported} supported
-          </dd>
-        </div>
-        {source ? (
-          <div>
-            <dt>Failed</dt>
-            <dd>{coverage.notEvaluated + coverage.unsupported}</dd>
-          </div>
-        ) : (
-          <div>
-            <dt>Not scanned</dt>
-            <dd>
-              {coverage.unsupported}
-              {coverage.unsupported > 0 && ` (${unsupportedBreakdown(scan.results)})`}
-            </dd>
-          </div>
-        )}
-        <div>
-          <dt>Model</dt>
-          <dd className="font-mono">
-            {scan.modelVersion} · {scan.timeframe.toUpperCase()}
-          </dd>
-        </div>
-      </dl>
+        <dl className="market-scan-stats">
+          <Fact
+            label="Source"
+            value={sourcesLabel(scan)}
+            detail={[`model ${scan.modelVersion}`, ...policies].filter(Boolean).join(' · ')}
+          />
+          <Fact
+            label="Timeframe"
+            value={scan.timeframe.toUpperCase()}
+            detail={scanned.map((cohort) => DAY_BASIS[cohort.assetClass]).join(' · ') || null}
+          />
+          <Fact
+            label="Data as of"
+            value={scanned.map(dataAsOfLabel).filter(Boolean).join('; ') || 'None evaluated'}
+            detail={
+              freshness.length > 0 && (
+                <span className={cn(stale && 'scan-stale')}>
+                  {freshness.map((item) => item.detail).join('; ')}
+                </span>
+              )
+            }
+          />
+          <Fact
+            label="Coverage"
+            value={`${coverage.evaluated} of ${coverage.supported} evaluated`}
+            detail={coverageDetail}
+          />
+          {source && (
+            <Fact
+              label="Retrieved"
+              value={retrievalLabel(source.retrieval)}
+              detail="Owner's agent session; does not refresh"
+            />
+          )}
+        </dl>
+      </header>
       {source && (
         <p className="market-scan-note">
           Reloading this page re-reads this import; it does not fetch new TradingView bars, and
@@ -278,15 +298,7 @@ export function MarketScanSummary({
           ranks, scores and coverage are never merged into the Market scan or the Markets table.
         </p>
       )}
-      <section className="market-scan-coverage" aria-label="Coverage by asset class">
-        <h3 className="market-scan-label">Coverage by asset class and timeframe</h3>
-        <ul className="market-scan-list">
-          {scan.cohorts.map((cohort) => (
-            <CohortRow key={cohort.assetClass} cohort={cohort} scan={scan} />
-          ))}
-        </ul>
-      </section>
-      {scan.cohorts.some((cohort) => cohort.status !== 'UNSUPPORTED') && (
+      {scanned.length > 0 && (
         <ScanReview scan={scan} source={source} detailed={source !== undefined} />
       )}
       {failures.length > 0 && (
@@ -304,6 +316,14 @@ export function MarketScanSummary({
           </ul>
         </section>
       )}
+      <section className="market-scan-coverage" aria-label="Coverage by asset class">
+        <h3 className="market-scan-label">Coverage by asset class and timeframe</h3>
+        <ul className="market-scan-list">
+          {scan.cohorts.map((cohort) => (
+            <CohortRow key={cohort.assetClass} cohort={cohort} scan={scan} />
+          ))}
+        </ul>
+      </section>
       {source && <DevSourceNotes scan={scan} source={source} />}
     </section>
   );

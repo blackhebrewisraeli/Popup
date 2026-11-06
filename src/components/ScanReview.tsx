@@ -124,36 +124,39 @@ function ReadingGuide({
     else alerts = `Alerts exist on ${alerted.join(', ')}.`;
   }
   return (
-    <dl className="scan-guide">
-      <div>
-        <dt>Rank</dt>
-        <dd>
-          Order by score within one asset class in this scan. Relative only: #1 is not a buy, and
-          ranks never cross classes.
-          {source &&
-            ' A retrospective study of this universe found higher ranks followed by smaller price changes than the same-date average, not larger ones (docs/SCANNER_RESEARCH.md).'}
-        </dd>
-      </div>
-      <div>
-        <dt>Score</dt>
-        <dd>
-          How closely the asset meets the technical conditions of model {scan.modelVersion}: a 0–100
-          blend of RSI, MACD and ATR factors. Not a probability, a valuation or a demonstrated
-          expected return.
-        </dd>
-      </div>
-      <div>
-        <dt>Setup</dt>
-        <dd>
-          ZC LONG or ZC RISK holding on the last closed bar: a standing condition that may have held
-          for days. Not an order.
-        </dd>
-      </div>
-      <div>
-        <dt>Pine alert</dt>
-        <dd>Fires only on the bar a condition turns true, where an alert is set. {alerts}</dd>
-      </div>
-    </dl>
+    <details className="scan-guide-details">
+      <summary>How to read rank, score, setups and alerts</summary>
+      <dl className="scan-guide">
+        <div>
+          <dt>Rank</dt>
+          <dd>
+            Order by score within one asset class in this scan. Relative only: #1 is not a buy, and
+            ranks never cross classes.
+            {source &&
+              ' A retrospective study of this universe found higher ranks followed by smaller price changes than the same-date average, not larger ones (docs/SCANNER_RESEARCH.md).'}
+          </dd>
+        </div>
+        <div>
+          <dt>Score</dt>
+          <dd>
+            How closely the asset meets the technical conditions of model {scan.modelVersion}: a
+            0–100 blend of RSI, MACD and ATR factors. Not a probability, a valuation or a
+            demonstrated expected return.
+          </dd>
+        </div>
+        <div>
+          <dt>Setup</dt>
+          <dd>
+            ZC LONG or ZC RISK holding on the last closed bar: a standing condition that may have
+            held for days. Not an order.
+          </dd>
+        </div>
+        <div>
+          <dt>Pine alert</dt>
+          <dd>Fires only on the bar a condition turns true, where an alert is set. {alerts}</dd>
+        </div>
+      </dl>
+    </details>
   );
 }
 
@@ -174,23 +177,27 @@ function ResultRow({
   onCompare: (ticker: string) => void;
   onExplain: (ticker: string) => void;
 }>) {
+  const setup = result.setups?.long || result.setups?.risk;
   return (
-    <li className="market-scan-item scan-row">
-      <div className="scan-row-main">
-        <span className="market-scan-item-head">
-          <span className="market-scan-rank">#{result.rank}</span>
-          <span className="market-scan-ticker">{result.ticker}</span>
-          {symbol && <span className="market-scan-rank">{symbol}</span>}
-          <span className="market-scan-score">{result.model?.signal_score}</span>
-          {result.model && (
-            <span className="market-scan-regime">{REGIME_LABELS[result.model.regime]}</span>
-          )}
-          <SetupTags result={result} />
-        </span>
-        {detailed && result.model && <ComponentLine model={result.model} />}
+    <li className="scan-row">
+      <span className="market-scan-rank">#{result.rank}</span>
+      <span className="scan-row-asset">
+        <span className="market-scan-ticker">{result.ticker}</span>
+        {symbol && <span className="scan-row-symbol">{symbol}</span>}
+      </span>
+      <span className="market-scan-score">
+        <span className="scan-score-label">Score </span>
+        {result.model?.signal_score}
+      </span>
+      <span className="scan-row-setup">
+        {setup ? <SetupTags result={result} /> : <span className="market-scan-tag">No setup</span>}
+      </span>
+      <span className="scan-row-reason">
+        {/* The recorded rationale already ends with the regime. */}
         <span className="market-scan-rationale">{result.model?.rationale}</span>
         <span className="market-scan-fit">{profileFit(result)}</span>
-      </div>
+        {detailed && result.model && <ComponentLine model={result.model} />}
+      </span>
       <div className="scan-row-actions">
         <button
           type="button"
@@ -416,7 +423,7 @@ function CohortResults({
       <h3 className="market-scan-label">
         {label} <span className="market-scan-rule">ranked only among {label.toLowerCase()}</span>
       </h3>
-      <p className="scan-asof font-mono">
+      <p className="scan-asof">
         <span className={cn('market-scan-status', `market-scan-${cohort.status.toLowerCase()}`)}>
           {cohort.status === 'COMPLETE' ? 'Complete' : 'Incomplete'}
         </span>
@@ -443,6 +450,17 @@ function CohortResults({
           </>
         )}
       </p>
+      {shown.length > 0 && (
+        // Column labels for sighted readers; each row names its own score for screen readers.
+        <div className="scan-list-head" aria-hidden="true">
+          <span>Rank</span>
+          <span>Asset</span>
+          <span>Score</span>
+          <span>Setup</span>
+          <span>Recorded reason</span>
+          <span />
+        </div>
+      )}
       {shown.length > 0 ? (
         <ul className="market-scan-list scan-results">
           {shown.map((result) => (
@@ -812,9 +830,9 @@ export function ScanReview({
   source,
   detailed,
 }: Readonly<{ scan: MarketScan; source: TradingViewDevSource | undefined; detailed: boolean }>) {
-  // An import is reviewed asset by asset, so it opens on every ranked asset; zero long
-  // setups is still a full answer under its own tab.
-  const [view, setView] = useState<ScanView>(source ? 'all' : 'long');
+  // A scan opens on every ranked asset, so zero long setups never leaves an empty screen;
+  // it stays a full answer under its own tab.
+  const [view, setView] = useState<ScanView>('all');
   const [filters, setFilters] = useState<ScanFilters>(NO_FILTERS);
   const [compare, setCompare] = useState<readonly string[]>([]);
   const [explaining, setExplaining] = useState<string | null>(null);
@@ -840,7 +858,6 @@ export function ScanReview({
 
   return (
     <div className="scan-review">
-      <ReadingGuide scan={scan} source={source} />
       <div className="scan-toolbar">
         <Segmented
           value={view}
@@ -915,6 +932,10 @@ export function ScanReview({
           )}
         </div>
       </div>
+      <p className="scan-caption">
+        Ranked by model score within each asset class. A rank is relative, not a recommendation; a
+        score is not a probability or an expected return.
+      </p>
       {cohorts.map((cohort) => (
         <CohortResults
           key={cohort.assetClass}
@@ -931,6 +952,7 @@ export function ScanReview({
           onClearFilters={() => setFilters(NO_FILTERS)}
         />
       ))}
+      <ReadingGuide scan={scan} source={source} />
       {explained?.model && explained.setups && explainedCohort && (
         <ExplanationSheet
           result={explained}

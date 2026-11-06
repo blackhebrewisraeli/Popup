@@ -57,6 +57,15 @@ function renderScan(inputs: ScanInput[]) {
   return screen.getByRole('region', { name: 'Market scan' });
 }
 
+/** The value a scan-header fact shows, and the quieter line under it. */
+function fact(panel: HTMLElement, label: string) {
+  const term = within(panel.querySelector('.market-scan-head')!).getByText(label, {
+    selector: 'dt',
+  });
+  const [value, detail] = term.parentElement!.querySelectorAll('dd');
+  return { value: value!.textContent, detail: detail?.textContent ?? null };
+}
+
 describe('MarketScanSummary', () => {
   it('says "none" only as a full answer when every supported asset was scored', () => {
     const panel = renderScan([
@@ -67,11 +76,22 @@ describe('MarketScanSummary', () => {
     ]);
     expect(panel.querySelector('.market-scan-head')).toHaveTextContent('Complete');
     // Named by its source, so it cannot be read as the TradingView development scan.
-    expect(panel.querySelector('.market-scan-head .market-scan-rule')).toHaveTextContent(
-      /^Binance spot klines$/,
+    expect(fact(panel, 'Source')).toEqual({
+      value: 'Binance spot klines',
+      detail: 'model 1.0.0 · binance-daily-v1',
+    });
+    expect(fact(panel, 'Timeframe')).toEqual({ value: '1D', detail: 'UTC days' });
+    expect(fact(panel, 'Data as of').value).toBe('candles to 27 Oct close (UTC)');
+    expect(fact(panel, 'Coverage')).toEqual({
+      value: '2 of 2 evaluated',
+      detail: '4 in the Markets universe · 2 not scanned (1 equity, 1 forex)',
+    });
+    // The scan opens on every ranked asset; zero long setups is a full answer under its tab.
+    expect(within(panel).getByRole('tab', { name: /All ranked/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
     );
-    expect(within(panel).getByText('2 of 2 supported')).toBeInTheDocument();
-    expect(within(panel).getByText('2 (1 equity, 1 forex)')).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('tab', { name: /Long setups/ }));
     expect(
       within(panel).getByText('None — all 2 supported assets were evaluated.'),
     ).toBeInTheDocument();
@@ -102,7 +122,10 @@ describe('MarketScanSummary', () => {
       },
     ]);
     expect(panel.querySelector('.market-scan-head')).toHaveTextContent('Incomplete');
-    expect(within(panel).getByText('1 of 2 supported')).toBeInTheDocument();
+    expect(fact(panel, 'Coverage')).toEqual({
+      value: '1 of 2 evaluated',
+      detail: '2 in the Markets universe · 1 failed',
+    });
     for (const view of ['Long setups', 'Risk warnings']) {
       fireEvent.click(within(panel).getByRole('tab', { name: new RegExp(view) }));
       expect(
@@ -234,18 +257,14 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     };
     const { scan, panel } = renderDev([equity('AAPL', wave), equity('MSFT', rising), failed]);
     expect(within(panel).getByText('Historical dev import')).toBeInTheDocument();
-    expect(within(panel).getByText('Requested')).toBeInTheDocument();
-    expect(within(panel).getByText('3 assets')).toBeInTheDocument();
-    expect(within(panel).getByText('Failed').nextSibling).toHaveTextContent('1');
-    expect(within(panel).getByText('Retrieved').nextSibling).toHaveTextContent(
-      '28 Oct, 16:58–17:00 UTC',
-    );
-    expect(within(panel).getByText('Latest session').nextSibling).toHaveTextContent(
-      '27 Oct session (New York)',
-    );
-    expect(
-      within(panel).getByText('TradingView MCP get_ohlcv', { selector: '.market-scan-rule' }),
-    ).toBeInTheDocument();
+    expect(fact(panel, 'Coverage')).toEqual({
+      value: '2 of 3 evaluated',
+      detail: '3 requested · 1 failed',
+    });
+    expect(fact(panel, 'Retrieved').value).toBe('28 Oct, 16:58–17:00 UTC');
+    expect(fact(panel, 'Data as of').value).toBe('sessions to 27 Oct close (New York)');
+    expect(fact(panel, 'Timeframe')).toEqual({ value: '1D', detail: 'New York sessions' });
+    expect(fact(panel, 'Source').value).toBe('TradingView MCP get_ohlcv');
     expect(panel).toHaveTextContent(
       'Reloading this page re-reads this import; it does not fetch new TradingView bars',
     );
