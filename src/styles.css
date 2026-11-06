@@ -408,9 +408,6 @@ body {
   gap: 10px 18px;
   margin-bottom: 18px;
 }
-.markets-source {
-  margin-bottom: 14px;
-}
 .markets-pills {
   display: flex;
   flex-wrap: wrap;
@@ -663,21 +660,39 @@ body {
   width: 100%;
 }
 
-/* Research: the market scan comes first. One neutral surface, hairline dividers and tabular
-   numerals; coral marks only the active view, a primary action and focus. Status and risk
-   always carry a word, never color alone. */
+/* Research: an editorial desk. Two places (Scan, Markets directory), no card around the scan:
+   a strong rule over the header, hairline dividers and tabular numerals. Coral marks only the
+   active view, the selected row and focus. Status and risk always carry a word, never color
+   alone. */
+.research-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+/* The directory is its own place now: no gap left over from sitting under the scan. */
+.research .markets {
+  margin-top: 0;
+}
+.research-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 22px;
+}
 .market-scan {
   margin-bottom: 18px;
-  padding: 20px 22px 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--card);
   font-variant-numeric: tabular-nums;
 }
 .market-scan-head {
   display: grid;
   gap: 16px;
-  padding-bottom: 16px;
+  padding: 14px 0 16px;
+  border-top: 2px solid var(--foreground);
   border-bottom: 1px solid var(--border);
 }
 .market-scan-heading {
@@ -849,8 +864,8 @@ body {
   color: var(--muted-foreground);
 }
 /* TradingView development scan: local, owner-only data, marked apart from the live scan. */
-.market-scan-devscan {
-  border-style: dashed;
+.market-scan-devscan > .market-scan-head {
+  border-top-style: dashed;
 }
 .market-scan-tag {
   font-size: 12.5px;
@@ -942,39 +957,119 @@ body {
   display: block;
   margin: 6px 0 10px;
 }
-/* Rank, asset, score, setup, reason, review actions: one row per ranked asset. */
+/* The list and its evidence: side by side on a wide screen (see WIDE in ScanReview.tsx). */
+.scan-desk.is-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  gap: 0 28px;
+  align-items: start;
+}
+/* The evidence keeps its own scroll under the sticky header, so the list never moves. */
+.scan-evidence {
+  position: sticky;
+  top: 88px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 16px 24px;
+  border-left: 1px solid var(--border);
+}
+.scan-evidence:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.scan-evidence-head {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.scan-evidence .scan-explain-body {
+  padding: 14px 0 0;
+}
+.scan-evidence .scan-effects {
+  grid-template-columns: 1fr;
+}
+.scan-evidence-empty {
+  margin: 0;
+  padding-top: 2px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+/* One row per ranked asset: rank, asset, score, setup, short reason, then Compare. */
 .scan-list-head,
 .scan-row {
   display: grid;
-  grid-template-columns: 40px minmax(96px, 150px) 44px 108px minmax(0, 1fr) 172px;
-  gap: 4px 16px;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  align-items: center;
+}
+.scan-list-cols,
+.scan-row-main {
+  display: grid;
+  grid-template-columns: 30px minmax(84px, 128px) 36px 100px minmax(0, 1fr);
+  gap: 4px 14px;
   align-items: baseline;
 }
 /* Scores right-aligned under their label, so tabular digits line up. */
-.scan-list-head > :nth-child(3),
-.scan-row > .market-scan-score {
+.scan-list-cols > :nth-child(3),
+.scan-row-main > .market-scan-score {
   text-align: right;
 }
 .scan-list-head {
   padding: 8px 0;
-  border-block: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   font-size: 11.5px;
   font-weight: 500;
   color: var(--muted-foreground);
+}
+.scan-list-cols {
+  padding-inline: 8px;
+}
+.scan-list-head > :last-child {
+  text-align: center;
 }
 .scan-results {
   gap: 0;
 }
 .scan-row {
-  padding: 11px 0;
   border-bottom: 1px solid var(--border);
 }
-.scan-row:last-child {
-  border-bottom: none;
+.scan-row-main {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.scan-row-main:hover {
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+.scan-row.is-selected {
+  background: color-mix(in oklch, var(--primary) 5%, transparent);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+/* The tint costs contrast: the selected row's small text moves toward the text color. */
+.scan-row.is-selected :is(.market-scan-rank, .scan-row-symbol, .scan-row-reason),
+.scan-row.is-selected .market-scan-tag:not(.is-long, .is-risk) {
+  color: var(--foreground);
+}
+.scan-row.is-selected .market-scan-tag.is-risk {
+  color: color-mix(in oklch, var(--signal-red) 72%, var(--foreground));
+}
+.scan-row-main:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.scan-row .scan-compare-toggle {
+  justify-self: center;
 }
 .scan-row-asset,
-.scan-row-setup,
-.scan-row-reason {
+.scan-row-setup {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -985,12 +1080,12 @@ body {
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
-.scan-row .market-scan-rationale {
-  font-size: 13px;
-  color: var(--foreground);
-}
-.scan-row .market-scan-fit.font-mono {
-  font-size: 11px;
+.scan-row-reason {
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
 }
 /* The score's name: read aloud on wide screens, shown where the column labels are hidden. */
 .scan-score-label {
@@ -1000,14 +1095,6 @@ body {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-.scan-row-actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: flex-end;
-  align-self: center;
-  gap: 14px;
 }
 .scan-review .portfolio-cash-btn {
   height: 30px;
@@ -1020,10 +1107,9 @@ body {
 .scan-compare-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--muted-foreground);
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   cursor: pointer;
 }
 .scan-compare-toggle input {
@@ -1180,14 +1266,14 @@ body {
   gap: 18px;
   padding: 4px 24px 24px;
 }
-.scan-explain .quant-insight-summary {
+.scan-explain-body .quant-insight-summary {
   flex-wrap: wrap;
   justify-content: flex-start;
 }
-.scan-explain .quant-rationale {
+.scan-explain-body .quant-rationale {
   margin: 0;
 }
-.scan-explain .quant-breakdown-title {
+.scan-explain-body .quant-breakdown-title {
   margin: 0 0 8px;
 }
 .scan-check + .scan-check {
@@ -1285,39 +1371,46 @@ body {
   .scan-filters .portfolio-cash-input {
     flex: 1 1 140px;
   }
-  .scan-list-head {
+  /* Only "Compare" stays as a column label; each row names its own score. */
+  .scan-list-cols > * {
     display: none;
   }
+  .scan-list-head,
   .scan-row {
-    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+  .scan-row {
+    align-items: start;
+  }
+  .scan-row .scan-compare-toggle {
+    margin-top: 6px;
+  }
+  .scan-row-main {
+    grid-template-columns: 26px minmax(0, 1fr) auto;
     grid-template-areas:
       'rank asset score'
       '. setup setup'
-      '. reason reason'
-      '. actions actions';
-    gap: 6px 10px;
+      '. reason reason';
+    gap: 4px 10px;
+    padding: 12px 4px 12px 6px;
   }
-  .scan-row > .market-scan-rank {
+  .scan-row-main > .market-scan-rank {
     grid-area: rank;
   }
-  .scan-row > .scan-row-asset {
+  .scan-row-main > .scan-row-asset {
     grid-area: asset;
   }
-  .scan-row > .market-scan-score {
+  .scan-row-main > .market-scan-score {
     grid-area: score;
   }
-  .scan-row > .scan-row-setup {
+  .scan-row-main > .scan-row-setup {
     grid-area: setup;
     flex-direction: row;
     flex-wrap: wrap;
     gap: 2px 12px;
   }
-  .scan-row > .scan-row-reason {
+  .scan-row-main > .scan-row-reason {
     grid-area: reason;
-  }
-  .scan-row > .scan-row-actions {
-    grid-area: actions;
-    align-self: start;
   }
   .scan-score-label {
     position: static;
@@ -1338,8 +1431,10 @@ body {
   }
 }
 @media (max-width: 760px) {
-  .market-scan {
-    padding: 16px 14px 14px;
+  .research-places,
+  .research-source,
+  .research-source .segment {
+    flex: 1 1 100%;
   }
   .market-scan-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

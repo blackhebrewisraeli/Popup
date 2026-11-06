@@ -27,7 +27,11 @@ import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
-import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
+import {
+  MarketsSourcePicker,
+  TradingViewDevScan,
+  type MarketsSource,
+} from '@/components/TradingViewDevScan';
 import {
   fetchAssets,
   formatChange,
@@ -348,13 +352,14 @@ export function MarketsSection({
   onInvest: () => void;
 }>) {
   return (
-    <section className="markets" data-tour="markets" aria-label="Markets">
+    <section className="markets" data-tour="markets" aria-label="Markets directory">
       <div className="markets-head">
         <div>
-          <h2 className="markets-title">Markets</h2>
+          <h2 className="markets-title">Markets directory</h2>
           <p className="markets-score-help">
-            Signal Score is a 0–100 model score from RSI, MACD and ATR — not a probability or a
-            performance forecast.
+            Every asset in the universe with its price, 24h move, alerts and broker links. Signal
+            repeats the scan&rsquo;s 0–100 model score, not a probability or a performance forecast;
+            its evidence is under Scan.
           </p>
         </div>
         <div className="markets-head-actions">
@@ -423,10 +428,15 @@ export function MarketsSection({
   );
 }
 
+export type ResearchPlace = 'scan' | 'directory';
+
 /**
- * Research is the scan first, then the market list and price alerts. Under `vite dev` the
- * local TradingView import is a second source, picked above the live-data gate: it never
- * waits on, or disappears with, the market-data query, and the two never render together.
+ * Research has two places: the ranked scan with its evidence, and the Markets
+ * directory (prices, alerts, broker links and the portfolio builder), so the
+ * directory never reads as a second scanner. Both stay mounted, so switching keeps
+ * the scan's filters, selection and comparison. Under `vite dev` the scan's source
+ * is picked above the live-data gate: the local TradingView import never waits on,
+ * or disappears with, the market-data query, and the two never render together.
  */
 export function ResearchZone({
   pending,
@@ -438,6 +448,8 @@ export function ResearchZone({
   alerts,
   source,
   onSource,
+  place,
+  onPlace,
 }: Readonly<{
   /** The market universe is still loading. */
   pending: boolean;
@@ -450,24 +462,47 @@ export function ResearchZone({
   alerts: ReactNode;
   source: MarketsSource;
   onSource: (source: MarketsSource) => void;
+  place: ResearchPlace;
+  onPlace: (place: ResearchPlace) => void;
 }>) {
-  let marketData: ReactNode = (
-    <>
-      {scan}
-      {markets}
-      {alerts}
-    </>
-  );
-  if (pending) marketData = <MarketsSkeleton />;
-  // A failed load already shows its error banner above, with Retry.
-  else if (empty) marketData = failed ? null : <NoSignals onPreview={onPreview} />;
+  const gate = (content: ReactNode) => {
+    if (pending) return <MarketsSkeleton />;
+    // A failed load already shows its error banner above, with Retry.
+    if (empty) return failed ? null : <NoSignals onPreview={onPreview} />;
+    return content;
+  };
+  const tradingView = import.meta.env.DEV && source === 'tradingview';
   return (
     <div className="research">
-      {import.meta.env.DEV ? (
-        <MarketsSources source={source} onSource={onSource} marketData={marketData} />
-      ) : (
-        marketData
-      )}
+      <div className="research-bar">
+        <Segmented
+          value={place}
+          ariaLabel="Research"
+          className="scan-views research-places"
+          onChange={onPlace}
+          options={[
+            { value: 'scan', label: 'Scan' },
+            { value: 'directory', label: 'Markets directory' },
+          ]}
+        />
+        {import.meta.env.DEV && place === 'scan' && (
+          <div className="research-source">
+            Dev source
+            <MarketsSourcePicker source={source} onSource={onSource} />
+          </div>
+        )}
+      </div>
+      <div hidden={place !== 'scan'}>
+        {tradingView ? <TradingViewDevScan key="tradingview" /> : gate(scan)}
+      </div>
+      <div hidden={place !== 'directory'}>
+        {gate(
+          <>
+            {markets}
+            {alerts}
+          </>,
+        )}
+      </div>
     </div>
   );
 }
@@ -477,6 +512,7 @@ function Terminal() {
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
   const [marketsSource, setMarketsSource] = useState<MarketsSource>('market-data');
+  const [researchPlace, setResearchPlace] = useState<ResearchPlace>('scan');
   // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();
   const onPaper = useMatch({ from: '/_workspace/paper-trading', shouldThrow: false }) !== undefined;
@@ -598,7 +634,13 @@ function Terminal() {
               <ThemeToggle />
             </div>
             {user && <HeaderProfile user={user} onSignOut={() => void signOut()} />}
-            <TourGuide onViewChange={setView} />
+            <TourGuide
+              onViewChange={(next) => {
+                // The tour's Research steps point at the directory and its portfolio builder.
+                if (next === 'research') setResearchPlace('directory');
+                setView(next);
+              }}
+            />
           </div>
         </div>
       </header>
@@ -677,6 +719,8 @@ function Terminal() {
             }
             source={marketsSource}
             onSource={setMarketsSource}
+            place={researchPlace}
+            onPlace={setResearchPlace}
           />
         )}
       </main>

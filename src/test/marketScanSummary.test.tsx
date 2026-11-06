@@ -22,13 +22,27 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
+/** A screen wide enough for the evidence to sit beside the list. */
+function wideScreen() {
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: query === '(min-width: 1024px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList,
+  );
+}
+
 /** Labeled fixture: 199 closed daily candles of a gentle wave (no setup fires). */
-function candles(): Candle[] {
+function candles(path = (i: number) => 100 + Math.sin(i / 6) * 8): Candle[] {
   const first = TODAY - 199 * DAY;
   return Array.from({ length: 199 }, (_, i) => {
-    const close = 100 + Math.sin(i / 6) * 8;
+    const close = path(i);
     return {
       timestamp: first + i * DAY,
       closeTime: first + i * DAY + DAY - 1,
@@ -99,11 +113,9 @@ describe('MarketScanSummary', () => {
     const coverage = within(panel).getByRole('region', { name: 'Coverage by asset class' });
     expect(within(coverage).getAllByRole('listitem')).toHaveLength(3);
     expect(within(coverage).getByText('2 of 2 evaluated')).toBeInTheDocument();
-    expect(
-      within(coverage).getByText(
-        'Binance spot klines · binance-daily-v1 · candles to 27 Oct close (UTC)',
-      ),
-    ).toBeInTheDocument();
+    // Source, policy and data time are stated once, in the header.
+    expect(coverage).not.toHaveTextContent(/Binance spot klines|binance-daily-v1|27 Oct/);
+    expect(panel.querySelector('.scan-asof')).toBeNull();
     expect(within(coverage).getAllByText('Not scanned · 1')).toHaveLength(2);
     expect(within(coverage).getByText(UNSUPPORTED_DETAIL.equity)).toBeInTheDocument();
     expect(within(panel).getByRole('region', { name: 'Crypto results' })).toBeInTheDocument();
@@ -169,12 +181,14 @@ describe('MarketScanSummary', () => {
       <MarketScanSummary scan={scan} completedAt={EQUITY_NOW} scanning={false} failed={false} />,
     );
     const panel = screen.getByRole('region', { name: 'Market scan' });
-    const coverage = within(panel).getByRole('region', { name: 'Coverage by asset class' });
-    expect(
-      within(coverage).getByText(
-        'fixture-eod · us-equity-daily-v1 · sessions to 27 Oct close (New York) · 1 from cache, fetched up to 3h 05m before this scan',
-      ),
-    ).toBeInTheDocument();
+    expect(fact(panel, 'Data as of').value).toBe(
+      'candles to 27 Oct close (UTC); sessions to 27 Oct close (New York)',
+    );
+    expect(fact(panel, 'Data as of').detail).toContain(
+      '1 from cache, fetched up to 3h 05m before this scan',
+    );
+    // Two scanned classes: each states its own status and data time.
+    expect(panel.querySelectorAll('.scan-asof')).toHaveLength(2);
     const equities = within(panel).getByRole('region', { name: 'Equities & ETFs results' });
     expect(
       within(equities).getByText(
@@ -187,11 +201,12 @@ describe('MarketScanSummary', () => {
   it('never offers an action: no links, and only review controls', () => {
     const panel = renderScan([supported('BTC-USD')]);
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
-    fireEvent.click(within(panel).getByRole('button', { name: 'Explain BTC-USD' }));
+    fireEvent.click(within(panel).getByRole('button', { name: /^BTC-USD,/ }));
     for (const scope of [panel, screen.getByRole('dialog')]) {
       expect(within(scope).queryByRole('link')).not.toBeInTheDocument();
       for (const button of within(scope).queryAllByRole('button')) {
-        expect(button).toHaveAccessibleName(/^(Explain|Close|Reset|Clear)/);
+        // A row opens its own evidence; the rest are Close, Reset and Clear.
+        expect(button).toHaveAccessibleName(/^(Close|Reset|Clear|BTC-USD, rank 1, score \d+)/);
       }
       expect(scope.textContent).not.toMatch(/trade now|buy now|place order|broker/i);
     }
@@ -265,10 +280,12 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(fact(panel, 'Data as of').value).toBe('sessions to 27 Oct close (New York)');
     expect(fact(panel, 'Timeframe')).toEqual({ value: '1D', detail: 'New York sessions' });
     expect(fact(panel, 'Source').value).toBe('TradingView MCP get_ohlcv');
+    // One class: the header's coverage is the whole breakdown.
+    expect(within(panel).queryByRole('region', { name: 'Coverage by asset class' })).toBeNull();
     expect(panel).toHaveTextContent(
       'Reloading this page re-reads this import; it does not fetch new TradingView bars',
     );
-    expect(panel).toHaveTextContent('never merged into the Market scan or the Markets table');
+    expect(panel).toHaveTextContent('never merged into the Market scan or the Markets directory');
     expect(within(panel).queryByText('Stale')).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
     const rows = [...panel.querySelectorAll<HTMLElement>('.scan-row')];
@@ -276,7 +293,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(rows).toHaveLength(evaluated.length);
     expect(rows[0]).toHaveTextContent(`#1${evaluated[0]!.ticker}`);
     expect(rows[0]).toHaveTextContent(source.symbols[evaluated[0]!.ticker]!);
-    expect(rows[0]).toHaveTextContent(/RSI \d+\.\d → \d+ ×0\.\d\d · MACD hist [+-]\d/);
+    expect(rows[0]).toHaveTextContent(/Short of ZC LONG: Score \d+, needs ≥ 78/);
     const failures = within(panel).getByRole('region', { name: 'Not evaluated this scan' });
     expect(within(failures).getByText(/HTTP 429/)).toBeInTheDocument();
     const notes = within(panel).getByRole('region', { name: 'Source and limitations' });
@@ -304,8 +321,9 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     fireEvent.click(within(panel).getByRole('tab', { name: /Risk warnings/ }));
     const [item] = panel.querySelectorAll('.scan-row');
     expect(item).toHaveTextContent('AAPL');
-    expect(item).toHaveTextContent('High-volatility');
-    expect(item).toHaveTextContent(/ATR \d+\.\d\d% → \d+ ×0\.30/);
+    expect(item).toHaveTextContent(/High-volatility: ATR \d+\.\d\d% of price ≥ 4\.00%/);
+    fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(/Volatility Regime \(ATR\)\d+30%/);
   });
 
   it('names a symbol that does hold a TradingView alert, without calling a setup an alert', () => {
@@ -422,7 +440,7 @@ describe('Scan review: views, explanation and comparison', () => {
     const { scan, panel, view } = renderReview(fourEquities());
     view('All ranked');
     const spy = scan.results.find((result) => result.ticker === 'SPY')!;
-    const explainButton = within(panel).getByRole('button', { name: 'Explain SPY' });
+    const explainButton = within(panel).getByRole('button', { name: /^SPY,/ });
     explainButton.focus();
     fireEvent.click(explainButton);
     const dialog = screen.getByRole('dialog', { name: 'SPY explanation' });
@@ -518,14 +536,14 @@ describe('Scan review: views, explanation and comparison', () => {
     const { panel, view } = renderReview(fourEquities(), source);
     expect(within(panel).getByText('Historical dev import')).toBeInTheDocument();
     expect(within(panel).getByText('Stale')).toHaveClass('market-scan-status');
-    const asOf = panel.querySelector('.scan-asof')!;
-    expect(asOf).toHaveTextContent('sessions to 27 Oct close (New York)');
-    expect(asOf).toHaveTextContent(
+    const asOf = fact(panel, 'Data as of');
+    expect(asOf.value).toBe('sessions to 27 Oct close (New York)');
+    expect(asOf.detail).toMatch(
       /Stale: \d+ newer sessions are final, and this scan does not refresh/,
     );
     expect(panel.textContent).not.toMatch(/\blive\b/i);
     view('All ranked');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Explain AAPL' }));
+    fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
     const dialog = screen.getByRole('dialog', { name: 'AAPL explanation' });
     expect(dialog).toHaveTextContent('Historical import');
     expect(dialog).toHaveTextContent(/Stale: \d+ newer sessions are final/);
@@ -543,13 +561,83 @@ describe('Scan review: views, explanation and comparison', () => {
         error: { code: 'FETCH_FAILED', detail: 'HTTP 503' },
       },
     ]);
-    expect(panel.querySelector('.scan-asof')).toHaveTextContent(
+    expect(fact(panel, 'Data as of').detail).toMatch(
       /Stale: latest candle closed \d+h \d\dm ago, past 48h/,
     );
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
-    fireEvent.click(within(panel).getByRole('button', { name: 'Explain BTC-USD' }));
+    fireEvent.click(within(panel).getByRole('button', { name: /^BTC-USD,/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent(
       'This scan is incomplete: the rank is among 1 evaluated, not all 2 supported.',
     );
+  });
+
+  it('shows the evidence beside the list on a wide screen, without a dialog or losing the list', () => {
+    wideScreen();
+    const { scan, panel } = renderReview(fourEquities());
+    expect(within(panel).getByRole('region', { name: 'Evidence' })).toHaveTextContent(
+      'Select an asset to read its evidence',
+    );
+    const row = (ticker: string) =>
+      within(panel).getByRole('button', { name: new RegExp(`^${ticker},`) });
+    for (const ticker of ['AAPL', 'MSFT', 'NVDA']) {
+      fireEvent.click(row(ticker));
+      const evidence = within(panel).getByRole('region', { name: `${ticker} evidence` });
+      const model = scan.results.find((result) => result.ticker === ticker)!.model!;
+      expect(evidence).toHaveTextContent(model.rationale);
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(within(panel).getAllByRole('button', { current: true })).toEqual([row(ticker)]);
+      expect(row(ticker)).toHaveAttribute('aria-controls', evidence.id);
+    }
+    // The asset's own data; the scan's source, model and time stay in the header.
+    const evidence = within(panel).getByRole('region', { name: 'NVDA evidence' });
+    const terms = [...evidence.querySelectorAll('dt')].map((term) => term.textContent);
+    expect(terms).toEqual(expect.arrayContaining(['Instrument', 'Last evaluated', 'Fetched']));
+    expect(terms).not.toEqual(expect.arrayContaining(['Source']));
+    expect(terms).not.toContain('Model');
+
+    // Filtering the selection out keeps it open and says so.
+    fireEvent.change(within(panel).getByRole('searchbox', { name: 'Search ticker or symbol' }), {
+      target: { value: 'msft' },
+    });
+    expect(evidence).toHaveTextContent('Hidden from the list by the current view or filters.');
+    fireEvent.click(row('MSFT'));
+    expect(within(panel).getByRole('region', { name: 'MSFT evidence' })).not.toHaveTextContent(
+      'Hidden from the list',
+    );
+  });
+
+  it('moves between rows with Up and Down', () => {
+    const { panel } = renderReview(fourEquities());
+    const rows = within(panel).getAllByRole('button', { name: /, rank \d+, score/ });
+    rows[0]!.focus();
+    fireEvent.keyDown(rows[0]!, { key: 'ArrowDown' });
+    expect(rows[1]).toHaveFocus();
+    fireEvent.keyDown(rows[1]!, { key: 'ArrowUp' });
+    expect(rows[0]).toHaveFocus();
+    fireEvent.keyDown(rows[0]!, { key: 'ArrowUp' });
+    expect(rows[0]).toHaveFocus();
+  });
+
+  it('gives each row a short reason from the clauses that decide its setup', () => {
+    // Labeled fixture: a long fall that turns up, so RSI is oversold while MACD turns positive.
+    const turn = (i: number) => (i < 194 ? 30 - i * 0.07 : 30 - 194 * 0.07 + (i - 194) * 0.05);
+    const { scan, panel } = renderReview([
+      { ...supported('LINK-USD'), candles: candles(turn) },
+      supported('BTC-USD'),
+      equity('SPY', choppy),
+    ]);
+    const reason = (ticker: string) =>
+      within(panel)
+        .getByRole('button', { name: new RegExp(`^${ticker},`) })
+        .querySelector('.scan-row-reason')?.textContent;
+    const setups = (ticker: string) => scan.results.find((r) => r.ticker === ticker)!.setups!;
+    expect(setups('LINK-USD').long).toBe(true);
+    expect(reason('LINK-USD')).toMatch(
+      /^Score \d+ ≥ 78, MACD momentum \+\d\.\d\d% ≥ \+0\.05% of price$/,
+    );
+    expect(setups('BTC-USD')).toEqual({ long: false, risk: false });
+    expect(reason('BTC-USD')).toMatch(/^Short of ZC LONG: Score \d+, needs ≥ 78/);
+    expect(setups('SPY').risk).toBe(true);
+    expect(reason('SPY')).toMatch(/High-volatility: ATR \d+\.\d\d% of price ≥ 4\.00%$/);
   });
 });

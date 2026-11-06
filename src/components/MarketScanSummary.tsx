@@ -98,6 +98,12 @@ function DevSourceNotes({
       <h3 className="market-scan-label">Source and limitations</h3>
       <ul className="market-scan-list market-scan-notes">
         <li>
+          Reloading this page re-reads this import; it does not fetch new TradingView bars, and
+          nothing re-scans on a schedule. A new scan needs the owner&rsquo;s agent session to
+          retrieve bars and run the import again (owner runbook in docs/MARKET_SCANNER.md). Its
+          ranks, scores and coverage are never merged into the Market scan or the Markets directory.
+        </li>
+        <li>
           Daily bars retrieved by the owner&rsquo;s agent session through TradingView&rsquo;s MCP
           server ({source.tool}, {source.interval}) from{' '}
           {UTC_TIME.format(Date.parse(source.retrieval.startedAt))} to{' '}
@@ -159,17 +165,11 @@ function CohortRow({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Market
   const { coverage } = cohort;
   const members = scan.results.filter((result) => result.assetClass === cohort.assetClass);
   const unsupported = cohort.status === 'UNSUPPORTED';
+  // Source, policy and data time are the scan header's; only why a class was skipped is new here.
   const source = unsupported
     ? (members.find((result) => result.status === 'UNSUPPORTED')?.detail ??
       'No validated daily candle source.')
-    : [
-        PROVIDER_LABEL[cohort.provider ?? ''] ?? cohort.provider,
-        cohort.candlePolicyVersion,
-        dataAsOfLabel(cohort),
-        cacheLabel(members, scan.evaluationTime),
-      ]
-        .filter(Boolean)
-        .join(' · ');
+    : null;
   return (
     <li className="market-scan-cohort">
       <span className="market-scan-cohort-name">
@@ -181,7 +181,7 @@ function CohortRow({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Market
           ? `Not scanned · ${coverage.configured}`
           : `${coverage.evaluated} of ${coverage.supported} evaluated`}
       </span>
-      <span className="market-scan-rationale">{source}</span>
+      {source && <span className="market-scan-rationale">{source}</span>}
     </li>
   );
 }
@@ -227,6 +227,13 @@ export function MarketScanSummary({
   const freshness = scanned.flatMap((cohort) => cohortFreshness(cohort, now) ?? []);
   const stale = freshness.some((item) => item.stale);
   const policies = [...new Set(scanned.map((cohort) => cohort.candlePolicyVersion))];
+  const cached = scanned.flatMap(
+    (cohort) =>
+      cacheLabel(
+        scan.results.filter((result) => result.assetClass === cohort.assetClass),
+        scan.evaluationTime,
+      ) ?? [],
+  );
   const coverageDetail = [
     `${coverage.configured} ${universeLabel(scan.universe.source)}`,
     coverage.notEvaluated > 0 && `${coverage.notEvaluated} failed`,
@@ -269,10 +276,13 @@ export function MarketScanSummary({
             label="Data as of"
             value={scanned.map(dataAsOfLabel).filter(Boolean).join('; ') || 'None evaluated'}
             detail={
-              freshness.length > 0 && (
-                <span className={cn(stale && 'scan-stale')}>
-                  {freshness.map((item) => item.detail).join('; ')}
-                </span>
+              (freshness.length > 0 || cached.length > 0) && (
+                <>
+                  <span className={cn(stale && 'scan-stale')}>
+                    {freshness.map((item) => item.detail).join('; ')}
+                  </span>
+                  {cached.length > 0 && <span className="block">{cached.join('; ')}</span>}
+                </>
               )
             }
           />
@@ -290,17 +300,7 @@ export function MarketScanSummary({
           )}
         </dl>
       </header>
-      {source && (
-        <p className="market-scan-note">
-          Reloading this page re-reads this import; it does not fetch new TradingView bars, and
-          nothing re-scans on a schedule. A new scan needs the owner&rsquo;s agent session to
-          retrieve bars and run the import again (owner runbook in docs/MARKET_SCANNER.md). Its
-          ranks, scores and coverage are never merged into the Market scan or the Markets table.
-        </p>
-      )}
-      {scanned.length > 0 && (
-        <ScanReview scan={scan} source={source} detailed={source !== undefined} />
-      )}
+      {scanned.length > 0 && <ScanReview scan={scan} source={source} />}
       {failures.length > 0 && (
         <section className="market-scan-failures" aria-label="Not evaluated this scan">
           <h3 className="market-scan-label">Not evaluated this scan</h3>
@@ -316,14 +316,16 @@ export function MarketScanSummary({
           </ul>
         </section>
       )}
-      <section className="market-scan-coverage" aria-label="Coverage by asset class">
-        <h3 className="market-scan-label">Coverage by asset class and timeframe</h3>
-        <ul className="market-scan-list">
-          {scan.cohorts.map((cohort) => (
-            <CohortRow key={cohort.assetClass} cohort={cohort} scan={scan} />
-          ))}
-        </ul>
-      </section>
+      {scan.cohorts.length > 1 && (
+        <section className="market-scan-coverage" aria-label="Coverage by asset class">
+          <h3 className="market-scan-label">Coverage by asset class and timeframe</h3>
+          <ul className="market-scan-list">
+            {scan.cohorts.map((cohort) => (
+              <CohortRow key={cohort.assetClass} cohort={cohort} scan={scan} />
+            ))}
+          </ul>
+        </section>
+      )}
       {source && <DevSourceNotes scan={scan} source={source} />}
     </section>
   );

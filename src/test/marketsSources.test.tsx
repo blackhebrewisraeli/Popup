@@ -3,8 +3,8 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
-import { MarketsSources, type MarketsSource } from '@/components/TradingViewDevScan';
-import { MarketsSection, ResearchZone } from '@/components/Workspace';
+import type { MarketsSource } from '@/components/TradingViewDevScan';
+import { MarketsSection, ResearchZone, type ResearchPlace } from '@/components/Workspace';
 import type { Candle } from '@/lib/binance';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
@@ -106,21 +106,27 @@ const IMPORT = importOf([
 
 function Markets() {
   const [source, setSource] = useState<MarketsSource>('market-data');
+  const [place, setPlace] = useState<ResearchPlace>('scan');
   return (
-    <MarketsSources
+    <ResearchZone
+      pending={false}
+      failed={false}
+      empty={false}
+      onPreview={() => {}}
+      scan={
+        <MarketScanSummary
+          scan={MARKET_SCAN}
+          completedAt={EQUITY_NOW}
+          scanning={false}
+          failed={false}
+        />
+      }
+      markets={<div aria-label="Markets table" role="table" />}
+      alerts={null}
       source={source}
       onSource={setSource}
-      marketData={
-        <>
-          <MarketScanSummary
-            scan={MARKET_SCAN}
-            completedAt={EQUITY_NOW}
-            scanning={false}
-            failed={false}
-          />
-          <div aria-label="Markets table" role="table" />
-        </>
-      }
+      place={place}
+      onPlace={setPlace}
     />
   );
 }
@@ -146,8 +152,6 @@ function serve(respond: () => Promise<Response>) {
 
 const json = (body: unknown) => () => Promise.resolve(new Response(JSON.stringify(body)));
 
-const escape = (text: string) => text.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-
 function rowsOf(panel: HTMLElement) {
   return [...panel.querySelectorAll<HTMLElement>('.scan-row')];
 }
@@ -164,7 +168,13 @@ describe('Markets source: market data or the local TradingView import', () => {
       'true',
     );
     expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
+    // The directory is its own place, out of the scan's way until opened.
+    expect(screen.queryByRole('table', { name: 'Markets table' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Markets directory' }));
     expect(screen.getByRole('table', { name: 'Markets table' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
+    expect(screen.queryByRole('tablist', { name: 'Markets source' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
     expect(
       screen.queryByRole('region', { name: 'TradingView development scan' }),
     ).not.toBeInTheDocument();
@@ -201,11 +211,10 @@ describe('Markets source: market data or the local TradingView import', () => {
       expect(row.querySelector('.market-scan-score')).toHaveTextContent(
         `Score ${model.signal_score}`,
       );
-      // The recorded reason names the regime itself.
-      expect(row.querySelector('.market-scan-rationale')).toHaveTextContent(
-        new RegExp(`^${escape(model.rationale)}$`),
-      );
-      expect(model.rationale).toContain(`${REGIME_LABELS[model.regime]} regime`);
+      // The short reason is the clause that decides the setup state; zero long setups here.
+      const reason = row.querySelector('.scan-row-reason')?.textContent;
+      if (result.setups!.risk) expect(reason).toMatch(/^(Score \d+ ≤ 28|High-volatility: ATR )/);
+      else expect(reason).toMatch(/^Short of ZC LONG: /);
       expect(row.querySelector('.is-long') !== null).toBe(result.setups!.long);
       expect(row.querySelector('.is-risk') !== null).toBe(result.setups!.risk);
       if (!result.setups!.long && !result.setups!.risk) expect(row).toHaveTextContent('No setup');
@@ -236,7 +245,7 @@ describe('Markets source: market data or the local TradingView import', () => {
     fireEvent.click(within(market).getByRole('checkbox', { name: 'Compare BTC-USD' }));
     fireEvent.click(within(market).getByRole('checkbox', { name: 'Compare ETH-USD' }));
     expect(screen.getByRole('region', { name: 'Crypto comparison' })).toBeInTheDocument();
-    fireEvent.click(within(market).getByRole('button', { name: 'Explain BTC-USD' }));
+    fireEvent.click(within(market).getByRole('button', { name: /^BTC-USD,/ }));
     expect(screen.getByRole('dialog', { name: 'BTC-USD explanation' })).toBeInTheDocument();
 
     pick(/TradingView import/);
@@ -246,8 +255,12 @@ describe('Markets source: market data or the local TradingView import', () => {
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'Compare AAPL' }));
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'Compare MSFT' }));
     expect(screen.getByRole('region', { name: 'Equities & ETFs comparison' })).toBeInTheDocument();
-    fireEvent.click(within(panel).getByRole('button', { name: 'Explain AAPL' }));
-    expect(screen.getByRole('dialog', { name: 'AAPL explanation' })).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
+    const dialog = screen.getByRole('dialog', { name: 'AAPL explanation' });
+    // The recorded rationale, which names the regime, moved from the row to the evidence.
+    const aapl = IMPORT.scan.results.find((result) => result.ticker === 'AAPL')!.model!;
+    expect(dialog).toHaveTextContent(aapl.rationale);
+    expect(aapl.rationale).toContain(`${REGIME_LABELS[aapl.regime]} regime`);
 
     pick(/Market data/);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -268,7 +281,7 @@ describe('Markets source: market data or the local TradingView import', () => {
     const { fetch, pick, open } = serve(json(IMPORT));
     const panel = await open('4');
     fireEvent.click(within(panel).getByRole('checkbox', { name: 'Compare AAPL' }));
-    fireEvent.click(within(panel).getByRole('button', { name: 'Explain AAPL' }));
+    fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     pick(/Market data/);
     pick(/TradingView import/);
@@ -365,6 +378,7 @@ describe('Research zone', () => {
 
   function Research(state: Readonly<{ pending?: boolean; failed?: boolean; empty?: boolean }>) {
     const [source, setSource] = useState<MarketsSource>('market-data');
+    const [place, setPlace] = useState<ResearchPlace>('scan');
     return (
       <ResearchZone
         pending={state.pending ?? false}
@@ -374,6 +388,8 @@ describe('Research zone', () => {
         {...marketData}
         source={source}
         onSource={setSource}
+        place={place}
+        onPlace={setPlace}
       />
     );
   }
@@ -386,23 +402,31 @@ describe('Research zone', () => {
     );
   }
 
-  it('puts the scan first and keeps the market list, advisor and alerts out of the TradingView review', async () => {
+  it('opens on the scan and keeps the Markets directory, advisor and alerts in a place of their own', async () => {
     vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
     renderResearch();
-    const scan = screen.getByRole('region', { name: 'Market scan' });
-    const markets = screen.getByRole('region', { name: 'Markets' });
-    expect(scan.compareDocumentPosition(markets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Scan' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
+    for (const name of ['Markets directory', 'Price alerts']) {
+      expect(screen.queryByRole('region', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: 'Build Portfolio' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Markets directory' }));
+    const markets = screen.getByRole('region', { name: 'Markets directory' });
     expect(within(markets).getByText('0 ASSETS')).toBeInTheDocument();
     expect(await within(markets).findByRole('button', { name: 'Build Portfolio' })).toBeVisible();
     expect(within(markets).getByRole('group', { name: 'Market view' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Price alerts' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
 
     await screen.findByRole('tab', { name: 'TradingView import 4' });
     fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
     expect(
       screen.getByRole('region', { name: 'TradingView development scan' }),
     ).toBeInTheDocument();
-    for (const name of ['Market scan', 'Markets', 'Price alerts']) {
+    for (const name of ['Market scan', 'Markets directory', 'Price alerts']) {
       expect(screen.queryByRole('region', { name })).toBeNull();
     }
     expect(screen.queryByRole('button', { name: 'Build Portfolio' })).toBeNull();
@@ -434,7 +458,31 @@ describe('Research zone', () => {
   it('holds the scan place while market data loads, in a production build too', () => {
     vi.stubEnv('DEV', false);
     renderResearch({ pending: true });
-    expect(screen.getByLabelText('Loading market data')).toHaveAttribute('aria-busy', 'true');
-    expect(screen.queryByRole('region', { name: 'Markets' })).toBeNull();
+    // Each place holds its own spot; only the open one is shown.
+    const [loading] = screen.getAllByLabelText('Loading market data').filter((el) => {
+      return el.closest('[hidden]') === null;
+    });
+    expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('region', { name: 'Markets directory' })).toBeNull();
+  });
+
+  it('keeps the scan filters, selection and comparison while the directory is open', () => {
+    vi.stubEnv('DEV', false);
+    renderResearch();
+    const scan = screen.getByRole('region', { name: 'Market scan' });
+    const search = within(scan).getByRole('searchbox', { name: 'Search ticker or symbol' });
+    fireEvent.change(search, { target: { value: 'BTC' } });
+    fireEvent.click(within(scan).getByRole('checkbox', { name: 'Compare BTC-USD' }));
+    fireEvent.click(within(scan).getByRole('button', { name: /^BTC-USD,/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Markets directory' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
+    expect(search).toHaveValue('BTC');
+    expect(within(scan).getByRole('checkbox', { name: 'Compare BTC-USD' })).toBeChecked();
+    expect(within(scan).getByRole('button', { name: /^BTC-USD,/ })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
   });
 });

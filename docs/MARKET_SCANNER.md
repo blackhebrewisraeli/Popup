@@ -127,21 +127,34 @@ full answer only for a complete cohort.
 
 ## Reviewing a scan
 
-Research opens on the scan. Each scan panel (the live Market scan and the TradingView development
-scan) heads with its source, timeframe, data as of and coverage, then lists its results in three
-views: **Long setups** (ZC LONG holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every
-evaluated asset by rank; most meet no setup). Both open on **All ranked**, so zero long setups is a
-normal result, not an empty screen. Each row shows rank, asset, score, setup and the recorded
-reason. The scan offers no order, broker or paper-trading action; those stay in the Markets list below
-it (broker links, asset details, Build Portfolio) and on the Paper Desk. A search box (ticker, instrument or requested
-symbol) and filters on recorded fields narrow them: regime, the model's own momentum bias (±0.05% of
-price is flat) and risk-profile fit. "No setups" is a full answer only for a complete cohort; an
-empty filter result says how many it hid. Next to the results each cohort shows its coverage, data
-as of, and whether the data still passes the scan's own freshness rule now: crypto's latest close
-within 48h, equities' latest final session or the one before. Past that the data is marked **Stale**.
-A scan is never called live.
+Research has two places: **Scan** (the default) and **Markets directory**. The directory holds the
+price table (asset details, an alert button and a broker link per row), the price alerts panel and
+Build Portfolio, so it never reads as a second scanner. Both stay mounted, so moving between them keeps the scan's
+filters, selection and comparison. The scan offers no order, broker or paper-trading action; those
+stay in the directory and on the Paper Desk.
 
-**Explain** opens one asset's explanation, derived only from its recorded values
+Each scan (the live Market scan and the TradingView development scan) heads with its source,
+timeframe, data as of (with freshness and any cache age) and coverage, stated once for the scan. A
+cohort repeats its own status and data time only when a scan has more than one; the coverage
+breakdown by class appears only then too. The results come in three views: **Long setups** (ZC LONG
+holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every evaluated asset by rank; most meet
+no setup). Both open on **All ranked**, so zero long setups is a normal result, not an empty screen.
+Each row shows rank, asset, score, setup and a short reason: the recorded clauses that decide its
+setup state ("Score 61, needs ≥ 78" for an asset short of ZC LONG), from the same `explainResult`
+the evidence uses. A search box (ticker, instrument or requested symbol) and filters on recorded
+fields narrow them: regime, the model's own momentum bias (±0.05% of price is flat) and risk-profile
+fit. "No setups" is a full answer only for a complete cohort; an empty filter result says how many
+it hid. The header says whether the data still passes the scan's own freshness rule now: crypto's
+latest close within 48h, equities' latest final session or the one before. Past that the data is
+marked **Stale**. A scan is never called live.
+
+Selecting a row opens its evidence. From 1024px wide it sits beside the list and keeps its own
+scroll, so the list, its filters and the page stay put; Up and Down move between rows. Narrower, it
+opens as a modal sheet, and closing the sheet returns focus to the selected row. The side panel
+leaves out the scan's source, model and scored time, which the header already shows; the sheet,
+which covers the header, keeps them.
+
+The evidence is one asset's explanation, derived only from its recorded values
 (`explainResult`): each ZC LONG and ZC RISK clause with the recorded value against the threshold,
 RSI(14), MACD histogram / price, ATR(14) / price, the factor scores and weights, and the regime with
 the first-match rule that chose it. Supports and weakens weigh each factor against the setup in
@@ -154,7 +167,7 @@ liquidity filter, an incomplete scan, stale data, and what is known about a Trad
 field the scan did not record reads "Not recorded". Nothing is generated, and no confidence is
 invented.
 
-**Compare** puts up to three assets of one cohort side by side: rank, score, regime, each setup
+**Compare**, a checkbox at the end of each row, puts up to three assets of one cohort side by side: rank, score, regime, each setup
 condition, the three readings with their factor scores and weights, risk-profile fit, last evaluated
 session, window and fetch time. Assets from different asset classes cannot be selected together.
 
@@ -183,11 +196,11 @@ to count incomplete scans. The snapshots keep that whole population.
 ## TradingView development scan (local, owner-initiated)
 
 A one-off local demonstration: 50 US equities and ETFs scored by this scanner on daily bars that the
-owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, Research
-has a source selector: **Market data** (the Market scan, then the Markets list and price alerts) or
-**TradingView import**, which replaces all three with the **TradingView development scan**. The
-selector sits above the market-data loading and error states, so the import shows even while live
-market data is loading or has failed. The selector
+owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, the Scan
+place has a source selector: **Market data** (the Market scan) or **TradingView import**, which
+replaces it with the **TradingView development scan**. The Markets directory always shows market
+data. The selector sits above the market-data loading and error states, so the import shows even
+while live market data is loading or has failed. The selector
 names the import's state (evaluated count, `Loading`, `None` or `Unreadable`). It does not change
 live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
@@ -236,7 +249,7 @@ file loads, and when it cannot be read, it says that too. It opens on **All rank
 asset by its recorded rank, so zero long setups still leaves all of them to review; the top rank is
 not relabeled a recommendation. The Market scan names its own source (`Binance spot klines`). Only
 one source shows at a time: the import view has no price table, asset count, Build Portfolio or
-asset details sheet, and Explain and Compare read the import alone, so reviewing it requests nothing
+asset details sheet, and its evidence and Compare read the import alone, so reviewing it requests nothing
 from Binance or any other provider (the page's own price feeds keep running in the background). Switching
 sources discards the other's view, filters, comparison and open explanation.
 
