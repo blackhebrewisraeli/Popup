@@ -59,7 +59,9 @@ import {
   ScanSnapshotConflictError,
   scanSummary,
 } from './marketScanStore';
+import { scoreCounts, setupCounts, setupMoved } from '@/lib/scanChanges';
 import {
+  attachBaseline,
   captureResponses,
   finishRetrieval,
   importTradingViewScan,
@@ -114,6 +116,7 @@ const USAGE = `Usage:
   npm run evaluate -- tradingview-capture RETRIEVAL_ID [SYMBOL=FILE ...] [--alerts SYMBOL,...|none] [--store DIR]
   npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "ERROR" [--store DIR]
   npm run evaluate -- tradingview-finish RETRIEVAL_ID [--store DIR] [--scan-store DIR]
+  npm run evaluate -- tradingview-baseline SCAN_ID [--store DIR]
   npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]`;
 
@@ -554,6 +557,29 @@ const commandHandlers: Record<string, CommandHandler> = {
     });
     printJson(report);
     if (report.outcome !== 'COMPLETE') process.exitCode = 1;
+  },
+  // Names the earlier TradingView import the Research review's "Changes since previous scan" compares with.
+  'tradingview-baseline': async (value, args) => {
+    assertOptions('tradingview-baseline', args, ['--store']);
+    const { viewPath, comparison } = await attachBaseline({
+      store: storePath(args, SCAN_STORE),
+      baselineId: requiredValue('tradingview-baseline', value),
+    });
+    if (comparison.status !== 'COMPARED') {
+      printJson({ viewPath, ...comparison });
+      process.exitCode = 1;
+      return;
+    }
+    const { changes, ...rest } = comparison;
+    printJson({
+      viewPath,
+      ...rest,
+      compared: changes.length,
+      long: setupCounts(changes, 'long'),
+      risk: setupCounts(changes, 'risk'),
+      scores: scoreCounts(changes),
+      changed: changes.filter(setupMoved),
+    });
   },
   // Retrospective studies frozen in docs/scanner-research.v*.json; they write only git-ignored files.
   'scanner-research': (value, args) =>

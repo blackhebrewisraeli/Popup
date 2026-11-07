@@ -27,7 +27,9 @@ import {
   type EquityDailyBar,
   type EquityDailySeries,
 } from '@/lib/usEquityDaily';
-import { reproduceScan, saveScan, type ScanSnapshot } from './marketScanStore';
+import { compareScans, type ScanComparison } from '@/lib/scanChanges';
+import { stableSerialize } from './evaluationStore';
+import { loadScan, reproduceScan, saveScan, type ScanSnapshot } from './marketScanStore';
 
 /**
  * The local handoff between the owner's agent session and the scanner. The
@@ -352,6 +354,52 @@ export async function publishTradingViewDevScan(
       if (error.code !== 'ENOENT') throw error;
     });
   }
+}
+
+/**
+ * Names the earlier snapshot that "Changes since previous scan" compares the
+ * displayed import with. Both come from the scan store. The displayed view must
+ * be the stored snapshot it names, and it and a comparable baseline must
+ * reproduce, so no change is read off unverified evidence. An incomparable
+ * baseline is attached only to say why nothing is compared; none of its results
+ * is shown. Only TradingView development imports qualify: the review never
+ * compares across sources.
+ */
+export async function attachBaseline(options: {
+  store: string;
+  baselineId: string;
+}): Promise<{ viewPath: string; comparison: ScanComparison }> {
+  const path = join(resolve(options.store), TRADINGVIEW_DEV_SCAN_FILE);
+  const view = parseTradingViewDevScan(JSON.parse(await readFile(path, 'utf8')));
+  if (options.baselineId === view.scanId) {
+    throw new Error(`${view.scanId} is the displayed scan; name an earlier TradingView import.`);
+  }
+  const [displayed, earlier] = await Promise.all([
+    loadScan(view.scanId, options.store),
+    loadScan(options.baselineId, options.store),
+  ]);
+  if (stableSerialize(displayed.scan) !== stableSerialize(view.scan)) {
+    throw new Error(`The displayed view is not snapshot ${view.scanId}; import it again.`);
+  }
+  if (earlier.scan.universe.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) {
+    throw new Error(
+      `${earlier.scanId} is not a TradingView development import; the review compares only its own imports.`,
+    );
+  }
+  const baseline = { scanId: earlier.scanId, importedAt: earlier.completedAt, scan: earlier.scan };
+  const comparison = compareScans(view, baseline);
+  const verify = comparison.status === 'COMPARED' ? [view.scanId, earlier.scanId] : [view.scanId];
+  const reproduced = await Promise.all(
+    verify.map((scanId) => reproduceScan(scanId, options.store)),
+  );
+  const mismatch = reproduced.find((result) => result.status !== 'MATCH');
+  if (mismatch) {
+    throw new Error(
+      `${mismatch.scanId} does not reproduce (${mismatch.reason}); nothing was attached.`,
+    );
+  }
+  const viewPath = await publishTradingViewDevScan({ ...view, baseline }, options.store);
+  return { viewPath, comparison };
 }
 
 /*

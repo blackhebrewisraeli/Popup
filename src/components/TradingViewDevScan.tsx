@@ -3,6 +3,7 @@ import { Radar } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { Segmented } from '@/components/Segmented';
+import { compareScans } from '@/lib/scanChanges';
 import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_ROUTE } from '@/lib/tradingViewDevScan';
 
 /** The section's frame while there is no scan to show, so it is never mistaken for the Market scan. */
@@ -78,7 +79,7 @@ export function TradingViewDevScan() {
       </DevScanState>
     );
   }
-  const { scan, importedAt, source } = query.data;
+  const { scan, importedAt, source, baseline } = query.data;
   return (
     <MarketScanSummary
       scan={scan}
@@ -86,6 +87,7 @@ export function TradingViewDevScan() {
       scanning={false}
       failed={false}
       source={source}
+      changes={compareScans(query.data, baseline)}
     />
   );
 }

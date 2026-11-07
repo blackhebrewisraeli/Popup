@@ -288,6 +288,37 @@ asset details sheet, and its evidence and Compare read the import alone, so revi
 from Binance or any other provider (the page's own price feeds keep running in the background). Switching
 sources discards the other's view, filters, comparison and open explanation.
 
+### Changes since previous scan
+
+Above the ranked list, the TradingView review compares the displayed import with one earlier import
+the owner names by its scan ID in `.zerochart-scans/`:
+
+```sh
+npm run evaluate -- tradingview-baseline SCAN_ID
+```
+
+The command checks that the view is the stored snapshot it names. It refuses the displayed scan
+itself and any snapshot that is not a TradingView import, so the Market scan is never compared with
+one. A comparable baseline is written into `tradingview-dev-scan.json` only once both snapshots
+reproduce (`MATCH`), and the command prints the counts the view shows. Importing a scan replaces the
+view and clears the baseline; name it again.
+
+- **Comparable** means the same source, timeframe, universe, recorded instrument per ticker, scanner
+  and model versions, and candle policy, with the baseline evaluated first. Otherwise the view says
+  **Not comparable**, lists what differs and shows no change. Such a baseline is attached without
+  reproduction, since none of its results is shown.
+- **Shown:** each scan's evaluated session and coverage; how many Long setups and Risk warnings
+  appeared, cleared or held; scores as before → after, described, not graded; and the assets whose
+  setups moved. Selecting one opens its evidence.
+- **Partial coverage:** an asset evaluated in only one scan is listed apart and never counts as a
+  setup that appeared or cleared.
+- **Sessions:** two imports of the same session are a revision of its data, not a new session.
+  Sessions between the two that were never evaluated are named: a change could have happened on any
+  of them, so this is two readings, not a timed transition, and never an alert.
+- **Identity:** a snapshot does not record the exchange-qualified TradingView symbol, so identity is
+  compared on the recorded instrument (`US:<ticker>`) and provider; the symbol shown is the
+  displayed import's.
+
 The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`
 and `completedAt`, the alert check, and one entry per ticker: `symbol`, `receivedAt` and the response,
 or the error the agent got. A selected ticker missing from the file is reported as `FETCH_FAILED`;

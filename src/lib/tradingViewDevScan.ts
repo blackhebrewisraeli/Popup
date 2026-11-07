@@ -33,19 +33,36 @@ export interface TradingViewDevSource {
   pineAlerts: { checkedAt: string; symbols: readonly string[] } | null;
 }
 
+/**
+ * The earlier snapshot the owner named for "Changes since previous scan"
+ * (`npm run evaluate -- tradingview-baseline SCAN_ID`): a TradingView
+ * development import from the same scan store. Importing a scan replaces the
+ * view and drops it.
+ */
+export interface TradingViewDevBaseline {
+  scanId: string;
+  importedAt: string;
+  scan: MarketScan;
+}
+
 export interface TradingViewDevScan {
   kind: typeof TRADINGVIEW_DEV_SCAN_KIND;
   scanId: string;
   importedAt: string;
   source: TradingViewDevSource;
   scan: MarketScan;
+  baseline?: TradingViewDevBaseline;
+}
+
+function isScan(scan: Partial<MarketScan> | undefined): boolean {
+  return Array.isArray(scan?.results) && Array.isArray(scan.cohorts);
 }
 
 /** Shape check at the dev-server boundary: a malformed file is an error, never a partial panel. */
 export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
   const value = raw as Partial<TradingViewDevScan> | null;
   const source = value?.source;
-  const scan = value?.scan;
+  const baseline = value?.baseline;
   if (
     value?.kind !== TRADINGVIEW_DEV_SCAN_KIND ||
     typeof value.scanId !== 'string' ||
@@ -53,9 +70,11 @@ export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
     !source ||
     typeof source.notice !== 'string' ||
     typeof source.symbols !== 'object' ||
-    !scan ||
-    !Array.isArray(scan.results) ||
-    !Array.isArray(scan.cohorts)
+    !isScan(value.scan) ||
+    (baseline !== undefined &&
+      (typeof baseline?.scanId !== 'string' ||
+        typeof baseline.importedAt !== 'string' ||
+        !isScan(baseline.scan)))
   ) {
     throw new Error('Not a TradingView development scan file.');
   }
