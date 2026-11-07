@@ -144,7 +144,7 @@ describe('TradingViewDevScan', () => {
     serve(new Response(null, { status: 404 }));
     const panel = await screen.findByRole('region', { name: 'TradingView development scan' });
     await vi.waitFor(() =>
-      expect(panel).toHaveTextContent('No TradingView scan has been imported on this machine'),
+      expect(panel).toHaveTextContent('No TradingView scan is published on this machine'),
     );
     expect(panel).toHaveTextContent('npm run evaluate -- tradingview-import');
     expect(panel.querySelector('.scan-row')).toBeNull();

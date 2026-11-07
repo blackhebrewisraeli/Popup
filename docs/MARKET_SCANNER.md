@@ -201,7 +201,8 @@ place has a source selector: **Market data** (the Market scan) or **TradingView 
 replaces it with the **TradingView development scan**. The Markets directory always shows market
 data. The selector sits above the market-data loading and error states, so the import shows even
 while live market data is loading or has failed. The selector
-names the import's state (evaluated count, `Loading`, `None` or `Unreadable`). It does not change
+names the import's state (evaluated count, `Loading`, `Reloading`, `None`, `Unreadable`, or
+`Failed` when a reload failed and the earlier scan is still shown). It does not change
 live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
 | Step                    | Who                      | How                                                                                                                                                                                                                                                         |
@@ -216,11 +217,22 @@ live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
 ### Refreshing it (owner runbook)
 
-Reloading the page re-reads the last import. It never fetches TradingView bars, and nothing
-re-scans on a schedule. The agent's TradingView MCP session is the owner's, signed in with the
-owner's account; it is not a backend connection the app can call. To start a new scan, the owner
-pastes this prompt into an agent session that has TradingView's MCP server connected, opened in this
-repository:
+**Reload local scan**, above the TradingView review, re-reads the published
+`tradingview-dev-scan.json` through the dev route without reloading the page; so does reloading the
+page. Neither fetches TradingView bars, calls an agent or starts a scan, and nothing re-reads or
+re-scans on a schedule. While the review is open, the header's market-data refresh is hidden.
+
+- **Loaded, missing or unreadable:** the button is there in every state. A click during a read joins
+  that read. The line beside it names the scan shown and when the file was last read (UTC).
+- **A different scan:** the selector, scan metadata, results, evidence and "Changes since previous
+  scan" all switch to it together, and the review starts over: no selection, Compare or open
+  evidence carries across. An identical file keeps the review as it was.
+- **Failed reload** (server down, HTTP error, malformed or truncated file): the earlier scan stays
+  on screen under an alert naming it and saying it may not be the published scan; the selector
+  says `Failed`. A removed file shows the "no scan published" state instead of the earlier scan. The agent's TradingView MCP session is the owner's, signed in with the
+  owner's account; it is not a backend connection the app can call. To start a new scan, the owner
+  pastes this prompt into an agent session that has TradingView's MCP server connected, opened in this
+  repository:
 
 ```text
 Run Popup's TradingView development scan. You retrieve; the repository's helper binds, imports

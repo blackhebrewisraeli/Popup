@@ -867,6 +867,33 @@ body {
 .market-scan-devscan > .market-scan-head {
   border-top-style: dashed;
 }
+/* Reload local scan: re-reads the published file, above whichever state the review is in. */
+.devscan-reload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.devscan-reload > button[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.6;
+}
+.devscan-reload-status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.devscan-reload-failed {
+  flex: 1 1 100%;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border-radius: 10px;
+  color: var(--signal-red);
+  background: color-mix(in oklch, var(--signal-red) 6%, transparent);
+  border: 1px solid color-mix(in oklch, var(--signal-red) 30%, transparent);
+}
 .market-scan-tag {
   font-size: 12.5px;
   font-weight: 500;

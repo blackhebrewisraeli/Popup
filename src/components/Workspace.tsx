@@ -562,6 +562,12 @@ function Terminal() {
       ? baseAssets
       : baseAssets.filter((a) => getAssetClass(a.ticker) === assetClass);
   const rows = sortMarkets(filtered, marketView, scores);
+  // The header's refresh re-reads market data only; the TradingView review reloads its own file.
+  const reviewingImport =
+    import.meta.env.DEV &&
+    view === 'research' &&
+    researchPlace === 'scan' &&
+    marketsSource === 'tradingview';
 
   const page = (
     <div className="min-h-screen text-foreground">
@@ -620,17 +626,19 @@ function Terminal() {
                 />
                 {feedStatusLabel(reconnecting, preview, query)}
               </span>
-              <Button
-                variant="outline"
-                size="icon"
-                className="header-refresh h-9 w-9 flex-shrink-0"
-                aria-label="Refresh signals"
-                title="Refresh signals"
-                disabled={query.isFetching}
-                onClick={() => query.refetch()}
-              >
-                <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
-              </Button>
+              {!reviewingImport && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="header-refresh h-9 w-9 flex-shrink-0"
+                  aria-label="Refresh signals"
+                  title="Refresh signals"
+                  disabled={query.isFetching}
+                  onClick={() => query.refetch()}
+                >
+                  <RefreshCw size={14} className={cn(query.isFetching && 'animate-spin')} />
+                </Button>
+              )}
               <ThemeToggle />
             </div>
             {user && <HeaderProfile user={user} onSignOut={() => void signOut()} />}
