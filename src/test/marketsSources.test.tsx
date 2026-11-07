@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -305,7 +305,7 @@ describe('Markets source: import states', () => {
     const { open } = serve(() => Promise.resolve(new Response('', { status: 404 })));
     await open('None');
     expect(
-      screen.getByText(/No TradingView scan has been imported on this machine/),
+      screen.getByText(/No TradingView scan is published on this machine/),
     ).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Market scan' })).not.toBeInTheDocument();
   });
@@ -484,5 +484,196 @@ describe('Research zone', () => {
       'aria-current',
       'true',
     );
+  });
+});
+
+describe('Markets source: Reload local scan', () => {
+  const HOUR = 3_600_000;
+  /** Labeled fixture "scan B": a later local publish with other assets, compared with A. */
+  const B: DevScan = {
+    ...importOf([equity('AAPL', rising), equity('MSFT', wave)]),
+    scanId: '20261029T170000Z-0000000b',
+    importedAt: new Date(EQUITY_NOW + HOUR).toISOString(),
+    baseline: { scanId: IMPORT.scanId, importedAt: IMPORT.importedAt, scan: IMPORT.scan },
+  };
+
+  /** Answers each read with the next responder; the last one repeats. */
+  function reads(...responders: Array<() => Promise<Response>>) {
+    return () => (responders.length > 1 ? responders.shift()! : responders[0]!)();
+  }
+
+  function deferred() {
+    let resolve!: (response: Response) => void;
+    const promise = new Promise<Response>((done) => (resolve = done));
+    return { respond: () => promise, resolve };
+  }
+
+  const reload = () => fireEvent.click(screen.getByRole('button', { name: 'Reload local scan' }));
+
+  /** Compares and selects AAPL in the open review, then closes its evidence. */
+  function reviewAapl(panel: HTMLElement) {
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Compare AAPL' }));
+    fireEvent.click(within(panel).getByRole('checkbox', { name: 'Compare MSFT' }));
+    fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByRole('region', { name: 'Equities & ETFs comparison' })).toBeInTheDocument();
+  }
+
+  it('replaces scan A with a newly published scan B everywhere at once', async () => {
+    const { fetch, open } = serve(reads(json(IMPORT), json(B)));
+    const panel = await open('4');
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${IMPORT.scanId}`);
+    reviewAapl(panel);
+
+    reload();
+    await screen.findByRole('tab', { name: 'TradingView import 2' });
+    const review = screen.getByRole('region', { name: 'TradingView development scan' });
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${B.scanId}`);
+    expect(review.querySelector('.market-scan-head')).toHaveTextContent('2 of 2 evaluated');
+    const evaluated = B.scan.results.filter((result) => result.status === 'EVALUATED');
+    expect(
+      rowsOf(review).map((row) => row.querySelector('.market-scan-score')?.textContent),
+    ).toEqual(evaluated.map((result) => `Score ${result.model!.signal_score}`));
+    const changes = within(review).getByRole('region', { name: /Changes since previous scan/ });
+    expect(changes).toHaveTextContent(`Baseline${IMPORT.scanId}`);
+    expect(changes).toHaveTextContent(`Displayed${B.scanId}`);
+    // The review started over: no comparison, selection or evidence from scan A.
+    expect(screen.queryByRole('region', { name: 'Equities & ETFs comparison' })).toBeNull();
+    expect(within(review).getByRole('checkbox', { name: 'Compare AAPL' })).not.toBeChecked();
+    expect(review.querySelector('[aria-current="true"]')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fetch.mock.calls).toEqual([
+      [TRADINGVIEW_DEV_SCAN_ROUTE, { cache: 'no-store' }],
+      [TRADINGVIEW_DEV_SCAN_ROUTE, { cache: 'no-store' }],
+    ]);
+  });
+
+  it('keeps the review as it was when the file has not changed', async () => {
+    const pending = deferred();
+    const { fetch, open } = serve(reads(json(IMPORT), pending.respond));
+    const panel = await open('4');
+    reviewAapl(panel);
+    reload();
+    await screen.findByRole('tab', { name: 'TradingView import Reloading' });
+    expect(screen.getByRole('status')).toHaveTextContent('Reading the local file…');
+    pending.resolve(new Response(JSON.stringify(IMPORT)));
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${IMPORT.scanId}`);
+    expect(screen.getByRole('region', { name: 'Equities & ETFs comparison' })).toBeInTheDocument();
+    expect(within(panel).getByRole('checkbox', { name: 'Compare AAPL' })).toBeChecked();
+    expect(within(panel).getByRole('button', { name: /^AAPL,/ })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+  });
+
+  it.each([
+    [
+      'a malformed file',
+      json({ kind: 'something-else' }),
+      'Not a TradingView development scan file.',
+    ],
+    [
+      'a file that is not JSON',
+      () => Promise.resolve(new Response('{"kind":')),
+      'The file is not valid JSON.',
+    ],
+    ['a server failure', () => Promise.resolve(new Response('', { status: 500 })), 'HTTP 500'],
+    [
+      'an unreachable server',
+      () => Promise.reject(new TypeError('Failed to fetch')),
+      'Failed to fetch',
+    ],
+  ])('keeps scan A on %s, labeled as not reloaded', async (_, failure, reason) => {
+    const { open } = serve(reads(json(IMPORT), failure));
+    const panel = await open('4');
+    reload();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      `Reload failed (${reason}). Still showing scan ${IMPORT.scanId}, imported`,
+    );
+    expect(alert).toHaveTextContent('it may not be the published scan');
+    expect(screen.getByRole('tab', { name: 'TradingView import Failed' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(rowsOf(panel)).toHaveLength(4);
+  });
+
+  it('says the scan is no longer published when the file was removed', async () => {
+    const { open } = serve(
+      reads(json(IMPORT), () => Promise.resolve(new Response('', { status: 404 }))),
+    );
+    await open('4');
+    reload();
+    await screen.findByRole('tab', { name: 'TradingView import None' });
+    const panel = screen.getByRole('region', { name: 'TradingView development scan' });
+    expect(panel).toHaveTextContent('No TradingView scan is published on this machine');
+    expect(rowsOf(panel)).toHaveLength(0);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
+  it.each([
+    ['nothing was published', () => Promise.resolve(new Response('', { status: 404 })), 'None'],
+    ['the file could not be read', json({ kind: 'something-else' }), 'Unreadable'],
+  ])('reloads from the state where %s', async (_, first, state) => {
+    const { open } = serve(reads(first, json(B)));
+    await open(state);
+    reload();
+    await screen.findByRole('tab', { name: 'TradingView import 2' });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${B.scanId}`);
+  });
+
+  it('joins a read in flight instead of starting another', async () => {
+    const pending = deferred();
+    const { fetch, open } = serve(reads(json(IMPORT), pending.respond));
+    await open('4');
+    reload();
+    reload();
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reload local scan' })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      ),
+    );
+    reload();
+    reload();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    pending.resolve(new Response(JSON.stringify(B)));
+    await screen.findByRole('tab', { name: 'TradingView import 2' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('never re-reads on its own after a failed reload: not on focus, reconnect or a source switch', async () => {
+    const { fetch, pick, open } = serve(
+      reads(json(IMPORT), () => Promise.resolve(new Response('', { status: 500 })), json(B)),
+    );
+    await open('4');
+    reload();
+    await screen.findByRole('tab', { name: 'TradingView import Failed' });
+    pick(/Market data/);
+    pick(/TradingView import/);
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    focusManager.setFocused(undefined);
+    window.dispatchEvent(new Event('online'));
+    await new Promise((done) => setTimeout(done, 50));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('alert')).toHaveTextContent(`Still showing scan ${IMPORT.scanId}`);
+  });
+
+  it('lands a reload started before switching to market data, without another read', async () => {
+    const pending = deferred();
+    const { fetch, pick, open } = serve(reads(json(IMPORT), pending.respond));
+    await open('4');
+    reload();
+    pick(/Market data/);
+    expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
+    pending.resolve(new Response(JSON.stringify(B)));
+    await screen.findByRole('tab', { name: 'TradingView import 2' });
+    expect(screen.getByRole('region', { name: 'Market scan' })).not.toHaveTextContent('AAPL');
+    pick(/TradingView import/);
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${B.scanId}`);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

@@ -33,13 +33,20 @@ changed, and understand the evidence behind each result. The user decides whethe
   compares two scans only on the same exact symbol. Every import up to the morning of 2026-11-07 is
   legacy: it reproduces and displays, but it is never a baseline. The first new-format import,
   `20261107T170244Z-76cde900` (6 Nov session), is the first possible baseline.
+  [#141](https://github.com/blackhebrewisraeli/Popup/pull/141) (merged `9d06e6c`) named the scan
+  form fields and recorded the post-#140 scan check.
+- **Reloading the published scan:** draft [#142](https://github.com/blackhebrewisraeli/Popup/pull/142) adds **Reload local scan** to the TradingView review.
+  It re-reads the local dev route only, keeps one coherent snapshot and labels a failed reload.
+  Verified on labeled fixtures; not yet used on a real scan.
+- **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
+  outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
   research](SCANNER_RESEARCH.md) did not establish a predictive advantage.
 
 **Next:** Once the 9 Nov session is final (2026-11-10 06:00 UTC), run one fresh scan with the
 runbook prompt and verify the first real comparison: `tradingview-finish` should choose
-`20261107T170244Z-76cde900` as the baseline, and Research should show the same counts. The owner's
-personal trial stays deferred; when it starts, personal decisions and outcomes go in a private journal.
+`20261107T170244Z-76cde900` as the baseline, and Research should show the same counts. With the
+reload PR merged, an open Research page shows it after **Reload local scan**, without a page refresh.
 
 See the [scanner runbook](MARKET_SCANNER.md) for retrieval, import, reproduction, and review.
 The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is for engineering handoffs.
@@ -58,8 +65,23 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
+- **2026-11-07 · Reload the published TradingView scan in place · Draft
+  [#142](https://github.com/blackhebrewisraeli/Popup/pull/142).** Decision:
+  the import query never re-read the file, and the header's refresh re-reads market data only, so a
+  newly published scan stayed invisible on an open page. **Reload local scan** re-reads the dev route
+  on request in every state; the header refresh is hidden while the review is open. A changed file
+  replaces the whole snapshot and starts the review over; an identical one keeps it. A failed reload
+  keeps the earlier scan under an alert naming it; a removed file shows the empty state. The query is
+  `staleTime: 'static'`: TanStack Query marks kept data invalidated after a failed fetch, which made
+  focus or a source switch re-read the file by itself. Evidence: labeled fixture scans A and B
+  published into a scratch store with the app's own publish function, served by the existing route on
+  a separate dev server. A then B without a page refresh, identical, malformed, truncated, removed,
+  server stopped, simulated HTTP 500, five rapid clicks (one read), source switch mid-read, keyboard,
+  light and dark, and phone width were checked in the browser. Each click read only the local route;
+  background market-data polling continued as before. Next: use it after the next real scan.
+
 - **2026-11-07 · Fresh-scan verification after #140 · Local real-data run on main `e1b0719`; field
-  names fix in a draft PR.** Evidence: an agent-initiated TradingView retrieval through the runbook
+  names fix merged in [#141](https://github.com/blackhebrewisraeli/Popup/pull/141).** Evidence: an agent-initiated TradingView retrieval through the runbook
   helpers captured 50 of 50 with no failures. One same-millisecond file collision was rejected and
   retried. The 6 Nov session was evaluated, outcome `COMPLETE`, offline `MATCH`, 0 Long setups and
   16 Risk warnings. For every asset, the committed map, the request, TradingView's response, the
