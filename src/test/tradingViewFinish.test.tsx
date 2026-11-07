@@ -20,6 +20,8 @@ import {
   selectDevScanUniverse,
   startRetrieval,
   TRADINGVIEW_SYMBOLS,
+  universeTickers,
+  type DevScanUniverse,
 } from '../../scripts/tradingViewImport';
 import { bars, EQUITY_NOW, falling, rising, wave } from './usEquityFixtures';
 
@@ -61,20 +63,27 @@ async function refresh(
     paths?: readonly Path[];
     skip?: readonly string[];
     reproduce?: Parameters<typeof finishRetrieval>[0]['reproduce'];
+    universe?: DevScanUniverse;
   } = {},
 ) {
   const store = join(root, 'tradingview');
-  const { retrievalId } = await startRetrieval({ store, now: () => at - 2 * 60_000 });
+  const { retrievalId } = await startRetrieval({
+    store,
+    universe: options.universe ?? 'default',
+    now: () => at - 2 * 60_000,
+  });
   const last = latestFinalSession(at)!;
   const paths = options.paths ?? [wave, rising, falling];
   const pairs = await Promise.all(
-    TICKERS.filter((ticker) => !options.skip?.includes(ticker)).map(async (ticker, i) => {
-      const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
-      const file = join(root, `${retrievalId}-${ticker}.txt`);
-      await writeFile(file, JSON.stringify(response(symbol, paths[i % paths.length]!, last)));
-      await utimes(file, new Date(at - 60_000), new Date(at - 60_000));
-      return { symbol, file };
-    }),
+    universeTickers(options.universe)
+      .filter((ticker) => !options.skip?.includes(ticker))
+      .map(async (ticker, i) => {
+        const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+        const file = join(root, `${retrievalId}-${ticker}.txt`);
+        await writeFile(file, JSON.stringify(response(symbol, paths[i % paths.length]!, last)));
+        await utimes(file, new Date(at - 60_000), new Date(at - 60_000));
+        return { symbol, file };
+      }),
   );
   await captureResponses({ store, retrievalId, pairs, now: () => at });
   const finish = () =>
@@ -434,6 +443,80 @@ describe('tradingview-finish to Research', { timeout: 60_000 }, () => {
     const changes = await research(root);
     expect(changes).toHaveTextContent(`Displayed${published.scanId}`);
     expect(changes).not.toHaveTextContent(failed.scanId);
+  });
+
+  it('keeps the full universe apart from the 50 and preserves the 50-member view it replaces', async () => {
+    const root = await store();
+    const oldest = await refresh(root, EQUITY_NOW - 2 * DAY); // 23 Oct, default 50
+    const fifty = await refresh(root, EQUITY_NOW - DAY); // 26 Oct, default 50
+    await attachBaseline({ store: join(root, 'scans'), baselineId: oldest.scanId });
+    const owners = await readFile(viewPath(root), 'utf8');
+
+    const full = await refresh(root, EQUITY_NOW, { universe: 'all' }); // 27 Oct, all 90
+    expect(full).toMatchObject({
+      universe: 'all',
+      outcome: 'COMPLETE',
+      requested: 90,
+      evaluated: 90,
+      reproduction: 'MATCH',
+      viewStatus: 'PUBLISHED',
+      baseline: {
+        status: 'NO_BASELINE',
+        reason: 'no TradingView import of an earlier session is comparable and reproduces',
+      },
+    });
+    // A wider universe changes ranks: it is never read as a change against the 50.
+    const wider =
+      'not comparable: Universe 50 tickers, 0 not in the displayed scan → 90 tickers, 40 not in the baseline';
+    expect(full.baseline?.skipped).toEqual([
+      { scanId: fifty.scanId, reason: wider },
+      { scanId: oldest.scanId, reason: wider },
+    ]);
+    expect(await readFile(full.preservedView!, 'utf8')).toBe(owners);
+
+    let changes = await research(root);
+    expect(changes).toHaveTextContent('No comparison is shown');
+    expect(screen.getByText(/90 requested/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/^Universe: All 90 configured US equities and ETFs/),
+    ).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-scan-row]')).toHaveLength(90);
+    cleanup();
+
+    // Named across universes, it is attached only to say what differs: the universe alone.
+    const named = await attachBaseline({ store: join(root, 'scans'), baselineId: fifty.scanId });
+    expect(named.comparison).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'Universe' }],
+    });
+    changes = await research(root);
+    expect(changes).toHaveTextContent('Not comparable');
+    expect(changes).toHaveTextContent('90 tickers, 40 not in the baseline');
+    expect(within(changes).queryByText(/appeared/i)).toBeNull();
+    cleanup();
+
+    // Back to the 50-member view: copy it back. The owner's named baseline is intact.
+    await writeFile(viewPath(root), await readFile(full.preservedView!, 'utf8'));
+    expect((await readView(root)).baseline).toMatchObject({
+      scanId: oldest.scanId,
+      chosenBy: 'tradingview-baseline',
+    });
+
+    // The next 50-member scan passes over the full one and compares with the last 50.
+    const next = await refresh(root, EQUITY_NOW + DAY); // 28 Oct
+    expect(next).toMatchObject({
+      universe: 'default',
+      requested: 50,
+      preservedView: null,
+      baseline: { status: 'COMPARED', before: { scanId: fifty.scanId }, compared: 50 },
+    });
+    expect(next.baseline?.skipped).toEqual([
+      {
+        scanId: full.scanId,
+        reason:
+          'not comparable: Universe 90 tickers, 40 not in the displayed scan → 50 tickers, 0 not in the baseline',
+      },
+    ]);
   });
 
   it('re-finishes byte-identically and keeps the owner’s override until it stops verifying', async () => {

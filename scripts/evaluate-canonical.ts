@@ -65,6 +65,7 @@ import {
   comparisonSummary,
   finishRetrieval,
   importTradingViewScan,
+  parseUniverse,
   recordFailure,
   RETRIEVAL_STORE,
   startRetrieval,
@@ -112,7 +113,7 @@ const USAGE = `Usage:
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
   npm run evaluate -- tradingview-import EXPORT.json [--store DIR]
-  npm run evaluate -- tradingview-start [--store DIR]
+  npm run evaluate -- tradingview-start [--universe default|all] [--store DIR]
   npm run evaluate -- tradingview-capture RETRIEVAL_ID [SYMBOL=FILE ...] [--alerts SYMBOL,...|none] [--store DIR]
   npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "ERROR" [--store DIR]
   npm run evaluate -- tradingview-finish RETRIEVAL_ID [--store DIR] [--scan-store DIR]
@@ -489,6 +490,7 @@ const commandHandlers: Record<string, CommandHandler> = {
         snapshotStatus: result.snapshotStatus,
         viewStatus: result.viewStatus,
         viewPath: result.viewPath,
+        preservedView: result.preservedView,
       });
       if (result.snapshot.scan.status !== 'COMPLETE') process.exitCode = 1;
     } catch (error) {
@@ -506,8 +508,13 @@ const commandHandlers: Record<string, CommandHandler> = {
   // The owner's agent retrieves; these bind its saved get_ohlcv results, import and reproduce.
   'tradingview-start': async (value, args) => {
     const allArgs = [value, ...args].filter((item): item is string => Boolean(item));
-    assertOptions('tradingview-start', allArgs, ['--store']);
-    printJson(await startRetrieval({ store: storePath(allArgs, RETRIEVAL_STORE) }));
+    assertOptions('tradingview-start', allArgs, ['--store', '--universe']);
+    printJson(
+      await startRetrieval({
+        store: storePath(allArgs, RETRIEVAL_STORE),
+        universe: parseUniverse(option(allArgs, '--universe')),
+      }),
+    );
   },
   'tradingview-capture': async (value, args) => {
     const pairs: Array<{ symbol: string; file: string }> = [];
