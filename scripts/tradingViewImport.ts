@@ -582,6 +582,30 @@ async function publishedView(store: string): Promise<TradingViewDevScan | undefi
   }
 }
 
+/** Publishes a reproduced scan with its baseline and returns what the report says about it. */
+async function publishWithBaseline(
+  view: TradingViewDevScan,
+  store: string,
+  reproduce: Reproduce,
+): Promise<NonNullable<RetrievalReport['baseline']>> {
+  const previous = await publishedView(store);
+  const { baseline, comparison, search } = await chooseBaseline(view, store, previous, reproduce);
+  await publishTradingViewDevScan(
+    {
+      ...view,
+      ...(baseline ? { baseline } : {}),
+      ...(search ? { baselineSearch: search } : {}),
+    },
+    store,
+  );
+  return {
+    chosenBy: baseline?.chosenBy ?? null,
+    ...comparisonSummary(comparison),
+    reason: search?.reason ?? null,
+    skipped: [...(search?.skipped ?? [])],
+  };
+}
+
 /** What both CLI commands print about a comparison: counts and the moved setups, not every row. */
 export function comparisonSummary(comparison: ScanComparison) {
   if (comparison.status !== 'COMPARED') return comparison;
@@ -999,28 +1023,8 @@ export async function finishRetrieval(options: {
   const reproduced = await reproduce(scanId, options.scanStore);
   const matched = reproduced.status === 'MATCH';
   if (matched) {
-    const previous = await publishedView(options.scanStore);
-    const { baseline, comparison, search } = await chooseBaseline(
-      imported.view,
-      options.scanStore,
-      previous,
-      reproduce,
-    );
-    await publishTradingViewDevScan(
-      {
-        ...imported.view,
-        ...(baseline ? { baseline } : {}),
-        ...(search ? { baselineSearch: search } : {}),
-      },
-      options.scanStore,
-    );
+    report.baseline = await publishWithBaseline(imported.view, options.scanStore, reproduce);
     report.viewStatus = 'PUBLISHED';
-    report.baseline = {
-      chosenBy: baseline?.chosenBy ?? null,
-      ...comparisonSummary(comparison),
-      reason: search?.reason ?? null,
-      skipped: [...(search?.skipped ?? [])],
-    };
   }
   const newest = scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.dataAsOf.newest;
   return {

@@ -140,7 +140,8 @@ export type BaselineChoice = Readonly<Pick<TradingViewDevScan, 'baseline' | 'bas
 function passedOver(search: TradingViewDevBaselineSearch | undefined): string {
   const skipped = search?.skipped ?? [];
   if (skipped.length === 0) return '';
-  return ` Passed over: ${skipped.map(({ scanId, reason }) => `${scanId} (${reason})`).join('; ')}.`;
+  const items = skipped.map(({ scanId, reason }) => `${scanId} (${reason})`);
+  return ` Passed over: ${items.join('; ')}.`;
 }
 
 function ChosenBy({ choice }: Readonly<{ choice: BaselineChoice | undefined }>) {
