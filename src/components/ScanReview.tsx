@@ -243,6 +243,8 @@ function ResultRow({
       <label className="scan-compare-toggle" title={compareDisabled ?? undefined}>
         <input
           type="checkbox"
+          name="scan-compare"
+          value={result.ticker}
           aria-label={`Compare ${result.ticker}`}
           checked={compared}
           disabled={compareDisabled !== null}
@@ -1057,6 +1059,7 @@ export function ScanReview({
           <input
             className="portfolio-cash-input scan-search"
             type="search"
+            name="scan-query"
             aria-label="Search ticker or symbol"
             placeholder="Ticker or symbol"
             value={filters.query}
@@ -1064,6 +1067,7 @@ export function ScanReview({
           />
           <select
             className="portfolio-cash-input"
+            name="scan-regime"
             aria-label="Filter by regime"
             value={filters.regime}
             onChange={(event) => set('regime', event.target.value as ScanFilters['regime'])}
@@ -1077,6 +1081,7 @@ export function ScanReview({
           </select>
           <select
             className="portfolio-cash-input"
+            name="scan-momentum"
             aria-label="Filter by MACD momentum"
             value={filters.momentum}
             onChange={(event) => set('momentum', event.target.value as ScanFilters['momentum'])}
@@ -1088,6 +1093,7 @@ export function ScanReview({
           </select>
           <select
             className="portfolio-cash-input"
+            name="scan-profile"
             aria-label="Filter by risk-profile fit"
             value={filters.profile}
             onChange={(event) => set('profile', event.target.value as ScanFilters['profile'])}

@@ -436,6 +436,13 @@ describe('Scan review: views, explanation and comparison', () => {
     expect(rows().every((row) => row.textContent?.includes('High-volatility'))).toBe(true);
   });
 
+  it('gives every form field a name, which Chrome reports as an issue otherwise', () => {
+    const { panel } = renderReview(fourEquities());
+    const fields = [...panel.querySelectorAll('input, select, textarea')];
+    expect(fields.length).toBeGreaterThan(4);
+    expect(fields.filter((field) => !field.id && !field.getAttribute('name'))).toEqual([]);
+  });
+
   it('explains one asset from its recorded values only, and closes back to its row', () => {
     const { scan, panel, view } = renderReview(fourEquities());
     view('All ranked');
