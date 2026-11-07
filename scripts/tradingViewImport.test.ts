@@ -878,59 +878,64 @@ describe('TradingView retrieval capture', () => {
     expect(report.refusal).toMatch(/became final during retrieval/);
   });
 
-  it('retrieves the opt-in full universe with the same bounded steps, failures and retries', async () => {
-    const ALL = universeSymbols('all');
-    const { root, started, ids, capture, finish } = await retrieval(undefined, 'all');
-    expect(started).toMatchObject({ universe: 'all', requested: 90, captured: 0 });
-    expect(started.retry).toEqual(ALL);
-    const manifest = JSON.parse(
-      await readFile(join(ids.store, ids.retrievalId, 'retrieval.json'), 'utf8'),
-    );
-    expect(manifest).toMatchObject({ universe: 'all', symbols: ALL });
+  // Three finishes of 90 synthetic series: well over Vitest's 5 s default on CI runners.
+  it(
+    'retrieves the opt-in full universe with the same bounded steps, failures and retries',
+    { timeout: 60_000 },
+    async () => {
+      const ALL = universeSymbols('all');
+      const { root, started, ids, capture, finish } = await retrieval(undefined, 'all');
+      expect(started).toMatchObject({ universe: 'all', requested: 90, captured: 0 });
+      expect(started.retry).toEqual(ALL);
+      const manifest = JSON.parse(
+        await readFile(join(ids.store, ids.retrievalId, 'retrieval.json'), 'utf8'),
+      );
+      expect(manifest).toMatchObject({ universe: 'all', symbols: ALL });
 
-    // NYSE:XOM is outside the default 50 but one of this retrieval's 90.
-    const [xom, unavailable] = ['NYSE:XOM', 'NYSE:XYZ'];
-    const first = await capture(ALL.filter((symbol) => symbol !== unavailable));
-    expect(first.results.every(({ outcome }) => outcome === 'CAPTURED')).toBe(true);
-    expect(first.results.some(({ symbol }) => symbol === xom)).toBe(true);
-    const failed = await recordFailure({ ...ids, symbol: unavailable, error: 'Invalid symbol' });
-    expect(failed.status).toMatchObject({
-      captured: 89,
-      failed: [{ symbol: unavailable, reason: 'Invalid symbol' }],
-      retry: [unavailable],
-    });
+      // NYSE:XOM is outside the default 50 but one of this retrieval's 90.
+      const [xom, unavailable] = ['NYSE:XOM', 'NYSE:XYZ'];
+      const first = await capture(ALL.filter((symbol) => symbol !== unavailable));
+      expect(first.results.every(({ outcome }) => outcome === 'CAPTURED')).toBe(true);
+      expect(first.results.some(({ symbol }) => symbol === xom)).toBe(true);
+      const failed = await recordFailure({ ...ids, symbol: unavailable, error: 'Invalid symbol' });
+      expect(failed.status).toMatchObject({
+        captured: 89,
+        failed: [{ symbol: unavailable, reason: 'Invalid symbol' }],
+        retry: [unavailable],
+      });
 
-    const partial = await finish();
-    expect(partial).toMatchObject({
-      universe: 'all',
-      outcome: 'PARTIAL',
-      requested: 90,
-      evaluated: 89,
-      failed: 1,
-      reproduction: 'MATCH',
-      viewStatus: 'PUBLISHED',
-      preservedView: null,
-    });
-    expect(partial.failures).toEqual([
-      expect.objectContaining({ ticker: 'XYZ', symbol: unavailable, status: 'FETCH_FAILED' }),
-    ]);
-    expect(partial.failures[0]!.detail).toMatch(/Invalid symbol/);
-    const exported = JSON.parse(await readFile(partial.exportPath, 'utf8'));
-    expect(exported.universe).toBe('all');
-    expect(exported.instruments).toHaveLength(90);
+      const partial = await finish();
+      expect(partial).toMatchObject({
+        universe: 'all',
+        outcome: 'PARTIAL',
+        requested: 90,
+        evaluated: 89,
+        failed: 1,
+        reproduction: 'MATCH',
+        viewStatus: 'PUBLISHED',
+        preservedView: null,
+      });
+      expect(partial.failures).toEqual([
+        expect.objectContaining({ ticker: 'XYZ', symbol: unavailable, status: 'FETCH_FAILED' }),
+      ]);
+      expect(partial.failures[0]!.detail).toMatch(/Invalid symbol/);
+      const exported = JSON.parse(await readFile(partial.exportPath, 'utf8'));
+      expect(exported.universe).toBe('all');
+      expect(exported.instruments).toHaveLength(90);
 
-    const retried = await capture([unavailable], RECEIVED + 1_000);
-    expect(retried.results[0]!.outcome).toBe('RETRIED');
-    const complete = await finish();
-    expect(complete).toMatchObject({ outcome: 'COMPLETE', evaluated: 90, failed: 0 });
-    // The partial scan is the same session, a revision, so it is never the automatic baseline.
-    expect(complete.baseline).toMatchObject({ status: 'NO_BASELINE' });
-    const view = await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8');
-    const again = await finish();
-    expect(again).toMatchObject({ importStatus: 'ALREADY_IMPORTED', scanId: complete.scanId });
-    expect(await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8')).toBe(view);
-    expect(parseTradingViewDevScan(JSON.parse(view)).scan.universe.members).toHaveLength(90);
-  });
+      const retried = await capture([unavailable], RECEIVED + 1_000);
+      expect(retried.results[0]!.outcome).toBe('RETRIED');
+      const complete = await finish();
+      expect(complete).toMatchObject({ outcome: 'COMPLETE', evaluated: 90, failed: 0 });
+      // The partial scan is the same session, a revision, so it is never the automatic baseline.
+      expect(complete.baseline).toMatchObject({ status: 'NO_BASELINE' });
+      const view = await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8');
+      const again = await finish();
+      expect(again).toMatchObject({ importStatus: 'ALREADY_IMPORTED', scanId: complete.scanId });
+      expect(await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8')).toBe(view);
+      expect(parseTradingViewDevScan(JSON.parse(view)).scan.universe.members).toHaveLength(90);
+    },
+  );
 
   it('keeps each retrieval on the universe and symbols frozen at its start', async () => {
     const { ids, capture } = await retrieval();
