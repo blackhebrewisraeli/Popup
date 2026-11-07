@@ -722,6 +722,7 @@ describe('attachBaseline', () => {
       scanId: earlier.snapshot.scanId,
       importedAt: earlier.snapshot.completedAt,
       scan: earlier.snapshot.scan,
+      chosenBy: 'tradingview-baseline',
     });
 
     await importInto(exportOf(), { store });

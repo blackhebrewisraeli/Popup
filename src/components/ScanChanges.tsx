@@ -8,6 +8,7 @@ import {
   type ScanSide,
   type SessionGap,
 } from '@/lib/scanChanges';
+import type { TradingViewDevBaselineSearch, TradingViewDevScan } from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
 
 const DAY = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short' });
@@ -133,6 +134,27 @@ function Sides({ before, after }: Readonly<{ before: ScanSide; after: ScanSide }
   );
 }
 
+/** The view's record of how its baseline was chosen, or why there is none. */
+export type BaselineChoice = Readonly<Pick<TradingViewDevScan, 'baseline' | 'baselineSearch'>>;
+
+function passedOver(search: TradingViewDevBaselineSearch | undefined): string {
+  const skipped = search?.skipped ?? [];
+  if (skipped.length === 0) return '';
+  return ` Passed over: ${skipped.map(({ scanId, reason }) => `${scanId} (${reason})`).join('; ')}.`;
+}
+
+function ChosenBy({ choice }: Readonly<{ choice: BaselineChoice | undefined }>) {
+  if (!choice?.baseline) return null;
+  return (
+    <p className="market-scan-fit scan-changes-note">
+      {choice.baseline.chosenBy === 'tradingview-finish'
+        ? 'Chosen by tradingview-finish: the most recent import of an earlier session that is comparable and reproduces.'
+        : 'Named by the owner with tradingview-baseline.'}
+      {passedOver(choice.baselineSearch)}
+    </p>
+  );
+}
+
 function counts(record: Record<string, number>, names: Record<string, string>): string {
   return Object.entries(names)
     .map(([key, name]) => `${record[key]} ${name}`)
@@ -147,6 +169,7 @@ function counts(record: Record<string, number>, names: Record<string, string>): 
  */
 export function ScanChanges({
   comparison,
+  choice,
   symbols,
   selected,
   wide,
@@ -154,6 +177,7 @@ export function ScanChanges({
   onSelect,
 }: Readonly<{
   comparison: ScanComparison;
+  choice?: BaselineChoice | undefined;
   symbols: Readonly<Record<string, string>>;
   selected: string | null;
   wide: boolean;
@@ -162,7 +186,15 @@ export function ScanChanges({
 }>) {
   const titleId = useId();
   let body: ReactNode;
-  if (comparison.status === 'NO_BASELINE') {
+  const search = choice?.baselineSearch;
+  if (comparison.status === 'NO_BASELINE' && search?.reason) {
+    body = (
+      <p className="market-scan-empty">
+        No comparison is shown: {search.reason}.{passedOver(search)} To compare with a particular
+        import, name it with <code>npm run evaluate -- tradingview-baseline SCAN_ID</code>.
+      </p>
+    );
+  } else if (comparison.status === 'NO_BASELINE') {
     body = (
       <p className="market-scan-empty">
         No earlier scan is named, so nothing is compared. Name one earlier TradingView import from
@@ -174,6 +206,7 @@ export function ScanChanges({
     body = (
       <>
         <Sides before={comparison.before} after={comparison.after} />
+        <ChosenBy choice={choice} />
         <p className="market-scan-fit scan-changes-note">
           Not comparable: readings taken under different terms are different measurements, so no
           setup or score change is shown.
@@ -227,6 +260,7 @@ export function ScanChanges({
     body = (
       <>
         <Sides before={before} after={after} />
+        <ChosenBy choice={choice} />
         <p className="market-scan-fit scan-changes-note">{gapNote(gap, before)}</p>
         <dl className="scan-facts">
           <div>

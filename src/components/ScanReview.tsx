@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
-import { ScanChanges } from '@/components/ScanChanges';
+import { ScanChanges, type BaselineChoice } from '@/components/ScanChanges';
 import { Segmented } from '@/components/Segmented';
 import {
   FLAT_MOMENTUM,
@@ -973,11 +973,13 @@ export function ScanReview({
   scan,
   source,
   changes,
+  choice,
 }: Readonly<{
   scan: MarketScan;
   source: TradingViewDevSource | undefined;
-  /** TradingView imports only: the displayed scan against the earlier one the owner named. */
+  /** TradingView imports only: the displayed scan against its baseline. */
   changes?: ScanComparison | undefined;
+  choice?: BaselineChoice | undefined;
 }>) {
   // A scan opens on every ranked asset, so zero long setups never leaves an empty screen;
   // it stays a full answer under its own tab.
@@ -1117,6 +1119,7 @@ export function ScanReview({
           {changes && (
             <ScanChanges
               comparison={changes}
+              choice={choice}
               symbols={source?.symbols ?? {}}
               selected={selected}
               wide={wide}
