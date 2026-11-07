@@ -895,9 +895,14 @@ body {
   max-width: 100%;
 }
 .devscan-shown > select {
+  width: 26rem;
   min-width: 0;
   max-width: 100%;
   text-overflow: ellipsis;
+}
+.devscan-list-note {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
 }
 .devscan-saved {
   margin: 0 0 14px;

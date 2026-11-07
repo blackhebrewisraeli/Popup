@@ -55,12 +55,8 @@ function DevScanState({
 }
 
 /** One local read: 404 is "none", anything else that is not JSON the parser accepts is an error. */
-async function readLocal<T>(
-  url: string,
-  parse: (raw: unknown) => T,
-  signal?: AbortSignal,
-): Promise<T | null> {
-  const response = await fetch(url, { cache: 'no-store', ...(signal ? { signal } : {}) });
+async function readLocal<T>(url: string, parse: (raw: unknown) => T): Promise<T | null> {
+  const response = await fetch(url, { cache: 'no-store' });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const raw: unknown = await response.json().catch(() => {
@@ -100,15 +96,17 @@ function useSavedScanList() {
   });
 }
 
-/** One saved scan, keyed by its ID: an answer for another selection can never be shown for this one. */
+/**
+ * One saved scan, keyed by its ID: an answer for another selection is never shown for this
+ * one. Not cancelled when the selection moves on, so choosing it again joins the same read.
+ */
 function useSavedScan(scanId: string | null) {
   return useQuery({
     queryKey: ['tradingview-saved-scan', scanId],
-    queryFn: ({ signal }) =>
+    queryFn: () =>
       readLocal(
         `${TRADINGVIEW_SAVED_SCANS_ROUTE}/${encodeURIComponent(scanId ?? '')}`,
         parseSavedScanRead,
-        signal,
       ),
     ...LOCAL_FILE,
     enabled: import.meta.env.DEV && scanId !== null,
@@ -199,37 +197,43 @@ function ScanShown({
   const scans = list.data?.scans ?? [];
   // A selection that left the store stays selected, and says so, until the owner changes it.
   const gone = scans.some((entry) => entry.scanId === selected) ? null : selected;
+  return (
+    <label className="devscan-shown">
+      Scan shown
+      <select
+        className="portfolio-cash-input"
+        name="scan-shown"
+        value={selected ?? ''}
+        onChange={(event) => onSelect(event.target.value || null)}
+      >
+        <option value="">Latest published scan</option>
+        {(scans.length > 0 || gone !== null) && (
+          <optgroup label="Saved scans">
+            {gone && <option value={gone}>{gone} · not in the scan store</option>}
+            {scans.map((entry) => (
+              <option key={entry.scanId} value={entry.scanId}>
+                {savedLabel(entry, entry.scanId === published)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </label>
+  );
+}
+
+/** What the list could not include, on a line of its own under the controls. */
+function SavedListNotes({ list }: Readonly<{ list: UseQueryResult<SavedScanList | null> }>) {
   const unreadable = list.data?.unreadable ?? 0;
   return (
     <>
-      <label className="devscan-shown">
-        Scan shown
-        <select
-          className="portfolio-cash-input"
-          name="scan-shown"
-          value={selected ?? ''}
-          onChange={(event) => onSelect(event.target.value || null)}
-        >
-          <option value="">Latest published scan</option>
-          {(scans.length > 0 || gone !== null) && (
-            <optgroup label="Saved scans">
-              {gone && <option value={gone}>{gone} · not in the scan store</option>}
-              {scans.map((entry) => (
-                <option key={entry.scanId} value={entry.scanId}>
-                  {savedLabel(entry, entry.scanId === published)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-      </label>
       {list.isError && (
         <p className="devscan-reload-failed" role="alert">
           Saved scans could not be listed ({list.error.message}).
         </p>
       )}
       {unreadable > 0 && (
-        <p className="devscan-reload-status">
+        <p className="devscan-list-note">
           {unreadable === 1
             ? '1 snapshot file could not be read and is not listed.'
             : `${unreadable} snapshot files could not be read and are not listed.`}
@@ -389,6 +393,7 @@ export function TradingViewDevScan() {
           saved={selected !== null}
           onReload={reload}
         />
+        <SavedListNotes list={list} />
       </div>
       {selected === null ? (
         <DevScanContent query={published} />

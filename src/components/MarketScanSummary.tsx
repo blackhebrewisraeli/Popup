@@ -134,10 +134,10 @@ function DevSourceNotes({
           so an unadjusted split could not be cross-checked.
         </li>
         <li>
-          The notice&rsquo;s &ldquo;still forming&rdquo; bar is never scored: a session counts only
-          once final (9h after its close), and each score rests on the last{' '}
-          {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}). Data
-          may be delayed under the owner&rsquo;s plan.
+          {source.notice === null ? 'A' : 'The notice’s'} &ldquo;still forming&rdquo; bar is never
+          scored: a session counts only once final (9h after its close), and each score rests on the
+          last {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}).
+          Data may be delayed under the owner&rsquo;s plan.
         </li>
         <li>{alerts}</li>
         <li>

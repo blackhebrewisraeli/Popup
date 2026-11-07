@@ -933,7 +933,7 @@ describe('Markets source: saved scans', () => {
   it('shows the last scan chosen, however fast the choices and answers come', async () => {
     let answer!: (response: Response) => void;
     const late = new Promise<Response>((done) => (answer = done));
-    store({ [one(LARGE.scanId)]: () => late });
+    const { reads } = store({ [one(LARGE.scanId)]: () => late });
     const shown = await open();
     pick(shown, LARGE.scanId);
     pick(shown, SMALL.scanId);
@@ -944,6 +944,9 @@ describe('Markets source: saved scans', () => {
     await new Promise((done) => setTimeout(done, 20));
     expect(scores()).toEqual(scoresOf(SMALL));
     expect(screen.getByRole('status')).toHaveTextContent(`Saved scan ${SMALL.scanId}`);
+    // Choosing a scan again joins its read in flight instead of starting another.
+    expect(reads().filter((url) => url === one(LARGE.scanId))).toHaveLength(1);
+    expect(reads().filter((url) => url === one(SMALL.scanId))).toHaveLength(1);
   });
 
   it('keeps the published scan on screen when saved scans cannot be listed', async () => {
