@@ -134,10 +134,63 @@ const ATTRIBUTION: ReadonlyArray<[string, (scan: MarketScan) => string]> = [
   ],
 ];
 
+/**
+ * The exact provider symbol a result rests on: the one requested, once the provider's
+ * response confirmed it. Null when the scan did not record one (snapshots from before
+ * it was kept) or the response did not confirm it: the reading's identity is unknown.
+ */
+export function exactSymbol(result: ScanAssetResult): string | null {
+  const recorded = result.providerSymbol;
+  return recorded && recorded.validated === recorded.requested ? recorded.requested : null;
+}
+
+/**
+ * Two readings of a ticker are one measurement only on the same exact symbol. A
+ * different requested symbol is another listing; an asset evaluated in both without a
+ * confirmed symbol on each side cannot be shown to be the same one. Either way nothing
+ * is compared: a changed listing must never read as a setup that appeared or cleared.
+ */
+function symbolDifferences(before: MarketScan, after: MarketScan): Difference[] {
+  const earlier = new Map(before.results.map((result) => [result.ticker, result]));
+  const pairs = after.results.flatMap((now) => {
+    const prior = earlier.get(now.ticker);
+    return prior ? [{ prior, now }] : [];
+  });
+  const found: Difference[] = [];
+  const moved = pairs.filter(({ prior, now }) => {
+    const [was, is] = [prior.providerSymbol?.requested, now.providerSymbol?.requested];
+    return was !== undefined && is !== undefined && was !== is;
+  });
+  if (moved.length > 0) {
+    const list = (side: 'prior' | 'now') =>
+      moved.map((pair) => `${pair.now.ticker} ${pair[side].providerSymbol?.requested}`).join(', ');
+    found.push({ field: 'TradingView symbol', before: list('prior'), after: list('now') });
+  }
+  const both = pairs.filter(
+    (pair) => !moved.includes(pair) && evaluated(pair.prior) && evaluated(pair.now),
+  );
+  const unknown = (side: 'prior' | 'now') =>
+    both.filter((pair) => exactSymbol(pair[side]) === null).map((pair) => pair.now.ticker);
+  const [was, is] = [unknown('prior'), unknown('now')];
+  if (was.length > 0 || is.length > 0) {
+    const evidence = (tickers: string[]) => {
+      if (tickers.length === 0) return 'Recorded and confirmed';
+      const which =
+        tickers.length === both.length
+          ? `any of the ${both.length} evaluated in both`
+          : tickers.join(', ');
+      return `Not recorded or not confirmed for ${which}`;
+    };
+    found.push({ field: 'Exact symbol', before: evidence(was), after: evidence(is) });
+  }
+  return found;
+}
+
 function differences(before: MarketScan, after: MarketScan): Difference[] {
   const found = ATTRIBUTION.flatMap(([field, value]) =>
     value(before) === value(after) ? [] : [{ field, before: value(before), after: value(after) }],
   );
+  found.push(...symbolDifferences(before, after));
   const was = new Map(before.results.map((result) => [result.ticker, result.instrument]));
   const is = new Map(after.results.map((result) => [result.ticker, result.instrument]));
   const added = [...is.keys()].filter((ticker) => !was.has(ticker));

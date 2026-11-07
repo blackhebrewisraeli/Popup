@@ -22,6 +22,7 @@ import {
 } from '@/lib/canonicalModel';
 import { SCAN_MAX_DATA_AGE_MS, type ScanAssetResult, type ScanCohort } from '@/lib/marketScanner';
 import type { RiskProfile } from '@/lib/portfolioBuilder';
+import { exactSymbol } from '@/lib/scanChanges';
 import { TRADINGVIEW_DEV_PROVIDER_ID, type TradingViewDevSource } from '@/lib/tradingViewDevScan';
 import type { TickerKind } from '@/lib/ticker';
 import { latestFinalSession, tradingSessions } from '@/lib/usEquityDaily';
@@ -424,6 +425,23 @@ export function cohortFreshness(
   return age <= SCAN_MAX_DATA_AGE_MS
     ? { stale: false, detail: `Latest candle closed ${ageLabel(age)} ago, within 48h` }
     : { stale: true, detail: `Stale: latest candle closed ${ageLabel(age)} ago, past 48h` };
+}
+
+/**
+ * The exact TradingView symbol as this result's evidence recorded it. A scan recorded
+ * before exact symbols were kept says so; the view's own list is named as unverified,
+ * never presented as the evidence.
+ */
+export function symbolEvidence(result: ScanAssetResult, source: TradingViewDevSource): string {
+  const exact = exactSymbol(result);
+  if (exact) return `${exact} · requested, and named by TradingView’s response`;
+  if (result.providerSymbol) {
+    return `${result.providerSymbol.requested} requested · the response did not confirm it`;
+  }
+  const listed = source.symbols[result.ticker];
+  return listed
+    ? `Not recorded in this scan’s evidence. The view lists ${listed}, unverified.`
+    : 'Not recorded in this scan’s evidence.';
 }
 
 /** What is known about a TradingView alert for one asset. A standing setup is never an alert. */

@@ -30,13 +30,18 @@ const VIEW: DevScan = {
   scan: scanAt(EQUITY_NOW),
 };
 
-/** One synthetic AAPL series scored at `time`, on the latest session final by then. */
-function scanAt(time: number, last?: string): MarketScan {
+/**
+ * One synthetic AAPL series scored at `time`, on the latest session final by then,
+ * recorded as requested and confirmed on `symbol`; `null` records none, as a
+ * snapshot from before exact symbols were kept.
+ */
+function scanAt(time: number, last?: string, symbol: string | null = 'NASDAQ:AAPL'): MarketScan {
   return evaluateScan(
     [
       {
         ticker: 'AAPL',
         instrument: 'US:AAPL',
+        ...(symbol && { providerSymbol: { requested: symbol, validated: symbol } }),
         equity: {
           provider: TRADINGVIEW_DEV_PROVIDER_ID,
           range: { from: '2026-01-12', to: last ?? '2026-10-27' },
@@ -184,6 +189,10 @@ describe('TradingViewDevScan', () => {
 
     fireEvent.click(row);
     const sheet = await screen.findByRole('dialog', { name: 'AAPL explanation' });
+    expect(sheet).toHaveTextContent('InstrumentUS:AAPL');
+    expect(sheet).toHaveTextContent(
+      'TradingView symbolNASDAQ:AAPL · requested, and named by TradingView’s response',
+    );
     fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(row).toHaveFocus();
@@ -247,6 +256,52 @@ describe('TradingViewDevScan', () => {
     expect(changes).toHaveTextContent('Not comparable');
     expect(within(changes).getByRole('row', { name: 'Model 0.9.0 1.0.0' })).toBeInTheDocument();
     expect(within(changes).queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('refuses a baseline that read the same ticker on another listing', async () => {
+    const scan = flipped(scanAt(EQUITY_NOW - DAY, '2026-10-26', 'NYSE:AAPL'));
+    const baseline = { scanId: '20261027T170000Z-00000000', importedAt: VIEW.importedAt, scan };
+    serve(new Response(JSON.stringify({ ...VIEW, baseline })));
+    const changes = await screen.findByRole('region', { name: /Changes since previous scan/ });
+    expect(changes).toHaveTextContent('Not comparable');
+    expect(
+      within(changes).getByRole('row', {
+        name: 'TradingView symbol AAPL NYSE:AAPL AAPL NASDAQ:AAPL',
+      }),
+    ).toBeInTheDocument();
+    expect(changes).not.toHaveTextContent(/appeared|cleared/);
+    expect(within(changes).queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('labels legacy evidence as unverified and compares nothing on it', async () => {
+    const legacy = {
+      ...VIEW,
+      scan: scanAt(EQUITY_NOW, undefined, null),
+      baseline: {
+        scanId: '20261027T170000Z-00000000',
+        importedAt: VIEW.importedAt,
+        scan: flipped(scanAt(EQUITY_NOW - DAY, '2026-10-26', null)),
+        chosenBy: 'tradingview-finish' as const,
+      },
+    };
+    serve(new Response(JSON.stringify(legacy)));
+    const changes = await screen.findByRole('region', { name: /Changes since previous scan/ });
+    expect(changes).toHaveTextContent('Not comparable');
+    // Chosen under the earlier checks: never described as comparable now.
+    expect(changes).toHaveTextContent('this checkout does not find it comparable');
+    expect(changes).not.toHaveTextContent('that is comparable and reproduces');
+    const evidence = 'Not recorded or not confirmed for any of the 1 evaluated in both';
+    expect(
+      within(changes).getByRole('row', { name: `Exact symbol ${evidence} ${evidence}` }),
+    ).toBeInTheDocument();
+    expect(changes).not.toHaveTextContent(/appeared|cleared/);
+
+    fireEvent.click(document.querySelector<HTMLElement>('[data-scan-row="AAPL"]')!);
+    const sheet = await screen.findByRole('dialog', { name: 'AAPL explanation' });
+    // The view's own list, written at import, is named but never presented as the evidence.
+    expect(sheet).toHaveTextContent(
+      'TradingView symbolNot recorded in this scan’s evidence. The view lists NASDAQ:AAPL, unverified.',
+    );
   });
 
   it('shows no changes view outside the TradingView import', () => {
