@@ -75,8 +75,9 @@ vi.mock('./decisionsReport', () => ({
   buildSyntheticReportModel: mocks.buildSyntheticReportModel,
   writeDecisionsReport: mocks.writeDecisionsReport,
 }));
-vi.mock('./tradingViewImport', () => ({
+vi.mock('./tradingViewImport', async (importOriginal) => ({
   RETRIEVAL_STORE: '.zerochart-tradingview',
+  parseUniverse: (await importOriginal<typeof import('./tradingViewImport')>()).parseUniverse,
   importTradingViewScan: mocks.importTradingViewScan,
   startRetrieval: mocks.startRetrieval,
   captureResponses: mocks.captureResponses,
@@ -204,8 +205,14 @@ describe('evaluate-canonical CLI', () => {
     const store = join(workspace, '.zerochart-tradingview');
     mocks.startRetrieval.mockResolvedValue({ retrievalId: 'R' });
     await cli('tradingview-start');
-    expect(mocks.startRetrieval).toHaveBeenCalledWith({ store });
+    expect(mocks.startRetrieval).toHaveBeenCalledWith({ store, universe: 'default' });
     expect(printed()).toEqual({ retrievalId: 'R' });
+    await cli('tradingview-start', '--universe', 'all');
+    expect(mocks.startRetrieval).toHaveBeenLastCalledWith({ store, universe: 'all' });
+    await expect(cli('tradingview-start', '--universe', 'top10')).rejects.toThrow(
+      'Unknown universe top10',
+    );
+    await expect(cli('tradingview-start', '--universe')).rejects.toThrow('incomplete option');
 
     mocks.captureResponses.mockResolvedValue({ results: [] });
     await cli('tradingview-capture', 'R', 'NASDAQ:AAPL=/saved/a=1.txt', '--alerts', 'none');

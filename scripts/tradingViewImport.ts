@@ -69,21 +69,69 @@ export function selectDevScanUniverse(
 }
 
 /**
- * Resolved one by one with TradingView's `search_symbols` on 2026-10-29: each
- * ticker had exactly one listing on a US primary venue (NASDAQ, NYSE, AMEX =
- * NYSE Arca, CBOE = Cboe BZX). Off-exchange (BOATS, BCS, Pyth), CFD and foreign
- * listings were excluded. An exchange is never inferred from the ticker.
+ * Which configured tickers a retrieval requests. `default` is the 50 above and
+ * stays the default; `all` (opt-in) is every configured US equity and ETF.
+ * Neither depends on a score or an outcome, and a retrieval freezes its universe
+ * and members when it starts.
+ */
+export type DevScanUniverse = 'default' | 'all';
+export const DEV_SCAN_UNIVERSES: readonly DevScanUniverse[] = ['default', 'all'];
+
+export function universeTickers(universe: DevScanUniverse = 'default'): string[] {
+  return universe === 'all'
+    ? Object.keys(US_EQUITY_INSTRUMENTS).sort(compareTickers)
+    : selectDevScanUniverse();
+}
+
+export function selectionRule(universe: DevScanUniverse = 'default'): string {
+  if (universe === 'default') return SELECTION_RULE;
+  const count = Object.keys(US_EQUITY_INSTRUMENTS).length;
+  return `All ${count} configured US equities and ETFs (US_EQUITY_INSTRUMENTS, the equity rows of assets_status), requested in full by opt-in, fixed before any data was fetched or scored. Ranks are among these ${count}, so this scan is never compared with a 50-member one.`;
+}
+
+export function parseUniverse(value: string | undefined): DevScanUniverse {
+  if (value === undefined) return 'default';
+  if (DEV_SCAN_UNIVERSES.includes(value as DevScanUniverse)) return value as DevScanUniverse;
+  throw new Error(`Unknown universe ${value}: expected ${DEV_SCAN_UNIVERSES.join(' or ')}`);
+}
+
+/**
+ * Resolved one by one with TradingView's `search_symbols`: the default 50 on
+ * 2026-10-29, the other 40 configured tickers on 2026-11-08. Each ticker had
+ * exactly one listing on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca,
+ * CBOE = Cboe BZX). Off-exchange (BOATS, BCS, Pyth), CFD (CFI, FXCM,
+ * ThinkMarkets …) and foreign listings were excluded. An exchange is never
+ * inferred from the ticker: WMT, for one, now lists on NASDAQ.
  */
 export const TRADINGVIEW_SYMBOLS: Readonly<Record<string, string>> = Object.fromEntries(
-  'NASDAQ:AAL NASDAQ:AAPL NYSE:ABBV NASDAQ:ABNB NYSE:ACN NASDAQ:AMD NASDAQ:AMZN CBOE:ARKK NYSE:AXP NYSE:BA NYSE:BAC NYSE:C NYSE:CAT NYSE:CRM NASDAQ:CSCO AMEX:GLD NYSE:GS NYSE:HD NASDAQ:HOOD NYSE:IBM NASDAQ:INTC AMEX:IWM NYSE:KO NASDAQ:META NYSE:MRK NYSE:MS NASDAQ:MSFT NYSE:NKE NASDAQ:NVDA NYSE:ORCL NYSE:PFE NYSE:PG NYSE:PINS NASDAQ:PLTR NASDAQ:RIVN NYSE:RTX NASDAQ:SHOP AMEX:SLV NYSE:SNAP AMEX:SPY NASDAQ:TSLA NYSE:UNH AMEX:VOO AMEX:VTI NYSE:VZ AMEX:XLB AMEX:XLE AMEX:XLP AMEX:XLU AMEX:XLY'
+  [
+    'NASDAQ:AAL NASDAQ:AAPL NYSE:ABBV NASDAQ:ABNB NYSE:ACN NASDAQ:AMD NASDAQ:AMZN CBOE:ARKK NYSE:AXP NYSE:BA NYSE:BAC NYSE:C NYSE:CAT NYSE:CRM NASDAQ:CSCO AMEX:GLD NYSE:GS NYSE:HD NASDAQ:HOOD NYSE:IBM NASDAQ:INTC AMEX:IWM NYSE:KO NASDAQ:META NYSE:MRK NYSE:MS NASDAQ:MSFT NYSE:NKE NASDAQ:NVDA NYSE:ORCL NYSE:PFE NYSE:PG NYSE:PINS NASDAQ:PLTR NASDAQ:RIVN NYSE:RTX NASDAQ:SHOP AMEX:SLV NYSE:SNAP AMEX:SPY NASDAQ:TSLA NYSE:UNH AMEX:VOO AMEX:VTI NYSE:VZ AMEX:XLB AMEX:XLE AMEX:XLP AMEX:XLU AMEX:XLY',
+    'NASDAQ:ADBE NASDAQ:AFRM NASDAQ:AVGO NASDAQ:COIN NASDAQ:COST NYSE:CVX NYSE:DIS NASDAQ:DKNG NYSE:F NYSE:GE NYSE:GM NASDAQ:GOOGL NASDAQ:HON NYSE:JNJ NYSE:JPM NASDAQ:LCID NYSE:LMT NYSE:MA NYSE:MCD NASDAQ:MRNA NASDAQ:NFLX NASDAQ:PEP NASDAQ:PYPL NASDAQ:QCOM NYSE:RBLX NASDAQ:SOFI NASDAQ:TXN NYSE:UBER NYSE:V NYSE:WFC NASDAQ:WMT NYSE:XOM NYSE:XYZ AMEX:DIA NASDAQ:QQQ NASDAQ:SMH AMEX:XLF AMEX:XLI AMEX:XLK AMEX:XLV',
+  ]
+    .join(' ')
     .split(' ')
     .map((symbol) => [symbol.slice(symbol.indexOf(':') + 1), symbol]),
 );
+
+/** A universe's exact symbols; a member without a resolved symbol stops the retrieval, never drops out. */
+export function universeSymbols(universe: DevScanUniverse = 'default'): string[] {
+  return universeTickers(universe).map((ticker) => {
+    const symbol = TRADINGVIEW_SYMBOLS[ticker];
+    if (symbol === undefined) {
+      throw new Error(
+        `${ticker} has no resolved TradingView symbol; resolve it with search_symbols before scanning the ${universe} universe`,
+      );
+    }
+    return symbol;
+  });
+}
 
 /** What the agent writes: one entry per selected ticker, the MCP response verbatim or its error. */
 export interface TradingViewOhlcvExport {
   schemaVersion: '1';
   source: 'tradingview-mcp';
+  /** Absent in every export before 2026-11-08, and in default ones still: the 50. */
+  universe?: DevScanUniverse;
   retrieval: { startedAt: string; completedAt: string };
   pineAlerts?: { checkedAt: string; symbols: string[] } | null;
   instruments: Array<{
@@ -184,11 +232,11 @@ function checkEntry(
   entry: TradingViewOhlcvExport['instruments'][number] | null,
   seen: Set<string>,
   window: { from: number; to: number },
+  members: ReadonlySet<string>,
 ): void {
   if (typeof entry?.ticker !== 'string' || typeof entry.symbol !== 'string')
     invalid('every instrument needs ticker and symbol');
-  if (!Object.hasOwn(TRADINGVIEW_SYMBOLS, entry.ticker))
-    invalid(`${entry.ticker} is not in the dev-scan universe`);
+  if (!members.has(entry.ticker)) invalid(`${entry.ticker} is not in the dev-scan universe`);
   if (seen.has(entry.ticker)) invalid(`${entry.ticker} appears twice`);
   seen.add(entry.ticker);
   if (
@@ -203,6 +251,8 @@ export function parseExport(raw: unknown): TradingViewOhlcvExport {
   const file = raw as Partial<TradingViewOhlcvExport> | null;
   if (file?.schemaVersion !== '1' || file.source !== 'tradingview-mcp')
     invalid('schemaVersion 1, source tradingview-mcp expected');
+  if (file.universe !== undefined && !DEV_SCAN_UNIVERSES.includes(file.universe))
+    invalid(`universe must be ${DEV_SCAN_UNIVERSES.join(' or ')}, or absent for the default`);
   if (
     typeof file.retrieval?.startedAt !== 'string' ||
     typeof file.retrieval.completedAt !== 'string'
@@ -225,7 +275,8 @@ export function parseExport(raw: unknown): TradingViewOhlcvExport {
     }
   }
   const seen = new Set<string>();
-  for (const entry of file.instruments) checkEntry(entry, seen, { from, to });
+  const members = new Set(universeTickers(file.universe));
+  for (const entry of file.instruments) checkEntry(entry, seen, { from, to }, members);
   return file as TradingViewOhlcvExport;
 }
 
@@ -264,7 +315,7 @@ export function exportedSeries(
 export function importInputs(file: TradingViewOhlcvExport, evaluationTime: number): ScanInput[] {
   const range = equityRequestRange(evaluationTime);
   const entries = new Map(file.instruments.map((entry) => [entry.ticker, entry]));
-  return selectDevScanUniverse().map((ticker): ScanInput => {
+  return universeTickers(file.universe).map((ticker): ScanInput => {
     const entry = entries.get(ticker);
     const exported = range && exportedSeries(entry, ticker, range.from);
     const input: ScanInput = {
@@ -304,12 +355,14 @@ export async function importTradingViewScan(options: {
   viewStatus: 'UPDATED';
   path: string;
   viewPath: string;
+  preservedView: string | null;
   snapshot: ScanSnapshot;
   view: TradingViewDevScan;
 }> {
   const recorded = await recordTradingViewScan(options);
+  const preservedView = await preserveOtherUniverseView(recorded.view, options.store);
   const viewPath = await publishTradingViewDevScan(recorded.view, options.store);
-  return { ...recorded, viewStatus: 'UPDATED', viewPath };
+  return { ...recorded, viewStatus: 'UPDATED', viewPath, preservedView };
 }
 
 /** The import without publishing: the snapshot is written, the view only built. */
@@ -357,7 +410,7 @@ async function recordTradingViewScan(options: {
         ),
       ),
       notice: [...new Set(notices)].join('\n') || 'No market-data notice was returned.',
-      selectionRule: SELECTION_RULE,
+      selectionRule: selectionRule(file.universe),
       pineAlerts: file.pineAlerts ?? null,
     },
     scan: snapshot.scan,
@@ -365,6 +418,33 @@ async function recordTradingViewScan(options: {
   const status: 'IMPORTED' | 'ALREADY_IMPORTED' =
     snapshotStatus === 'CREATED' ? 'IMPORTED' : 'ALREADY_IMPORTED';
   return { status, snapshotStatus, path, snapshot, view };
+}
+
+/**
+ * Before a view of another universe replaces the published one, copies the published one,
+ * baseline and all, to `tradingview-dev-scan.<scanId>.<sha256 prefix>.json` beside it.
+ * Copying that file back over `tradingview-dev-scan.json` returns to it. Returns the copy's
+ * path, or null when the published view is absent, unreadable or of the same universe.
+ */
+export async function preserveOtherUniverseView(
+  view: TradingViewDevScan,
+  store: string,
+): Promise<string | null> {
+  const root = resolve(store);
+  let text: string;
+  let current: TradingViewDevScan;
+  try {
+    text = await readFile(join(root, TRADINGVIEW_DEV_SCAN_FILE), 'utf8');
+    current = parseTradingViewDevScan(JSON.parse(text));
+  } catch {
+    return null; // Absent or unreadable: publication replaces it, as before.
+  }
+  const members = (scan: TradingViewDevScan) => stableSerialize(scan.scan.universe.members);
+  if (members(current) === members(view)) return null;
+  const name = TRADINGVIEW_DEV_SCAN_FILE.replace(/\.json$/, '');
+  const copy = join(root, `${name}.${current.scanId}.${sha256(text).slice(0, 12)}.json`);
+  await writeAtomic(copy, text); // Named by its content: a second copy is the same bytes.
+  return copy;
 }
 
 /** Writes a complete same-directory temporary file, then atomically replaces the local view. */
@@ -482,17 +562,19 @@ function newestFirst(a: Candidate, b: Candidate): number {
 function passedOver(candidate: Candidate, displayed: string): string | null {
   const { session, comparison } = candidate;
   if (session === null) return 'evaluated no asset, so it rests on no session';
+  const incomparable =
+    comparison.status === 'INCOMPATIBLE'
+      ? `not comparable: ${comparison.differences
+          .map(({ field, before, after }) => `${field} ${before} → ${after}`)
+          .join('; ')}`
+      : null;
   if (session === displayed) {
-    return `a revision of the displayed scan's session (${session}), never chosen automatically; name it with tradingview-baseline to compare it`;
+    // Naming a same-session scan of another universe would only show what differs.
+    const next = incomparable ?? 'name it with tradingview-baseline to compare it';
+    return `a revision of the displayed scan's session (${session}), never chosen automatically; ${next}`;
   }
   if (session > displayed) return `evaluated a later session (${session}) than the displayed scan`;
-  if (comparison.status === 'INCOMPATIBLE') {
-    const fields = comparison.differences.map(
-      ({ field, before, after }) => `${field} ${before} → ${after}`,
-    );
-    return `not comparable: ${fields.join('; ')}`;
-  }
-  return null;
+  return incomparable;
 }
 
 /**
@@ -671,6 +753,8 @@ export type CaptureOutcome =
 
 export interface RetrievalStatus {
   retrievalId: string;
+  /** Frozen at start with its members; every later step requests and scores exactly those. */
+  universe: DevScanUniverse;
   startedAt: string;
   /** The session every symbol must rest on. */
   requiredSession: string | null;
@@ -689,6 +773,7 @@ export interface RetrievalStatus {
 export interface RetrievalReport {
   outcome: 'COMPLETE' | 'PARTIAL' | 'FAILED' | 'REFUSED' | 'NOT_REPRODUCED';
   retrievalId: string;
+  universe: DevScanUniverse;
   exportPath: string;
   retrieval: TradingViewOhlcvExport['retrieval'];
   requested: number;
@@ -702,6 +787,8 @@ export interface RetrievalReport {
   refusal?: string;
   /** UNCHANGED unless the scan reproduced: Research keeps the last published view. */
   viewStatus: 'PUBLISHED' | 'UNCHANGED';
+  /** The copy of a replaced view of another universe (`preserveOtherUniverseView`), if any. */
+  preservedView: string | null;
   /** What "Changes since previous scan" shows, once published; `before` is the baseline. */
   baseline:
     | (ReturnType<typeof comparisonSummary> & {
@@ -749,17 +836,33 @@ async function readRetrieval(store: string, retrievalId: string) {
   const manifest = JSON.parse(await readFile(join(dir, MANIFEST), 'utf8')) as {
     schemaVersion?: unknown;
     startedAt?: unknown;
+    universe?: unknown;
+    symbols?: unknown;
   };
   const startedAt =
     typeof manifest.startedAt === 'string' ? Date.parse(manifest.startedAt) : Number.NaN;
-  if (manifest.schemaVersion !== '1' || !Number.isFinite(startedAt)) {
+  const known =
+    manifest.universe === undefined ||
+    DEV_SCAN_UNIVERSES.includes(manifest.universe as DevScanUniverse);
+  if (manifest.schemaVersion !== '1' || !Number.isFinite(startedAt) || !known) {
     throw new Error(`${retrievalId}: unreadable ${MANIFEST}`);
+  }
+  // Retrievals started before 2026-11-08 recorded neither: they are the default 50.
+  const universe = parseUniverse(manifest.universe as DevScanUniverse | undefined);
+  const symbols = universeSymbols(universe);
+  if (
+    manifest.symbols !== undefined &&
+    stableSerialize(manifest.symbols) !== stableSerialize(symbols)
+  ) {
+    throw new Error(
+      `${retrievalId}: the ${universe} universe's members or symbols changed since this retrieval started; start a new retrieval`,
+    );
   }
   const names = await readdir(dir);
   const records = new Map<string, CaptureRecord>();
   /** Digest prefixes of every differing response captured for a ticker. */
   const conflicts = new Map<string, string[]>();
-  const tickers = selectDevScanUniverse();
+  const tickers = universeTickers(universe);
   const read = await Promise.all(
     tickers.map((ticker) => readJson<CaptureRecord>(join(dir, `${ticker}.json`))),
   );
@@ -773,8 +876,17 @@ async function readRetrieval(store: string, retrievalId: string) {
       conflicts.set(ticker, [record.sha256.slice(0, 12), ...others]);
     }
   }
-  return { dir, startedAt, records, conflicts };
+  return { dir, startedAt, records, conflicts, universe, tickers };
 }
+
+/** The ticker a symbol was requested for in this retrieval; undefined outside its universe. */
+function memberTicker(tickers: readonly string[], symbol: string): string | undefined {
+  const ticker = TICKER_BY_SYMBOL.get(symbol);
+  return ticker !== undefined && tickers.includes(ticker) ? ticker : undefined;
+}
+
+const notRequested = (symbol: string, tickers: readonly string[]) =>
+  `${symbol} is not one of the ${tickers.length} requested symbols`;
 
 /** When the session after `required` becomes final, so the required session changes. */
 function windowCloses(required: string): number | null {
@@ -787,7 +899,10 @@ export async function retrievalStatus(options: {
   retrievalId: string;
   now?: () => number;
 }): Promise<RetrievalStatus> {
-  const { startedAt, records, conflicts } = await readRetrieval(options.store, options.retrievalId);
+  const { startedAt, records, conflicts, universe, tickers } = await readRetrieval(
+    options.store,
+    options.retrievalId,
+  );
   const requiredSession = latestFinalSession(startedAt);
   const closes = requiredSession === null ? null : windowCloses(requiredSession);
   const received = [...records.values()].flatMap((record) =>
@@ -799,7 +914,7 @@ export async function retrievalStatus(options: {
   const failed: RetrievalStatus['failed'] = [];
   const conflicting: string[] = [];
   let captured = 0;
-  for (const ticker of selectDevScanUniverse()) {
+  for (const ticker of tickers) {
     const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
     const record = records.get(ticker);
     if (conflicts.has(ticker)) conflicting.push(symbol);
@@ -813,11 +928,12 @@ export async function retrievalStatus(options: {
   }
   return {
     retrievalId: options.retrievalId,
+    universe,
     startedAt: iso(startedAt),
     requiredSession,
     validUntil: closes === null ? null : iso(closes),
     window: open ? 'OPEN' : 'CLOSED',
-    requested: DEV_SCAN_SIZE,
+    requested: tickers.length,
     captured,
     missing,
     failed,
@@ -826,34 +942,39 @@ export async function retrievalStatus(options: {
   };
 }
 
-/** Opens a retrieval window: its start time is taken here, before the agent fetches anything. */
+/**
+ * Opens a retrieval window: its start time, universe and exact symbols are fixed here,
+ * before the agent fetches anything.
+ */
 export async function startRetrieval(options: {
   store: string;
+  universe?: DevScanUniverse;
   now?: () => number;
 }): Promise<RetrievalStatus> {
   const startedAt = (options.now ?? Date.now)();
   if (latestFinalSession(startedAt) === null) {
     throw new Error('The time is outside the published US equity calendar; nothing can be scored.');
   }
+  const universe = options.universe ?? 'default';
+  const symbols = universeSymbols(universe);
   const retrievalId = new Date(startedAt).toISOString().replace(/[-:]|\.\d{3}/g, '');
   const dir = retrievalDir(options.store, retrievalId);
   await mkdir(resolve(options.store), { recursive: true });
   await mkdir(dir);
-  await writeFile(join(dir, MANIFEST), json({ schemaVersion: '1', startedAt: iso(startedAt) }), {
-    flag: 'wx',
-  });
+  const manifest = { schemaVersion: '1', startedAt: iso(startedAt), universe, symbols };
+  await writeFile(join(dir, MANIFEST), json(manifest), { flag: 'wx' });
   return retrievalStatus({ store: options.store, retrievalId, now: () => startedAt });
 }
 
 async function captureOne(
-  dir: string,
-  startedAt: number,
+  retrieval: { dir: string; startedAt: number; tickers: readonly string[] },
   symbol: string,
   file: string,
 ): Promise<{ outcome: CaptureOutcome; detail?: string }> {
+  const { dir, startedAt, tickers } = retrieval;
   const rejected = (detail: string) => ({ outcome: 'REJECTED' as const, detail });
-  const ticker = TICKER_BY_SYMBOL.get(symbol);
-  if (ticker === undefined) return rejected(`${symbol} is not one of the 50 requested symbols`);
+  const ticker = memberTicker(tickers, symbol);
+  if (ticker === undefined) return rejected(notRequested(symbol, tickers));
   let text: string;
   let receivedAt: number;
   try {
@@ -917,12 +1038,13 @@ export async function captureResponses(options: {
   alerts?: readonly string[];
   now?: () => number;
 }) {
-  const { dir, startedAt } = await readRetrieval(options.store, options.retrievalId);
+  const retrieval = await readRetrieval(options.store, options.retrievalId);
+  const { dir } = retrieval;
   const results: Array<{ symbol: string; file: string; outcome: CaptureOutcome; detail?: string }> =
     [];
   for (const { symbol, file } of options.pairs) {
     // Sequential on purpose: a second file for the same symbol must see the first one's record.
-    const captured = await captureOne(dir, startedAt, symbol, file); // NOSONAR(S9382)
+    const captured = await captureOne(retrieval, symbol, file); // NOSONAR(S9382)
     results.push({ symbol, file, ...captured });
   }
   if (options.alerts) {
@@ -940,10 +1062,9 @@ export async function recordFailure(options: {
   error: string;
   now?: () => number;
 }) {
-  const { dir } = await readRetrieval(options.store, options.retrievalId);
-  const ticker = TICKER_BY_SYMBOL.get(options.symbol);
-  if (ticker === undefined)
-    throw new Error(`${options.symbol} is not one of the 50 requested symbols`);
+  const { dir, tickers } = await readRetrieval(options.store, options.retrievalId);
+  const ticker = memberTicker(tickers, options.symbol);
+  if (ticker === undefined) throw new Error(notRequested(options.symbol, tickers));
   if (!options.error.trim()) throw new Error('Record the error the call returned');
   const path = join(dir, `${ticker}.json`);
   const outcome: CaptureOutcome = isCaptured(await readJson<CaptureRecord>(path))
@@ -972,7 +1093,7 @@ export async function finishRetrieval(options: {
   /** The offline check; replaced only by tests that need a scan which fails it. */
   reproduce?: Reproduce;
 }): Promise<RetrievalReport> {
-  const { dir, startedAt, records, conflicts } = await readRetrieval(
+  const { dir, startedAt, records, conflicts, universe, tickers } = await readRetrieval(
     options.store,
     options.retrievalId,
   );
@@ -981,7 +1102,7 @@ export async function finishRetrieval(options: {
   );
   let completedAt = startedAt;
   const instruments: TradingViewOhlcvExport['instruments'] = [];
-  for (const ticker of selectDevScanUniverse()) {
+  for (const ticker of tickers) {
     const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
     const record = records.get(ticker);
     const digests = conflicts.get(ticker);
@@ -1003,6 +1124,8 @@ export async function finishRetrieval(options: {
   const file: TradingViewOhlcvExport = {
     schemaVersion: '1',
     source: 'tradingview-mcp',
+    // Omitted for the default, so a default export stays byte-identical to earlier ones.
+    ...(universe === 'default' ? {} : { universe }),
     retrieval: { startedAt: iso(startedAt), completedAt: iso(completedAt) },
     pineAlerts: alerts ?? null,
     instruments,
@@ -1011,9 +1134,10 @@ export async function finishRetrieval(options: {
   await writeAtomic(exportPath, json(file));
   const report: Omit<RetrievalReport, 'outcome'> = {
     retrievalId: options.retrievalId,
+    universe,
     exportPath,
     retrieval: file.retrieval,
-    requested: DEV_SCAN_SIZE,
+    requested: tickers.length,
     evaluated: null,
     failed: null,
     failures: [],
@@ -1022,6 +1146,7 @@ export async function finishRetrieval(options: {
     importStatus: null,
     reproduction: null,
     viewStatus: 'UNCHANGED',
+    preservedView: null,
     baseline: null,
     research: null,
   };
@@ -1041,6 +1166,7 @@ export async function finishRetrieval(options: {
   const reproduced = await reproduce(scanId, options.scanStore);
   const matched = reproduced.status === 'MATCH';
   if (matched) {
+    report.preservedView = await preserveOtherUniverseView(imported.view, options.scanStore);
     report.baseline = await publishWithBaseline(imported.view, options.scanStore, reproduce);
     report.viewStatus = 'PUBLISHED';
   }

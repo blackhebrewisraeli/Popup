@@ -23,10 +23,16 @@ import {
   publishTradingViewDevScan,
   recordFailure,
   retrievalStatus,
+  parseUniverse,
+  preserveOtherUniverseView,
   selectDevScanUniverse,
+  selectionRule,
   startRetrieval,
   TRADINGVIEW_SYMBOLS,
   tradingViewSeries,
+  universeSymbols,
+  universeTickers,
+  type DevScanUniverse,
   type TradingViewOhlcvExport,
 } from './tradingViewImport';
 
@@ -112,11 +118,31 @@ describe('TradingView development universe', () => {
     expect(selectDevScanUniverse(['AAPL', 'BTC-USD', 'EURUSD=X'])).toEqual(['AAPL']);
   });
 
-  it('names one exchange-qualified primary listing for exactly the selected tickers', () => {
-    expect(Object.keys(TRADINGVIEW_SYMBOLS).sort()).toEqual(selectDevScanUniverse());
+  it('names one exchange-qualified primary listing for every configured ticker', () => {
+    expect(Object.keys(TRADINGVIEW_SYMBOLS).sort()).toEqual(
+      Object.keys(US_EQUITY_INSTRUMENTS).sort(),
+    );
     for (const [ticker, symbol] of Object.entries(TRADINGVIEW_SYMBOLS)) {
       expect(symbol).toMatch(new RegExp(`^(NASDAQ|NYSE|AMEX|CBOE):${ticker}$`));
     }
+  });
+
+  it('keeps the default 50 and their symbols as they were, and opts in to all 90', () => {
+    expect(universeTickers()).toEqual(selectDevScanUniverse());
+    // The 2026-10-29 resolution: the default retrieval requests exactly these, as before.
+    expect(universeSymbols('default').join(' ')).toBe(
+      'NASDAQ:AAL NASDAQ:AAPL NYSE:ABBV NASDAQ:ABNB NYSE:ACN NASDAQ:AMD NASDAQ:AMZN CBOE:ARKK NYSE:AXP NYSE:BA NYSE:BAC NYSE:C NYSE:CAT NYSE:CRM NASDAQ:CSCO AMEX:GLD NYSE:GS NYSE:HD NASDAQ:HOOD NYSE:IBM NASDAQ:INTC AMEX:IWM NYSE:KO NASDAQ:META NYSE:MRK NYSE:MS NASDAQ:MSFT NYSE:NKE NASDAQ:NVDA NYSE:ORCL NYSE:PFE NYSE:PG NYSE:PINS NASDAQ:PLTR NASDAQ:RIVN NYSE:RTX NASDAQ:SHOP AMEX:SLV NYSE:SNAP AMEX:SPY NASDAQ:TSLA NYSE:UNH AMEX:VOO AMEX:VTI NYSE:VZ AMEX:XLB AMEX:XLE AMEX:XLP AMEX:XLU AMEX:XLY',
+    );
+    const all = universeTickers('all');
+    expect(all).toHaveLength(90);
+    expect(all).toEqual(Object.keys(US_EQUITY_INSTRUMENTS).sort());
+    expect(selectDevScanUniverse().every((ticker) => all.includes(ticker))).toBe(true);
+    expect(universeSymbols('all')).toHaveLength(90);
+    expect(selectionRule('all')).toMatch(/^All 90 configured US equities and ETFs/);
+    expect(selectionRule()).toMatch(/^The 50 configured/);
+    expect(parseUniverse(undefined)).toBe('default');
+    expect(parseUniverse('all')).toBe('all');
+    expect(() => parseUniverse('top10')).toThrow(/Unknown universe top10/);
   });
 });
 
@@ -185,7 +211,29 @@ describe('importTradingViewScan', () => {
       JSON.parse(await readFile(join(store, TRADINGVIEW_DEV_SCAN_FILE), 'utf8')),
     );
     expect(written).toEqual(view);
-    expect(view.source).toMatchObject({ notice: NOTICE, symbols: TRADINGVIEW_SYMBOLS });
+    const requested = selectDevScanUniverse().map((ticker) => [
+      ticker,
+      TRADINGVIEW_SYMBOLS[ticker],
+    ]);
+    expect(view.source).toMatchObject({ notice: NOTICE, symbols: Object.fromEntries(requested) });
+  });
+
+  it('imports an export of the full universe on its own members, and refuses an unknown one', async () => {
+    const file = exportOf();
+    file.universe = 'all';
+    file.instruments = universeTickers('all').map((ticker, i) => ({
+      ...file.instruments[0]!,
+      ticker,
+      symbol: TRADINGVIEW_SYMBOLS[ticker]!,
+      response: response(TRADINGVIEW_SYMBOLS[ticker]!, PATHS[i % PATHS.length], '2026-10-27'),
+    }));
+    const { store, snapshot, view, preservedView } = await importInto(file);
+    expect(snapshot.scan.coverage).toMatchObject({ configured: 90, evaluated: 90 });
+    expect(snapshot.scan.universe.source).toBe(TRADINGVIEW_DEV_UNIVERSE_SOURCE);
+    expect(view.source.selectionRule).toBe(selectionRule('all'));
+    expect(preservedView).toBeNull();
+    expect(await reproduceScan(snapshot.scanId, store)).toMatchObject({ status: 'MATCH' });
+    expect(() => parseExport({ ...file, universe: 'top10' })).toThrow(/universe must be/);
   });
 
   it('reuses an equivalent snapshot despite a later import completion and republishes the view', async () => {
@@ -634,10 +682,14 @@ describe('TradingView retrieval capture', () => {
     return file;
   }
 
-  async function retrieval(startedAt = EQUITY_NOW - 120_000) {
+  async function retrieval(startedAt = EQUITY_NOW - 120_000, universe?: DevScanUniverse) {
     const root = await mkdtemp(join(tmpdir(), 'zerochart-tv-capture-'));
     const options = { store: join(root, 'tradingview'), now: () => EQUITY_NOW };
-    const started = await startRetrieval({ ...options, now: () => startedAt });
+    const started = await startRetrieval({
+      ...options,
+      ...(universe ? { universe } : {}),
+      now: () => startedAt,
+    });
     const ids = { ...options, retrievalId: started.retrievalId };
     const capture = async (symbols: readonly string[], at = RECEIVED) =>
       captureResponses({
@@ -824,6 +876,108 @@ describe('TradingView retrieval capture', () => {
     const report = await finish();
     expect(report).toMatchObject({ outcome: 'REFUSED', scanId: null, reproduction: null });
     expect(report.refusal).toMatch(/became final during retrieval/);
+  });
+
+  // Three finishes of 90 synthetic series: well over Vitest's 5 s default on CI runners.
+  it(
+    'retrieves the opt-in full universe with the same bounded steps, failures and retries',
+    { timeout: 60_000 },
+    async () => {
+      const ALL = universeSymbols('all');
+      const { root, started, ids, capture, finish } = await retrieval(undefined, 'all');
+      expect(started).toMatchObject({ universe: 'all', requested: 90, captured: 0 });
+      expect(started.retry).toEqual(ALL);
+      const manifest = JSON.parse(
+        await readFile(join(ids.store, ids.retrievalId, 'retrieval.json'), 'utf8'),
+      );
+      expect(manifest).toMatchObject({ universe: 'all', symbols: ALL });
+
+      // NYSE:XOM is outside the default 50 but one of this retrieval's 90.
+      const [xom, unavailable] = ['NYSE:XOM', 'NYSE:XYZ'];
+      const first = await capture(ALL.filter((symbol) => symbol !== unavailable));
+      expect(first.results.every(({ outcome }) => outcome === 'CAPTURED')).toBe(true);
+      expect(first.results.some(({ symbol }) => symbol === xom)).toBe(true);
+      const failed = await recordFailure({ ...ids, symbol: unavailable, error: 'Invalid symbol' });
+      expect(failed.status).toMatchObject({
+        captured: 89,
+        failed: [{ symbol: unavailable, reason: 'Invalid symbol' }],
+        retry: [unavailable],
+      });
+
+      const partial = await finish();
+      expect(partial).toMatchObject({
+        universe: 'all',
+        outcome: 'PARTIAL',
+        requested: 90,
+        evaluated: 89,
+        failed: 1,
+        reproduction: 'MATCH',
+        viewStatus: 'PUBLISHED',
+        preservedView: null,
+      });
+      expect(partial.failures).toEqual([
+        expect.objectContaining({ ticker: 'XYZ', symbol: unavailable, status: 'FETCH_FAILED' }),
+      ]);
+      expect(partial.failures[0]!.detail).toMatch(/Invalid symbol/);
+      const exported = JSON.parse(await readFile(partial.exportPath, 'utf8'));
+      expect(exported.universe).toBe('all');
+      expect(exported.instruments).toHaveLength(90);
+
+      const retried = await capture([unavailable], RECEIVED + 1_000);
+      expect(retried.results[0]!.outcome).toBe('RETRIED');
+      const complete = await finish();
+      expect(complete).toMatchObject({ outcome: 'COMPLETE', evaluated: 90, failed: 0 });
+      // The partial scan is the same session, a revision, so it is never the automatic baseline.
+      expect(complete.baseline).toMatchObject({ status: 'NO_BASELINE' });
+      const view = await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8');
+      const again = await finish();
+      expect(again).toMatchObject({ importStatus: 'ALREADY_IMPORTED', scanId: complete.scanId });
+      expect(await readFile(join(root, 'scans', TRADINGVIEW_DEV_SCAN_FILE), 'utf8')).toBe(view);
+      expect(parseTradingViewDevScan(JSON.parse(view)).scan.universe.members).toHaveLength(90);
+    },
+  );
+
+  it('keeps each retrieval on the universe and symbols frozen at its start', async () => {
+    const { ids, capture } = await retrieval();
+    const path = join(ids.store, ids.retrievalId, 'retrieval.json');
+    const manifest = JSON.parse(await readFile(path, 'utf8'));
+    expect(manifest).toMatchObject({ universe: 'default', symbols: universeSymbols('default') });
+    await expect(capture(['NYSE:XOM'])).resolves.toMatchObject({
+      results: [{ outcome: 'REJECTED', detail: 'NYSE:XOM is not one of the 50 requested symbols' }],
+    });
+
+    // Recorded before universes existed: the default 50.
+    await writeFile(path, JSON.stringify({ schemaVersion: '1', startedAt: manifest.startedAt }));
+    expect(await retrievalStatus(ids)).toMatchObject({ universe: 'default', requested: 50 });
+
+    // A member or symbol that differs from today's definition stops every later step.
+    const moved = [...manifest.symbols];
+    moved[0] = 'NYSE:AAL';
+    await writeFile(path, JSON.stringify({ ...manifest, symbols: moved }));
+    await expect(retrievalStatus(ids)).rejects.toThrow(/changed since this retrieval started/);
+    await writeFile(path, JSON.stringify({ ...manifest, universe: 'top10' }));
+    await expect(retrievalStatus(ids)).rejects.toThrow(/unreadable retrieval.json/);
+  });
+});
+
+describe('preserveOtherUniverseView', () => {
+  it('copies a published view of another universe, by content, before it is replaced', async () => {
+    const { store, view } = await importInto(exportOf());
+    const published = await readFile(join(store, TRADINGVIEW_DEV_SCAN_FILE), 'utf8');
+    expect(await preserveOtherUniverseView(view, store)).toBeNull();
+    const wider = {
+      ...view,
+      scan: { ...view.scan, universe: { ...view.scan.universe, members: universeTickers('all') } },
+    };
+    const copy = await preserveOtherUniverseView(wider, store);
+    expect(copy).toMatch(
+      new RegExp(`tradingview-dev-scan\\.${view.scanId}\\.[0-9a-f]{12}\\.json$`),
+    );
+    expect(await readFile(copy!, 'utf8')).toBe(published);
+    expect(await preserveOtherUniverseView(wider, store)).toBe(copy);
+    expect(await temporaryArtifacts(store)).toEqual([]);
+    const empty = await mkdtemp(join(tmpdir(), 'zerochart-tv-empty-'));
+    expect(await preserveOtherUniverseView(wider, empty)).toBeNull();
   });
 });
 

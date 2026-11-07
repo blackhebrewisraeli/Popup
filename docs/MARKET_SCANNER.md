@@ -195,8 +195,10 @@ to count incomplete scans. The snapshots keep that whole population.
 
 ## TradingView development scan (local, owner-initiated)
 
-A one-off local demonstration: 50 US equities and ETFs scored by this scanner on daily bars that the
-owner's agent session retrieved through TradingView's MCP server. Under `vite dev` only, the Scan
+A local demonstration: US equities and ETFs scored by this scanner on daily bars that the owner's
+agent session retrieved through TradingView's MCP server. By default a retrieval requests the fixed
+50-member universe; `tradingview-start --universe all` opts in to all 90 configured US equities and
+ETFs ([Two universes](#two-universes)). Under `vite dev` only, the Scan
 place has a source selector: **Market data** (the Market scan) or **TradingView import**, which
 replaces it with the **TradingView development scan**. The Markets directory always shows market
 data. The selector sits above the market-data loading and error states, so the import shows even
@@ -207,8 +209,8 @@ live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
 | Step                    | Who                      | How                                                                                                                                                                                                                                                         |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Choose the universe     | Code, before any data    | `selectDevScanUniverse`: the 50 of the 90 configured equities with the lowest `sha256(ticker)`                                                                                                                                                              |
-| Resolve instruments     | Agent (`search_symbols`) | One listing per ticker on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca, CBOE); committed as `TRADINGVIEW_SYMBOLS`. Off-exchange, CFD and foreign listings excluded                                                                                    |
+| Choose the universe     | Code, before any data    | Default: `selectDevScanUniverse`, the 50 of the 90 configured equities with the lowest `sha256(ticker)`. Opt-in (`--universe all`): all 90. `tradingview-start` freezes the choice and its exact symbols                                                    |
+| Resolve instruments     | Agent (`search_symbols`) | One listing per ticker on a US primary venue (NASDAQ, NYSE, AMEX = NYSE Arca, CBOE); committed as `TRADINGVIEW_SYMBOLS` (the 50 on 2026-10-29, the other 40 on 2026-11-08). Off-exchange, CFD and foreign listings excluded                                 |
 | Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. `tradingview-capture` binds each saved response to its symbol in git-ignored `.zerochart-tradingview/`                                                              |
 | Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                                                                        |
 | Validate, score, record | App (CLI)                | `tradingview-finish` (or `tradingview-import` for a hand-built export): `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
@@ -238,8 +240,10 @@ re-scans on a schedule. While the review is open, the header's market-data refre
 Run Popup's TradingView development scan. You retrieve; the repository's helper binds, imports
 and reproduces. Local only: never commit, publish or send anything you retrieve.
 
-1. Run `npm run evaluate -- tradingview-start`. Note RETRIEVAL_ID, validUntil and the symbols
-   under `retry`. If validUntil is less than 15 minutes away, stop and start again after it.
+1. Run `npm run evaluate -- tradingview-start` (the default 50), or
+   `npm run evaluate -- tradingview-start --universe all` only when the owner asked for all 90.
+   Note RETRIEVAL_ID, universe, validUntil and the symbols under `retry`. If validUntil is less
+   than 15 minutes away, stop and start again after it.
 2. For each symbol under `retry`, call TradingView `get_ohlcv` with exactly that symbol,
    interval "1D", count 1000, in batches of at most 8 calls (well under 100 a minute).
 3. After each batch run
@@ -252,8 +256,8 @@ and reproduces. Local only: never commit, publish or send anything you retrieve.
 5. Call TradingView `list_alerts` once (read only), then run
    `npm run evaluate -- tradingview-capture RETRIEVAL_ID --alerts <symbols holding any alert, comma-separated, or none>`.
 6. Run `npm run evaluate -- tradingview-finish RETRIEVAL_ID`. Report its outcome, the requested,
-   evaluated and failed counts, every failure with its reason, evaluatedSession, scanId,
-   reproduction and viewStatus. Only outcome COMPLETE with reproduction MATCH is a full success;
+   evaluated and failed counts, every failure with its reason, universe, evaluatedSession, scanId,
+   reproduction, viewStatus and preservedView. Only outcome COMPLETE with reproduction MATCH is a full success;
    state PARTIAL, REFUSED or NOT_REPRODUCED plainly. From `baseline`, report status, chosenBy,
    before.scanId with before.session and after.session, the Long, Risk and score counts, reason,
    and every entry under skipped with its reason.
@@ -266,7 +270,10 @@ What the helper (`scripts/tradingViewImport.ts`) does at each step:
 
 - **`tradingview-start`** takes the retrieval start before anything is fetched, creates
   `.zerochart-tradingview/<RETRIEVAL_ID>/` and prints the required session and `validUntil`, the
-  moment the next session becomes final.
+  moment the next session becomes final. Its `retrieval.json` records the universe and the exact
+  symbol of every member. Every later step requests, binds and scores exactly those, and refuses
+  the retrieval if today's definition of that universe differs. A retrieval started before
+  universes existed records neither and is the default 50.
 - **`tradingview-capture`** binds each saved result to the symbol it was requested for. Claude
   Code names a saved tool result by the millisecond, and parallel calls can land on one name and
   overwrite each other, so a file name is never trusted. The response's own `symbol` and
@@ -287,7 +294,9 @@ What the helper (`scripts/tradingViewImport.ts`) does at each step:
   (`viewStatus: PUBLISHED`). A refused or unreproduced scan leaves the last published Research
   view as it was (`UNCHANGED`). It exits non-zero unless the outcome is `COMPLETE` with `MATCH`;
   a missing baseline is reported, not a failure. Running it again on the same captures prints
-  `ALREADY_IMPORTED` and leaves the export, the baseline and the view byte-identical.
+  `ALREADY_IMPORTED` and leaves the export, the baseline and the view byte-identical. Before a
+  view of one universe replaces a view of the other, the replaced view is copied beside it
+  (`preservedView`, below).
 
 The helper never calls TradingView, holds no credential and runs nothing unattended. A hand-built
 export still imports with `npm run evaluate -- tradingview-import EXPORT.json`, followed by
@@ -306,6 +315,43 @@ one source shows at a time: the import view has no price table, asset count, Bui
 asset details sheet, and its evidence and Compare read the import alone, so reviewing it requests nothing
 from Binance or any other provider (the page's own price feeds keep running in the background). Switching
 sources discards the other's view, filters, comparison and open explanation.
+
+### Two universes
+
+| Universe           | Command                            | Members                                                        | Selection rule shown in Research           |
+| ------------------ | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
+| `default` (50)     | `tradingview-start`                | The 50 configured tickers with the lowest `sha256(ticker)`     | "The 50 configured US equities and ETFs …" |
+| `all` (90, opt-in) | `tradingview-start --universe all` | Every ticker in `US_EQUITY_INSTRUMENTS`: 71 stocks and 19 ETFs | "All 90 configured US equities and ETFs …" |
+
+Neither universe depends on a score or an outcome. Both use the same exact symbols for the 50 they
+share, so the default retrieval requests exactly what it did before. Each import records its
+members in the snapshot, so the universe hash and the scan ID tell the two apart, and an export of
+the full universe says `"universe": "all"` (a default export has no such field and stays
+byte-identical to earlier ones).
+
+**Ranks are per universe.** A ticker ranked among 90 can sit lower than it did among 50 with the
+same score, so a 90-member scan is never compared with a 50-member one, in either direction:
+
+- `tradingview-finish` passes over every import of the other universe with
+  `not comparable: Universe 50 tickers, … → 90 tickers, …`, also when it rests on the same
+  session.
+- `tradingview-baseline` with an import of the other universe attaches it only to show
+  **Not comparable** with the universe as the difference; no score, setup or rank change is shown.
+
+**Moving between the two published views.** Research shows one view at a time
+(`tradingview-dev-scan.json`). When a finish or import publishes a view of the other universe, it
+first copies the published one, named baseline included, to
+`.zerochart-scans/tradingview-dev-scan.<scanId>.<sha256 prefix>.json` and reports the path as
+`preservedView`. To go back, copy that file over the published one and press
+**Reload local scan**:
+
+```sh
+cp .zerochart-scans/tradingview-dev-scan.<scanId>.<prefix>.json .zerochart-scans/tradingview-dev-scan.json
+```
+
+Finishing the next default retrieval also publishes a 50-member view (and preserves the 90-member
+one the same way). Snapshots are never touched by either: both universes stay in the scan store and
+reproduce as before.
 
 ### Changes since previous scan
 
@@ -343,7 +389,7 @@ retrieval again keeps a named baseline while it still passes those checks; if it
 finish says why under `skipped` and chooses again. A new scan starts a new choice: a named baseline
 belongs to the scan it was named for. `tradingview-import` publishes without a baseline.
 
-- **Comparable** means the same source, timeframe, universe, recorded instrument and exact
+- **Comparable** means the same source, timeframe, universe members ([Two universes](#two-universes)), recorded instrument and exact
   TradingView symbol per ticker, scanner and model versions, and candle policy, with the baseline
   evaluated first. Otherwise the view says
   **Not comparable**, lists what differs and shows no change. Such a baseline is attached without
