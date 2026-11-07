@@ -13,8 +13,12 @@ import {
   TRADINGVIEW_DEV_SCAN_KIND,
   TRADINGVIEW_DEV_SCAN_ROUTE,
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+  TRADINGVIEW_SAVED_SCANS_ROUTE,
+  type SavedScanList,
+  type SavedScanRead,
   type TradingViewDevScan as DevScan,
 } from '@/lib/tradingViewDevScan';
+import { stubLocalRoutes } from './localScanRoutes';
 import { bars, EQUITY_NOW, falling, rising, split, wave } from './usEquityFixtures';
 
 const DAY = 86_400_000;
@@ -133,7 +137,7 @@ function Markets() {
 
 function serve(respond: () => Promise<Response>) {
   const fetch = vi.fn((_url: string, _init?: RequestInit) => respond());
-  vi.stubGlobal('fetch', fetch);
+  stubLocalRoutes(fetch);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -403,7 +407,7 @@ describe('Research zone', () => {
   }
 
   it('opens on the scan and keeps the Markets directory, advisor and alerts in a place of their own', async () => {
-    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+    stubLocalRoutes(vi.fn(json(IMPORT)));
     renderResearch();
     expect(screen.getByRole('tab', { name: 'Scan' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
@@ -436,7 +440,7 @@ describe('Research zone', () => {
     ['still loading', { pending: true }],
     ['failed with nothing to show', { failed: true, empty: true }],
   ])('shows the local import while market data is %s', async (_, state) => {
-    vi.stubGlobal('fetch', vi.fn(json(IMPORT)));
+    stubLocalRoutes(vi.fn(json(IMPORT)));
     renderResearch(state);
     expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
     await screen.findByRole('tab', { name: 'TradingView import 4' });
@@ -445,7 +449,7 @@ describe('Research zone', () => {
     expect(rowsOf(panel)).toHaveLength(4);
   });
 
-  it('has no source picker in a production build, and never reads the import', () => {
+  it('has no source picker in a production build, and never reads the import or saved scans', () => {
     vi.stubEnv('DEV', false);
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -675,5 +679,282 @@ describe('Markets source: Reload local scan', () => {
     pick(/TradingView import/);
     expect(screen.getByRole('status')).toHaveTextContent(`Scan ${B.scanId}`);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Markets source: saved scans', () => {
+  const symbols = (inputs: ScanInput[]) =>
+    inputs.map((input) => ({
+      ...input,
+      providerSymbol: { requested: `NASDAQ:${input.ticker}`, validated: `NASDAQ:${input.ticker}` },
+    }));
+  /** Labeled fixture standing in for the 50-member scan: a legacy snapshot kept alone. */
+  const SMALL: DevScan = {
+    ...importOf([equity('AAPL', rising), equity('MSFT', wave)]),
+    scanId: '20261027T170000Z-00000050',
+    source: {
+      tool: 'get_ohlcv',
+      interval: '1D',
+      retrieval: null,
+      symbols: {},
+      notice: null,
+      selectionRule: null,
+      pineAlerts: null,
+      snapshotOnly: true,
+    },
+    saved: { repositoryCommit: 'a'.repeat(40), legacy: true, view: null },
+  };
+  /** Labeled fixture standing in for the 90: exact symbols, with its preserved view's source. */
+  const LARGE: DevScan = {
+    ...importOf(
+      symbols([
+        equity('AAPL', falling),
+        equity('MSFT', rising),
+        equity('NVDA', wave),
+        equity('SPY', rising),
+      ]),
+    ),
+    scanId: '20261027T180000Z-00000090',
+    saved: { repositoryCommit: 'b'.repeat(40), legacy: false, view: 'preserved' },
+  };
+  const entry = (view: DevScan) => ({
+    scanId: view.scanId,
+    session: '2026-10-27',
+    members: view.scan.universe.members.length,
+    evaluated: view.scan.coverage.evaluated,
+    supported: view.scan.coverage.supported,
+    legacy: view.saved!.legacy,
+  });
+  const LIST: SavedScanList = { scans: [entry(LARGE), entry(SMALL)], unreadable: 0 };
+  const verified = (view: DevScan): SavedScanRead => ({ state: 'VERIFIED', view });
+  const one = (scanId: string) => `${TRADINGVIEW_SAVED_SCANS_ROUTE}/${scanId}`;
+  const ok = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body)));
+
+  /** The published import, and a store answering the list and each saved scan by ID. */
+  function store(answers: Record<string, () => Promise<Response>> = {}) {
+    const published = vi.fn((_url: string) => ok(IMPORT));
+    const saved = vi.fn((url: string, _init?: RequestInit) => {
+      const answer = answers[url];
+      if (answer) return answer();
+      if (url === TRADINGVIEW_SAVED_SCANS_ROUTE) return ok(LIST);
+      if (url === one(SMALL.scanId)) return ok(verified(SMALL));
+      if (url === one(LARGE.scanId)) return ok(verified(LARGE));
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    stubLocalRoutes(published, saved);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <Markets />
+      </QueryClientProvider>,
+    );
+    const reads = () => saved.mock.calls.map(([url]) => url);
+    return { published, reads };
+  }
+
+  async function open() {
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
+    const shown = screen.getByRole('combobox', { name: 'Scan shown' });
+    await within(shown).findByRole('option', { name: new RegExp(SMALL.scanId) });
+    return shown;
+  }
+
+  const panel = () => screen.getByRole('region', { name: 'TradingView development scan' });
+  const head = () => panel().querySelector('.market-scan-head')!;
+  const scores = () =>
+    rowsOf(panel()).map((row) => row.querySelector('.market-scan-score')?.textContent);
+  const scoresOf = (view: DevScan) =>
+    view.scan.results.map((result) => `Score ${result.model!.signal_score}`);
+  const pick = (shown: HTMLElement, scanId: string) =>
+    fireEvent.change(shown, { target: { value: scanId } });
+
+  it('lists each saved scan’s ID, session, universe size and coverage beside the published one', async () => {
+    store();
+    const shown = await open();
+    expect(shown).toHaveValue('');
+    expect(shown).toHaveAttribute('name', 'scan-shown');
+    expect(
+      within(shown)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Latest published scan',
+      `${LARGE.scanId} · 2026-10-27 session · 4 members · 4 of 4 evaluated`,
+      `${SMALL.scanId} · 2026-10-27 session · 2 members · 2 of 2 evaluated · legacy`,
+    ]);
+    expect(head()).toHaveTextContent('Latest published scan');
+    expect(head()).not.toHaveTextContent('Saved scan');
+  });
+
+  it('switches 50 → 90 → 50 in place, each with only its own results and provenance', async () => {
+    const { published, reads } = store();
+    const shown = await open();
+
+    pick(shown, SMALL.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SMALL)));
+    expect(head()).toHaveTextContent('Saved scan, not the published view');
+    expect(head()).toHaveTextContent('2 of 2 evaluated');
+    expect(head()).toHaveTextContent('RetrievedNot recorded');
+    expect(screen.getByText(/Only its snapshot is kept/)).toHaveTextContent(
+      'Legacy evidence: recorded before exact TradingView symbols were kept',
+    );
+    expect(panel()).toHaveTextContent('No TradingView alert check is recorded with this snapshot.');
+    expect(panel()).toHaveTextContent(
+      'Universe: 2 requested; how they were chosen is not recorded with this snapshot.',
+    );
+    expect(panel()).not.toHaveTextContent('Labeled fixture universe.');
+    const changes = within(panel()).getByRole('region', { name: /Changes since previous scan/ });
+    expect(changes).toHaveTextContent('No comparison is recorded with this saved scan');
+    expect(changes).not.toHaveTextContent('tradingview-baseline');
+    expect(screen.getByRole('button', { name: 'Reload saved scan' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(`Saved scan ${SMALL.scanId}`);
+
+    pick(shown, LARGE.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(LARGE)));
+    expect(head()).toHaveTextContent('4 of 4 evaluated');
+    expect(head()).not.toHaveTextContent('Not recorded');
+    expect(screen.getByText(/recorded in the preserved view of this scan/)).toBeInTheDocument();
+    expect(panel()).toHaveTextContent('Universe: Labeled fixture universe.');
+
+    pick(shown, SMALL.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SMALL)));
+    pick(shown, '');
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(IMPORT)));
+    expect(head()).toHaveTextContent('Latest published scan');
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${IMPORT.scanId}`);
+    // Each file read once; switching back shows what was already read.
+    expect(published).toHaveBeenCalledTimes(1);
+    expect(reads()).toEqual([TRADINGVIEW_SAVED_SCANS_ROUTE, one(SMALL.scanId), one(LARGE.scanId)]);
+  });
+
+  it('starts the review over whenever the scan shown changes', async () => {
+    store();
+    const shown = await open();
+    for (const scanId of [LARGE.scanId, SMALL.scanId, '']) {
+      const review = panel();
+      fireEvent.click(within(review).getByRole('checkbox', { name: 'Compare AAPL' }));
+      fireEvent.click(within(review).getByRole('checkbox', { name: 'Compare MSFT' }));
+      fireEvent.click(within(review).getByRole('button', { name: /^AAPL,/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(screen.getByRole('region', { name: 'Equities & ETFs comparison' })).toBeVisible();
+
+      pick(shown, scanId);
+      await vi.waitFor(() =>
+        expect(within(panel()).getByRole('checkbox', { name: 'Compare AAPL' })).not.toBeChecked(),
+      );
+      expect(screen.queryByRole('region', { name: 'Equities & ETFs comparison' })).toBeNull();
+      expect(panel().querySelector('[aria-current="true"]')).toBeNull();
+      expect(screen.queryByRole('dialog')).toBeNull();
+    }
+  });
+
+  it('reloads the selected saved scan and the list, never the published one', async () => {
+    let gone = false;
+    const { published, reads } = store({
+      [one(SMALL.scanId)]: () =>
+        gone ? Promise.resolve(new Response('', { status: 404 })) : ok(verified(SMALL)),
+      [TRADINGVIEW_SAVED_SCANS_ROUTE]: () =>
+        ok(gone ? { scans: [entry(LARGE)], unreadable: 1 } : LIST),
+    });
+    const shown = await open();
+    pick(shown, SMALL.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SMALL)));
+
+    gone = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Reload saved scan' }));
+    await vi.waitFor(() =>
+      expect(panel()).toHaveTextContent(
+        `Saved scan ${SMALL.scanId} is no longer a TradingView snapshot in the scan store.`,
+      ),
+    );
+    expect(rowsOf(panel())).toHaveLength(0);
+    // Still the owner's selection, named, never the published scan in its place.
+    expect(shown).toHaveValue(SMALL.scanId);
+    expect(within(shown).getByRole('option', { selected: true })).toHaveTextContent(
+      `${SMALL.scanId} · not in the scan store`,
+    );
+    expect(screen.getByText('1 snapshot file could not be read and is not listed.')).toBeVisible();
+    expect(published).toHaveBeenCalledTimes(1);
+    expect(reads()).toEqual([
+      TRADINGVIEW_SAVED_SCANS_ROUTE,
+      one(SMALL.scanId),
+      TRADINGVIEW_SAVED_SCANS_ROUTE,
+      one(SMALL.scanId),
+    ]);
+  });
+
+  it('keeps the saved scan on a failed reload, labeled as not reloaded', async () => {
+    let fail = false;
+    store({
+      [one(LARGE.scanId)]: () =>
+        fail ? Promise.resolve(new Response('', { status: 500 })) : ok(verified(LARGE)),
+    });
+    const shown = await open();
+    pick(shown, LARGE.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(LARGE)));
+    fail = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Reload saved scan' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `Reload failed (HTTP 500). Still showing saved scan ${LARGE.scanId}, imported`,
+    );
+    expect(scores()).toEqual(scoresOf(LARGE));
+  });
+
+  it.each([
+    ['MALFORMED', 'is malformed', 'required snapshot fields are missing or invalid'],
+    [
+      'INCOMPATIBLE',
+      'cannot be checked by this checkout',
+      'recorded with scanner market-scan-v1 and model 0.9.0',
+    ],
+    ['NOT_REPRODUCED', 'does not reproduce offline from its own inputs', 'OUTPUT_MISMATCH'],
+  ] as const)('names a %s saved scan and shows none of it', async (state, words, reason) => {
+    store({ [one(SMALL.scanId)]: () => ok({ state, scanId: SMALL.scanId, reason }) });
+    pick(await open(), SMALL.scanId);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      `Saved scan ${SMALL.scanId} ${words} (${reason}). Nothing from it is shown.`,
+    );
+    expect(rowsOf(panel())).toHaveLength(0);
+    expect(panel()).not.toHaveTextContent('Latest published scan');
+  });
+
+  it('refuses a verified answer without its read-back record', async () => {
+    const { saved: _saved, ...unchecked } = SMALL;
+    store({ [one(SMALL.scanId)]: () => ok({ state: 'VERIFIED', view: unchecked }) });
+    pick(await open(), SMALL.scanId);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `Saved scan ${SMALL.scanId} could not be read (Not a saved TradingView scan.)`,
+    );
+    expect(rowsOf(panel())).toHaveLength(0);
+  });
+
+  it('shows the last scan chosen, however fast the choices and answers come', async () => {
+    let answer!: (response: Response) => void;
+    const late = new Promise<Response>((done) => (answer = done));
+    store({ [one(LARGE.scanId)]: () => late });
+    const shown = await open();
+    pick(shown, LARGE.scanId);
+    pick(shown, SMALL.scanId);
+    pick(shown, LARGE.scanId);
+    pick(shown, SMALL.scanId);
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SMALL)));
+    answer(new Response(JSON.stringify(verified(LARGE))));
+    await new Promise((done) => setTimeout(done, 20));
+    expect(scores()).toEqual(scoresOf(SMALL));
+    expect(screen.getByRole('status')).toHaveTextContent(`Saved scan ${SMALL.scanId}`);
+  });
+
+  it('keeps the published scan on screen when saved scans cannot be listed', async () => {
+    store({ [TRADINGVIEW_SAVED_SCANS_ROUTE]: () => ok({ scans: 'nope' }) });
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Saved scans could not be listed (Not a saved TradingView scan list.)',
+    );
+    expect(scores()).toEqual(scoresOf(IMPORT));
+    const shown = screen.getByRole('combobox', { name: 'Scan shown' });
+    expect(within(shown).getAllByRole('option')).toHaveLength(1);
   });
 });

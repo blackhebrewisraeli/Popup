@@ -11,6 +11,7 @@ import {
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
   type TradingViewDevScan as DevScan,
 } from '@/lib/tradingViewDevScan';
+import { stubLocalRoutes } from './localScanRoutes';
 import { bars, EQUITY_NOW, split, wave } from './usEquityFixtures';
 
 /** Labeled fixture: one synthetic equity series, not TradingView data. */
@@ -101,7 +102,7 @@ function failedScan(time: number): MarketScan {
 
 function serve(response: Response) {
   const fetch = vi.fn(async () => response);
-  vi.stubGlobal('fetch', fetch);
+  stubLocalRoutes(fetch);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
@@ -126,10 +127,7 @@ describe('TradingViewDevScan', () => {
   });
 
   it('says it is reading the import while the route has not answered', () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => new Promise<Response>(() => {})),
-    );
+    stubLocalRoutes(vi.fn(() => new Promise<Response>(() => {})));
     render(
       <QueryClientProvider client={new QueryClient()}>
         <TradingViewDevScan />

@@ -885,6 +885,27 @@ body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Scan shown: the published view or a saved snapshot; long option labels never widen the page. */
+.devscan-shown {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.devscan-shown > select {
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.devscan-saved {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
 .devscan-reload-failed {
   flex: 1 1 100%;
   padding: 10px 12px;

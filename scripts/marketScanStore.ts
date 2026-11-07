@@ -229,7 +229,7 @@ export async function loadScan(scanId: string, store: string): Promise<ScanSnaps
   return snapshot;
 }
 
-type ScanMismatchReason =
+export type ScanMismatchReason =
   | 'UNSUPPORTED_VERSION'
   | 'UNIVERSE_HASH_MISMATCH'
   | 'INPUT_HASH_MISMATCH'
@@ -237,7 +237,8 @@ type ScanMismatchReason =
   | 'EVALUATION_TIME_MISMATCH'
   | 'SNAPSHOT_METADATA_MISMATCH';
 
-function snapshotMismatchReason(snapshot: ScanSnapshot): ScanMismatchReason | null {
+/** Why a parsed snapshot does not reproduce offline, or null when it does. Reads no file. */
+export function snapshotMismatchReason(snapshot: ScanSnapshot): ScanMismatchReason | null {
   if (
     !snapshot ||
     typeof snapshot.repositoryCommit !== 'string' ||

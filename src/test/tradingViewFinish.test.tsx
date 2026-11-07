@@ -23,6 +23,7 @@ import {
   universeTickers,
   type DevScanUniverse,
 } from '../../scripts/tradingViewImport';
+import { stubLocalRoutes } from './localScanRoutes';
 import { bars, EQUITY_NOW, falling, rising, wave } from './usEquityFixtures';
 
 /**
@@ -145,10 +146,7 @@ async function rerecord(
 /** Research → TradingView import, served the view file exactly as the dev route would. */
 async function research(root: string) {
   const body = await readFile(viewPath(root), 'utf8');
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(body)),
-  );
+  stubLocalRoutes(vi.fn(async () => new Response(body)));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>

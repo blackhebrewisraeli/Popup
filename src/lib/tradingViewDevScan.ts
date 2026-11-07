@@ -17,12 +17,20 @@ export const TRADINGVIEW_DEV_UNIVERSE_SOURCE = 'tradingview-dev-scan';
 /** The dev-server route, and the file it serves from `.zerochart-scans/`. */
 export const TRADINGVIEW_DEV_SCAN_ROUTE = '/__zerochart/tradingview-dev-scan';
 export const TRADINGVIEW_DEV_SCAN_FILE = 'tradingview-dev-scan.json';
+/**
+ * The dev-server route listing the TradingView snapshots saved in the same store, and
+ * `/<scanId>` under it reading one back. Read-only: it never writes, publishes or copies.
+ */
+export const TRADINGVIEW_SAVED_SCANS_ROUTE = '/__zerochart/tradingview-saved-scans';
+/** A snapshot's scan ID, and so its file name: the only thing the saved-scan route accepts. */
+export const SCAN_ID = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/;
 
 /** Where the bars came from, as the agent recorded it. Times are ISO strings. */
 export interface TradingViewDevSource {
   tool: 'get_ohlcv';
   interval: '1D';
-  retrieval: { startedAt: string; completedAt: string };
+  /** Null only with `snapshotOnly`, as are `notice` and `selectionRule`: never recorded there. */
+  retrieval: { startedAt: string; completedAt: string } | null;
   /**
    * Ticker → exact exchange-qualified TradingView symbol requested, as the scan's inputs
    * recorded it. Views written before inputs recorded it hold the instrument map at import
@@ -30,11 +38,16 @@ export interface TradingViewDevSource {
    */
   symbols: Readonly<Record<string, string>>;
   /** TradingView's own market-data notice, verbatim (adjustment, session, delay). */
-  notice: string;
-  /** How the 50 were chosen, before any score was seen. */
-  selectionRule: string;
+  notice: string | null;
+  /** How the members were chosen, before any score was seen. */
+  selectionRule: string | null;
   /** Symbols holding any TradingView alert when the agent checked; null when not checked. */
   pineAlerts: { checkedAt: string; symbols: readonly string[] } | null;
+  /**
+   * A saved snapshot shown without a view of it: the snapshot records no retrieval window,
+   * notice, selection rule or alert check, so those are null, never filled in from today.
+   */
+  snapshotOnly?: true;
 }
 
 export type BaselineChooser = 'tradingview-finish' | 'tradingview-baseline';
@@ -61,6 +74,16 @@ export interface TradingViewDevBaselineSearch {
   skipped: ReadonlyArray<{ scanId: string; reason: string }>;
 }
 
+/** How a saved scan was read back; set only by the saved-scan route, never in a published file. */
+export interface TradingViewSavedScan {
+  /** The checkout that recorded the snapshot. */
+  repositoryCommit: string;
+  /** Recorded before inputs kept exact symbols: it reproduces and displays, never a baseline. */
+  legacy: boolean;
+  /** The recorded view that supplied source and comparison, or null when only the snapshot exists. */
+  view: 'published' | 'preserved' | null;
+}
+
 export interface TradingViewDevScan {
   kind: typeof TRADINGVIEW_DEV_SCAN_KIND;
   scanId: string;
@@ -69,7 +92,35 @@ export interface TradingViewDevScan {
   scan: MarketScan;
   baseline?: TradingViewDevBaseline;
   baselineSearch?: TradingViewDevBaselineSearch;
+  /** A saved scan read back offline after it reproduced; absent for the published view. */
+  saved?: TradingViewSavedScan;
 }
+
+/** One saved TradingView snapshot as the selector lists it; null where the file does not say. */
+export interface SavedScanEntry {
+  scanId: string;
+  /** The latest New York session it evaluated. */
+  session: string | null;
+  members: number | null;
+  evaluated: number | null;
+  supported: number | null;
+  legacy: boolean;
+}
+
+export interface SavedScanList {
+  /** Newest first. */
+  scans: SavedScanEntry[];
+  /** Snapshot-named files that could not be read, so whether they are TradingView imports is unknown. */
+  unreadable: number;
+}
+
+/**
+ * One saved scan read back. Only `VERIFIED` (reproduced offline) carries results; every
+ * other state names the scan and why nothing from it is shown.
+ */
+export type SavedScanRead =
+  | { state: 'VERIFIED'; view: TradingViewDevScan }
+  | { state: 'MALFORMED' | 'INCOMPATIBLE' | 'NOT_REPRODUCED'; scanId: string; reason: string };
 
 function isScan(scan: Partial<MarketScan> | undefined): boolean {
   return Array.isArray(scan?.results) && Array.isArray(scan.cohorts);
@@ -96,6 +147,20 @@ function isSearch(search: Partial<TradingViewDevBaselineSearch> | undefined): bo
   );
 }
 
+/** A string, or null when the source says it is a snapshot that never recorded one. */
+function isRecorded(source: Partial<TradingViewDevSource>, value: unknown): boolean {
+  return typeof value === 'string' || (source.snapshotOnly === true && value === null);
+}
+
+function isSaved(saved: Partial<TradingViewSavedScan> | undefined): boolean {
+  return (
+    saved === undefined ||
+    (typeof saved?.repositoryCommit === 'string' &&
+      typeof saved.legacy === 'boolean' &&
+      (saved.view === null || saved.view === 'published' || saved.view === 'preserved'))
+  );
+}
+
 /** Shape check at the dev-server boundary: a malformed file is an error, never a partial panel. */
 export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
   const value = raw as Partial<TradingViewDevScan> | null;
@@ -105,13 +170,56 @@ export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
     typeof value.scanId !== 'string' ||
     typeof value.importedAt !== 'string' ||
     !source ||
-    typeof source.notice !== 'string' ||
+    !isRecorded(source, source.notice) ||
+    !isRecorded(source, source.selectionRule) ||
+    !(source.snapshotOnly === true ? source.retrieval === null : source.retrieval) ||
     typeof source.symbols !== 'object' ||
     !isScan(value.scan) ||
     !isBaseline(value.baseline) ||
-    !isSearch(value.baselineSearch)
+    !isSearch(value.baselineSearch) ||
+    !isSaved(value.saved)
   ) {
     throw new Error('Not a TradingView development scan file.');
   }
   return value as TradingViewDevScan;
+}
+
+const isCount = (value: unknown) => value === null || Number.isInteger(value);
+
+/** The saved-scan list at the dev-server boundary. */
+export function parseSavedScanList(raw: unknown): SavedScanList {
+  const value = raw as Partial<SavedScanList> | null;
+  const valid =
+    Array.isArray(value?.scans) &&
+    Number.isInteger(value.unreadable) &&
+    value.scans.every(
+      (entry: Partial<SavedScanEntry> | null) =>
+        typeof entry?.scanId === 'string' &&
+        SCAN_ID.test(entry.scanId) &&
+        (entry.session === null || typeof entry.session === 'string') &&
+        isCount(entry.members) &&
+        isCount(entry.evaluated) &&
+        isCount(entry.supported) &&
+        typeof entry.legacy === 'boolean',
+    );
+  if (!valid) throw new Error('Not a saved TradingView scan list.');
+  return value as SavedScanList;
+}
+
+/** One saved scan at the dev-server boundary; a verified one must carry its read-back record. */
+export function parseSavedScanRead(raw: unknown): SavedScanRead {
+  const value = raw as { state?: unknown; view?: unknown; scanId?: unknown; reason?: unknown };
+  if (value?.state === 'VERIFIED') {
+    const view = parseTradingViewDevScan(value.view);
+    if (view.saved) return { state: 'VERIFIED', view };
+  } else if (
+    (value?.state === 'MALFORMED' ||
+      value?.state === 'INCOMPATIBLE' ||
+      value?.state === 'NOT_REPRODUCED') &&
+    typeof value.scanId === 'string' &&
+    typeof value.reason === 'string'
+  ) {
+    return { state: value.state, scanId: value.scanId, reason: value.reason };
+  }
+  throw new Error('Not a saved TradingView scan.');
 }
