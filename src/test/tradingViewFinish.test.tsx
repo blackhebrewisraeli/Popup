@@ -449,6 +449,7 @@ describe('tradingview-finish to Research', { timeout: 60_000 }, () => {
     const root = await store();
     const oldest = await refresh(root, EQUITY_NOW - 2 * DAY); // 23 Oct, default 50
     const fifty = await refresh(root, EQUITY_NOW - DAY); // 26 Oct, default 50
+    const sameSession = await refresh(root, EQUITY_NOW - HOUR); // 27 Oct, default 50
     await attachBaseline({ store: join(root, 'scans'), baselineId: oldest.scanId });
     const owners = await readFile(viewPath(root), 'utf8');
 
@@ -469,6 +470,10 @@ describe('tradingview-finish to Research', { timeout: 60_000 }, () => {
     const wider =
       'not comparable: Universe 50 tickers, 0 not in the displayed scan → 90 tickers, 40 not in the baseline';
     expect(full.baseline?.skipped).toEqual([
+      {
+        scanId: sameSession.scanId,
+        reason: `a revision of the displayed scan's session (2026-10-27), never chosen automatically; ${wider}`,
+      },
       { scanId: fifty.scanId, reason: wider },
       { scanId: oldest.scanId, reason: wider },
     ]);
@@ -508,7 +513,7 @@ describe('tradingview-finish to Research', { timeout: 60_000 }, () => {
       universe: 'default',
       requested: 50,
       preservedView: null,
-      baseline: { status: 'COMPARED', before: { scanId: fifty.scanId }, compared: 50 },
+      baseline: { status: 'COMPARED', before: { scanId: sameSession.scanId }, compared: 50 },
     });
     expect(next.baseline?.skipped).toEqual([
       {

@@ -562,17 +562,19 @@ function newestFirst(a: Candidate, b: Candidate): number {
 function passedOver(candidate: Candidate, displayed: string): string | null {
   const { session, comparison } = candidate;
   if (session === null) return 'evaluated no asset, so it rests on no session';
+  const incomparable =
+    comparison.status === 'INCOMPATIBLE'
+      ? `not comparable: ${comparison.differences
+          .map(({ field, before, after }) => `${field} ${before} → ${after}`)
+          .join('; ')}`
+      : null;
   if (session === displayed) {
-    return `a revision of the displayed scan's session (${session}), never chosen automatically; name it with tradingview-baseline to compare it`;
+    // Naming a same-session scan of another universe would only show what differs.
+    const next = incomparable ?? 'name it with tradingview-baseline to compare it';
+    return `a revision of the displayed scan's session (${session}), never chosen automatically; ${next}`;
   }
   if (session > displayed) return `evaluated a later session (${session}) than the displayed scan`;
-  if (comparison.status === 'INCOMPATIBLE') {
-    const fields = comparison.differences.map(
-      ({ field, before, after }) => `${field} ${before} → ${after}`,
-    );
-    return `not comparable: ${fields.join('; ')}`;
-  }
-  return null;
+  return incomparable;
 }
 
 /**
