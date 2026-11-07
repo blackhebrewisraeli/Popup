@@ -28,15 +28,18 @@ changed, and understand the evidence behind each result. The user decides whethe
   not establish when a change occurred.
 - **Refresh follow-up:** [#139](https://github.com/blackhebrewisraeli/Popup/pull/139) merged automatic
   baseline selection at the end of an owner-initiated refresh. Its required checks passed.
-- **Exact symbol identity:** draft [#140](https://github.com/blackhebrewisraeli/Popup/pull/140)
+- **Exact symbol identity:** [#140](https://github.com/blackhebrewisraeli/Popup/pull/140) (merged)
   records the requested and validated exchange-qualified TradingView symbol in each scan input and
-  compares two scans only on the same exact symbol. Every import up to 2026-11-07 is legacy: it
-  reproduces and displays, but it is never a baseline.
+  compares two scans only on the same exact symbol. Every import up to the morning of 2026-11-07 is
+  legacy: it reproduces and displays, but it is never a baseline. The first new-format import,
+  `20261107T170244Z-76cde900` (6 Nov session), is the first possible baseline.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
   research](SCANNER_RESEARCH.md) did not establish a predictive advantage.
 
-**Next:** Run the personal trial and fix concrete problems observed while using the scanner.
-Keep personal decisions and outcomes in a private journal.
+**Next:** Once the 9 Nov session is final (2026-11-10 06:00 UTC), run one fresh scan with the
+runbook prompt and verify the first real comparison: `tradingview-finish` should choose
+`20261107T170244Z-76cde900` as the baseline, and Research should show the same counts. The owner's
+personal trial stays deferred; when it starts, personal decisions and outcomes go in a private journal.
 
 See the [scanner runbook](MARKET_SCANNER.md) for retrieval, import, reproduction, and review.
 The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is for engineering handoffs.
@@ -55,7 +58,22 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-07 · Exact TradingView symbol in scan evidence · Draft
+- **2026-11-07 · Fresh-scan verification after #140 · Local real-data run on main `e1b0719`; field
+  names fix in a draft PR.** Evidence: an agent-initiated TradingView retrieval through the runbook
+  helpers captured 50 of 50 with no failures. One same-millisecond file collision was rejected and
+  retried. The 6 Nov session was evaluated, outcome `COMPLETE`, offline `MATCH`, 0 Long setups and
+  16 Risk warnings. For every asset, the committed map, the request, TradingView's response, the
+  stored input and the result name the same exchange-qualified symbol. A second finish printed
+  `ALREADY_IMPORTED` and left all 66 private files byte-identical. All four legacy imports still
+  reproduce `MATCH` and were passed over for `Exact symbol`, so the result is `NO_BASELINE`. That
+  is expected, and Research says why. In the browser, all 50 rows matched the snapshot on rank,
+  symbol, score and setup. Evidence for 8 assets, filters, Compare, source switching, keyboard
+  order and the phone sheet were checked too. The "unnamed form fields" item was Chrome's autofill
+  issue (no `id` or `name`), not a missing accessible name. Every field was already labeled. The
+  scan filters and Compare boxes now carry a `name`, and Chrome reports no issue. Next: the first
+  new-session comparison, as above.
+
+- **2026-11-07 · Exact TradingView symbol in scan evidence · Merged in
   [#140](https://github.com/blackhebrewisraeli/Popup/pull/140).** Decision: snapshots kept only the
   generic `US:<ticker>`, so a different listing of the same ticker could read as a setup change. Each
   input now records `providerSymbol` (requested; validated only when the response was accepted),
