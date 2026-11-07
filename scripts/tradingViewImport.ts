@@ -89,10 +89,10 @@ export function selectionRule(universe: DevScanUniverse = 'default'): string {
   return `All ${count} configured US equities and ETFs (US_EQUITY_INSTRUMENTS, the equity rows of assets_status), requested in full by opt-in, fixed before any data was fetched or scored. Ranks are among these ${count}, so this scan is never compared with a 50-member one.`;
 }
 
-export function parseUniverse(value: unknown): DevScanUniverse {
+export function parseUniverse(value: string | undefined): DevScanUniverse {
   if (value === undefined) return 'default';
   if (DEV_SCAN_UNIVERSES.includes(value as DevScanUniverse)) return value as DevScanUniverse;
-  throw new Error(`Unknown universe ${String(value)}: expected ${DEV_SCAN_UNIVERSES.join(' or ')}`);
+  throw new Error(`Unknown universe ${value}: expected ${DEV_SCAN_UNIVERSES.join(' or ')}`);
 }
 
 /**
@@ -848,7 +848,7 @@ async function readRetrieval(store: string, retrievalId: string) {
     throw new Error(`${retrievalId}: unreadable ${MANIFEST}`);
   }
   // Retrievals started before 2026-11-08 recorded neither: they are the default 50.
-  const universe = parseUniverse(manifest.universe);
+  const universe = parseUniverse(manifest.universe as DevScanUniverse | undefined);
   const symbols = universeSymbols(universe);
   if (
     manifest.symbols !== undefined &&
