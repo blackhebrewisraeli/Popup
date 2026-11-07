@@ -88,6 +88,7 @@ export function TradingViewDevScan() {
       failed={false}
       source={source}
       changes={compareScans(query.data, baseline)}
+      choice={query.data}
     />
   );
 }

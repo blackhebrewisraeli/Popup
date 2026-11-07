@@ -1,7 +1,7 @@
 /**
  * What changed between two TradingView development scans: the displayed one
- * and one earlier snapshot the owner named (`npm run evaluate --
- * tradingview-baseline SCAN_ID`). Pure: it reads only what both scans
+ * and one earlier snapshot, chosen by `tradingview-finish` or named by the
+ * owner (`npm run evaluate -- tradingview-baseline SCAN_ID`). Pure: it reads only what both scans
  * recorded. Nothing is re-scored, and no rule, threshold or ranking is defined
  * here.
  *
@@ -90,11 +90,16 @@ function sessionOf(time: number | null): string | null {
   return time === null ? null : NEW_YORK_DATE.format(time);
 }
 
-function side({ scanId, scan }: NamedScan): ScanSide {
+/** The latest New York session any asset was evaluated on; null when none was. */
+export function latestSession(scan: MarketScan): string | null {
   const newest = scan.cohorts.flatMap(({ dataAsOf }) => dataAsOf.newest ?? []);
+  return sessionOf(newest.length > 0 ? Math.max(...newest) : null);
+}
+
+function side({ scanId, scan }: NamedScan): ScanSide {
   return {
     scanId,
-    session: sessionOf(newest.length > 0 ? Math.max(...newest) : null),
+    session: latestSession(scan),
     status: scan.status,
     evaluated: scan.coverage.evaluated,
     supported: scan.coverage.supported,

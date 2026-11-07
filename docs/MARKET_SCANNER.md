@@ -240,11 +240,14 @@ and reproduces. Local only: never commit, publish or send anything you retrieve.
 5. Call TradingView `list_alerts` once (read only), then run
    `npm run evaluate -- tradingview-capture RETRIEVAL_ID --alerts <symbols holding any alert, comma-separated, or none>`.
 6. Run `npm run evaluate -- tradingview-finish RETRIEVAL_ID`. Report its outcome, the requested,
-   evaluated and failed counts, every failure with its reason, evaluatedSession, scanId and
-   reproduction. Only outcome COMPLETE with reproduction MATCH is a full success; state PARTIAL,
-   REFUSED or NOT_REPRODUCED plainly.
-7. If a scanId was printed, run `npm run dev`, open http://localhost:8080/?devAuth=1, go to
-   Research, choose TradingView import, and check that its retrieval window and counts match.
+   evaluated and failed counts, every failure with its reason, evaluatedSession, scanId,
+   reproduction and viewStatus. Only outcome COMPLETE with reproduction MATCH is a full success;
+   state PARTIAL, REFUSED or NOT_REPRODUCED plainly. From `baseline`, report status, chosenBy,
+   before.scanId with before.session and after.session, the Long, Risk and score counts, reason,
+   and every entry under skipped with its reason.
+7. If viewStatus is PUBLISHED, run `npm run dev`, open http://localhost:8080/?devAuth=1, go to
+   Research, choose TradingView import, and check that its retrieval window, counts and
+   "Changes since previous scan" match the report.
 ```
 
 What the helper (`scripts/tradingViewImport.ts`) does at each step:
@@ -265,10 +268,14 @@ What the helper (`scripts/tradingViewImport.ts`) does at each step:
   has become final it is empty: the import refuses a retrieval that crossed the boundary, as before,
   and a new start is needed.
 - **`tradingview-finish`** writes the export `.zerochart-tradingview/<RETRIEVAL_ID>.json` from the
-  captured files (`completedAt` is the latest `receivedAt`), runs the same import as
-  `tradingview-import`, reproduces the scan offline as `scan-reproduce` does, and prints the report.
-  It exits non-zero unless the outcome is `COMPLETE` with `MATCH`. Running it again on the same
-  captures prints `ALREADY_IMPORTED` and leaves the export and the view byte-identical.
+  captured files (`completedAt` is the latest `receivedAt`), records the scan as
+  `tradingview-import` does and reproduces it offline as `scan-reproduce` does. Only after `MATCH`
+  does it choose the baseline for
+  [Changes since previous scan](#changes-since-previous-scan) and publish the view
+  (`viewStatus: PUBLISHED`). A refused or unreproduced scan leaves the last published Research
+  view as it was (`UNCHANGED`). It exits non-zero unless the outcome is `COMPLETE` with `MATCH`;
+  a missing baseline is reported, not a failure. Running it again on the same captures prints
+  `ALREADY_IMPORTED` and leaves the export, the baseline and the view byte-identical.
 
 The helper never calls TradingView, holds no credential and runs nothing unattended. A hand-built
 export still imports with `npm run evaluate -- tradingview-import EXPORT.json`, followed by
@@ -291,17 +298,38 @@ sources discards the other's view, filters, comparison and open explanation.
 ### Changes since previous scan
 
 Above the ranked list, the TradingView review compares the displayed import with one earlier import
-the owner names by its scan ID in `.zerochart-scans/`:
+from `.zerochart-scans/`. `tradingview-finish` chooses it, after the displayed scan reproduces:
+
+1. Candidates are the other TradingView imports in the scan store. A Market data snapshot is never
+   one and is not listed.
+2. They are ranked by evaluated session, latest first, then by evaluation time (the later revision
+   of a session first), then by scan ID.
+3. The first one that comes from a strictly earlier session, is comparable (below) and reproduces
+   (`MATCH`) is the baseline. Reproduction runs only on that path, newest first, and stops at the
+   first match.
+4. Every import ranked above it is listed under `skipped` with its reason: a revision of the
+   displayed session (never chosen automatically), a later session, no evaluated session, not
+   comparable (what differs) or does not reproduce (why). A snapshot file that cannot be read is
+   listed too.
+
+With no usable baseline the verified scan is still published, and the view and the report give the
+`reason` nothing is compared. The report's `baseline` gives `chosenBy`, the baseline as `before`
+(scan ID and evaluated session), the displayed scan as `after`, the session gap and the counts the
+view shows.
+
+The owner can name another baseline, a same-session revision included:
 
 ```sh
 npm run evaluate -- tradingview-baseline SCAN_ID
 ```
 
-The command checks that the view is the stored snapshot it names. It refuses the displayed scan
-itself and any snapshot that is not a TradingView import, so the Market scan is never compared with
-one. A comparable baseline is written into `tradingview-dev-scan.json` only once both snapshots
-reproduce (`MATCH`), and the command prints the counts the view shows. Importing a scan replaces the
-view and clears the baseline; name it again.
+The command checks that the view is the stored snapshot it names and that it reproduces. It
+refuses the displayed scan itself and any snapshot that is not a TradingView import, so the Market
+scan is never compared with one. A comparable baseline is written into `tradingview-dev-scan.json`
+only once it reproduces too, and the command prints the counts the view shows. Finishing the same
+retrieval again keeps a named baseline while it still passes those checks; if it no longer does,
+finish says why under `skipped` and chooses again. A new scan starts a new choice: a named baseline
+belongs to the scan it was named for. `tradingview-import` publishes without a baseline.
 
 - **Comparable** means the same source, timeframe, universe, recorded instrument per ticker, scanner
   and model versions, and candle policy, with the baseline evaluated first. Otherwise the view says

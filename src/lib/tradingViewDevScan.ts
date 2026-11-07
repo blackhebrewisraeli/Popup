@@ -33,16 +33,28 @@ export interface TradingViewDevSource {
   pineAlerts: { checkedAt: string; symbols: readonly string[] } | null;
 }
 
+export type BaselineChooser = 'tradingview-finish' | 'tradingview-baseline';
+
 /**
- * The earlier snapshot the owner named for "Changes since previous scan"
- * (`npm run evaluate -- tradingview-baseline SCAN_ID`): a TradingView
- * development import from the same scan store. Importing a scan replaces the
- * view and drops it.
+ * The earlier snapshot "Changes since previous scan" compares with: a
+ * TradingView development import from the same scan store. `tradingview-finish`
+ * chooses one; the owner can name another (`npm run evaluate --
+ * tradingview-baseline SCAN_ID`). Importing a scan replaces the view and drops it.
  */
 export interface TradingViewDevBaseline {
   scanId: string;
   importedAt: string;
   scan: MarketScan;
+  /** Absent in files written before `tradingview-finish` chose baselines: the owner named those. */
+  chosenBy?: BaselineChooser;
+}
+
+/** How `tradingview-finish` looked for a baseline. */
+export interface TradingViewDevBaselineSearch {
+  /** Why nothing is compared; null when a baseline was chosen. */
+  reason: string | null;
+  /** Imports passed over before the choice, most recent first, and why. */
+  skipped: ReadonlyArray<{ scanId: string; reason: string }>;
 }
 
 export interface TradingViewDevScan {
@@ -52,17 +64,38 @@ export interface TradingViewDevScan {
   source: TradingViewDevSource;
   scan: MarketScan;
   baseline?: TradingViewDevBaseline;
+  baselineSearch?: TradingViewDevBaselineSearch;
 }
 
 function isScan(scan: Partial<MarketScan> | undefined): boolean {
   return Array.isArray(scan?.results) && Array.isArray(scan.cohorts);
 }
 
+function isBaseline(baseline: Partial<TradingViewDevBaseline> | undefined): boolean {
+  return (
+    baseline === undefined ||
+    (typeof baseline?.scanId === 'string' &&
+      typeof baseline.importedAt === 'string' &&
+      isScan(baseline.scan) &&
+      [undefined, 'tradingview-finish', 'tradingview-baseline'].includes(baseline.chosenBy))
+  );
+}
+
+function isSearch(search: Partial<TradingViewDevBaselineSearch> | undefined): boolean {
+  return (
+    search === undefined ||
+    ((search?.reason === null || typeof search?.reason === 'string') &&
+      Array.isArray(search.skipped) &&
+      search.skipped.every(
+        (item) => typeof item?.scanId === 'string' && typeof item.reason === 'string',
+      ))
+  );
+}
+
 /** Shape check at the dev-server boundary: a malformed file is an error, never a partial panel. */
 export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
   const value = raw as Partial<TradingViewDevScan> | null;
   const source = value?.source;
-  const baseline = value?.baseline;
   if (
     value?.kind !== TRADINGVIEW_DEV_SCAN_KIND ||
     typeof value.scanId !== 'string' ||
@@ -71,10 +104,8 @@ export function parseTradingViewDevScan(raw: unknown): TradingViewDevScan {
     typeof source.notice !== 'string' ||
     typeof source.symbols !== 'object' ||
     !isScan(value.scan) ||
-    (baseline !== undefined &&
-      (typeof baseline?.scanId !== 'string' ||
-        typeof baseline.importedAt !== 'string' ||
-        !isScan(baseline.scan)))
+    !isBaseline(value.baseline) ||
+    !isSearch(value.baselineSearch)
   ) {
     throw new Error('Not a TradingView development scan file.');
   }

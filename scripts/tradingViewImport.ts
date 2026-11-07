@@ -15,6 +15,9 @@ import {
   TRADINGVIEW_DEV_SCAN_KIND,
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
   parseTradingViewDevScan,
+  type BaselineChooser,
+  type TradingViewDevBaseline,
+  type TradingViewDevBaselineSearch,
   type TradingViewDevScan,
 } from '@/lib/tradingViewDevScan';
 import {
@@ -27,7 +30,14 @@ import {
   type EquityDailyBar,
   type EquityDailySeries,
 } from '@/lib/usEquityDaily';
-import { compareScans, type ScanComparison } from '@/lib/scanChanges';
+import {
+  compareScans,
+  latestSession,
+  scoreCounts,
+  setupCounts,
+  setupMoved,
+  type ScanComparison,
+} from '@/lib/scanChanges';
 import { stableSerialize } from './evaluationStore';
 import { loadScan, reproduceScan, saveScan, type ScanSnapshot } from './marketScanStore';
 
@@ -284,6 +294,18 @@ export async function importTradingViewScan(options: {
   snapshot: ScanSnapshot;
   view: TradingViewDevScan;
 }> {
+  const recorded = await recordTradingViewScan(options);
+  const viewPath = await publishTradingViewDevScan(recorded.view, options.store);
+  return { ...recorded, viewStatus: 'UPDATED', viewPath };
+}
+
+/** The import without publishing: the snapshot is written, the view only built. */
+async function recordTradingViewScan(options: {
+  file: string;
+  store: string;
+  repositoryCommit: string;
+  now?: () => number;
+}) {
   const file = parseExport(JSON.parse(await readFile(options.file, 'utf8')));
   const startedAt = Date.parse(file.retrieval.startedAt);
   const evaluationTime = Date.parse(file.retrieval.completedAt);
@@ -322,16 +344,9 @@ export async function importTradingViewScan(options: {
     },
     scan: snapshot.scan,
   });
-  const viewPath = await publishTradingViewDevScan(view, options.store);
-  return {
-    status: snapshotStatus === 'CREATED' ? 'IMPORTED' : 'ALREADY_IMPORTED',
-    snapshotStatus,
-    viewStatus: 'UPDATED',
-    path,
-    viewPath,
-    snapshot,
-    view,
-  };
+  const status: 'IMPORTED' | 'ALREADY_IMPORTED' =
+    snapshotStatus === 'CREATED' ? 'IMPORTED' : 'ALREADY_IMPORTED';
+  return { status, snapshotStatus, path, snapshot, view };
 }
 
 /** Writes a complete same-directory temporary file, then atomically replaces the local view. */
@@ -357,8 +372,9 @@ export async function publishTradingViewDevScan(
 }
 
 /**
- * Names the earlier snapshot that "Changes since previous scan" compares the
- * displayed import with. Both come from the scan store. The displayed view must
+ * The owner's override: names the earlier snapshot that "Changes since
+ * previous scan" compares the displayed import with, in place of the one
+ * `tradingview-finish` chose. Both come from the scan store. The displayed view must
  * be the stored snapshot it names, and it and a comparable baseline must
  * reproduce, so no change is read off unverified evidence. An incomparable
  * baseline is attached only to say why nothing is compared; none of its results
@@ -370,36 +386,238 @@ export async function attachBaseline(options: {
   baselineId: string;
 }): Promise<{ viewPath: string; comparison: ScanComparison }> {
   const path = join(resolve(options.store), TRADINGVIEW_DEV_SCAN_FILE);
-  const view = parseTradingViewDevScan(JSON.parse(await readFile(path, 'utf8')));
-  if (options.baselineId === view.scanId) {
-    throw new Error(`${view.scanId} is the displayed scan; name an earlier TradingView import.`);
-  }
-  const [displayed, earlier] = await Promise.all([
-    loadScan(view.scanId, options.store),
-    loadScan(options.baselineId, options.store),
-  ]);
+  const { baselineSearch: _automatic, ...view } = parseTradingViewDevScan(
+    JSON.parse(await readFile(path, 'utf8')),
+  );
+  const displayed = await loadScan(view.scanId, options.store);
   if (stableSerialize(displayed.scan) !== stableSerialize(view.scan)) {
     throw new Error(`The displayed view is not snapshot ${view.scanId}; import it again.`);
   }
+  await assertReproduces(view.scanId, options.store, reproduceScan);
+  const { baseline, comparison } = await namedBaseline(view, options.baselineId, options.store);
+  const viewPath = await publishTradingViewDevScan({ ...view, baseline }, options.store);
+  return { viewPath, comparison };
+}
+
+type Reproduce = typeof reproduceScan;
+export type SkippedBaseline = TradingViewDevBaselineSearch['skipped'][number];
+
+async function assertReproduces(scanId: string, store: string, reproduce: Reproduce) {
+  const result = await reproduce(scanId, store);
+  if (result.status !== 'MATCH') throw new Error(`${scanId} does not reproduce (${result.reason})`);
+}
+
+const asBaseline = (snapshot: ScanSnapshot, chosenBy: BaselineChooser): TradingViewDevBaseline => ({
+  scanId: snapshot.scanId,
+  importedAt: snapshot.completedAt,
+  scan: snapshot.scan,
+  chosenBy,
+});
+
+/**
+ * The owner's named baseline, checked as `tradingview-baseline` checks it. It
+ * may be any other TradingView import, a same-session revision included.
+ */
+async function namedBaseline(
+  view: TradingViewDevScan,
+  baselineId: string,
+  store: string,
+  reproduce: Reproduce = reproduceScan,
+) {
+  if (baselineId === view.scanId) {
+    throw new Error(`${view.scanId} is the displayed scan; name an earlier TradingView import.`);
+  }
+  const earlier = await loadScan(baselineId, store);
   if (earlier.scan.universe.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) {
     throw new Error(
       `${earlier.scanId} is not a TradingView development import; the review compares only its own imports.`,
     );
   }
-  const baseline = { scanId: earlier.scanId, importedAt: earlier.completedAt, scan: earlier.scan };
+  const baseline = asBaseline(earlier, 'tradingview-baseline');
   const comparison = compareScans(view, baseline);
-  const verify = comparison.status === 'COMPARED' ? [view.scanId, earlier.scanId] : [view.scanId];
-  const reproduced = await Promise.all(
-    verify.map((scanId) => reproduceScan(scanId, options.store)),
-  );
-  const mismatch = reproduced.find((result) => result.status !== 'MATCH');
-  if (mismatch) {
-    throw new Error(
-      `${mismatch.scanId} does not reproduce (${mismatch.reason}); nothing was attached.`,
-    );
+  if (comparison.status === 'COMPARED') await assertReproduces(baselineId, store, reproduce);
+  return { baseline, comparison };
+}
+
+const SNAPSHOT_FILE = /^(\d{8}T\d{6}Z-[0-9a-f]{8})\.json$/;
+
+interface Candidate {
+  snapshot: ScanSnapshot;
+  session: string | null;
+  comparison: ScanComparison;
+}
+
+/** Latest evaluated session first, then the later evaluation (the newer revision), then the scan ID. */
+function newestFirst(a: Candidate, b: Candidate): number {
+  const key = ({ session, snapshot }: Candidate) => [
+    session ?? '',
+    new Date(snapshot.scan.evaluationTime).toISOString(),
+    snapshot.scanId,
+  ];
+  const [x, y] = [key(a), key(b)];
+  const at = x.findIndex((value, index) => value !== y[index]);
+  if (at === -1) return 0;
+  return x[at]! < y[at]! ? 1 : -1;
+}
+
+/** Why a TradingView import cannot be the automatic baseline, short of reproducing it. */
+function passedOver(candidate: Candidate, displayed: string): string | null {
+  const { session, comparison } = candidate;
+  if (session === null) return 'evaluated no asset, so it rests on no session';
+  if (session === displayed) {
+    return `a revision of the displayed scan's session (${session}), never chosen automatically; name it with tradingview-baseline to compare it`;
   }
-  const viewPath = await publishTradingViewDevScan({ ...view, baseline }, options.store);
-  return { viewPath, comparison };
+  if (session > displayed) return `evaluated a later session (${session}) than the displayed scan`;
+  if (comparison.status === 'INCOMPATIBLE') {
+    const fields = comparison.differences.map(
+      ({ field, before, after }) => `${field} ${before} → ${after}`,
+    );
+    return `not comparable: ${fields.join('; ')}`;
+  }
+  return null;
+}
+
+/**
+ * The most recent TradingView import from a strictly earlier evaluated session
+ * that is comparable with the displayed scan and reproduces offline. A
+ * same-session revision is never chosen; the owner can name one.
+ */
+async function automaticBaseline(
+  view: TradingViewDevScan,
+  store: string,
+  reproduce: Reproduce,
+  skipped: SkippedBaseline[],
+): Promise<{
+  baseline?: TradingViewDevBaseline;
+  comparison: ScanComparison;
+  reason: string | null;
+}> {
+  const none = (reason: string) => ({ comparison: { status: 'NO_BASELINE' as const }, reason });
+  const displayed = latestSession(view.scan);
+  if (displayed === null)
+    return none('the displayed scan evaluated no asset, so it rests on no session');
+  const ids = (await readdir(resolve(store)))
+    .flatMap((name) => SNAPSHOT_FILE.exec(name)?.[1] ?? [])
+    .filter((scanId) => scanId !== view.scanId);
+  // ponytail: reads every snapshot in the store; keep an index by session once it holds hundreds.
+  const loaded = await Promise.all(
+    ids.map((scanId) =>
+      loadScan(scanId, store).then(
+        (snapshot) => ({ scanId, snapshot }),
+        (error: unknown) => ({ scanId, error: message(error) }),
+      ),
+    ),
+  );
+  const unreadable: SkippedBaseline[] = [];
+  const candidates: Candidate[] = [];
+  for (const item of loaded) {
+    if ('error' in item)
+      unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
+    else if (item.snapshot.scan?.universe?.source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) {
+      const { snapshot } = item;
+      const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
+      candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
+    }
+  }
+  const check = (scanId: string) =>
+    reproduce(scanId, store).catch((error: unknown) => ({
+      status: 'MISMATCH' as const,
+      reason: message(error),
+    }));
+  for (const candidate of candidates.sort(newestFirst)) {
+    const { scanId } = candidate.snapshot;
+    const reason = passedOver(candidate, displayed);
+    if (reason !== null) {
+      skipped.push({ scanId, reason });
+      continue;
+    }
+    // Sequential on purpose: reproduction re-scores a whole scan, so stop at the first match.
+    const reproduced = await check(scanId); // NOSONAR(S9382)
+    if (reproduced.status === 'MATCH') {
+      skipped.push(...unreadable);
+      const baseline = asBaseline(candidate.snapshot, 'tradingview-finish');
+      return { baseline, comparison: candidate.comparison, reason: null };
+    }
+    skipped.push({ scanId, reason: `does not reproduce (${reproduced.reason})` });
+  }
+  skipped.push(...unreadable);
+  return none(
+    candidates.length === 0 && unreadable.length === 0
+      ? 'the scan store holds no other TradingView import'
+      : 'no TradingView import of an earlier session is comparable and reproduces',
+  );
+}
+
+/**
+ * The baseline a finished scan is published with. A valid baseline the owner
+ * named for this same scan is kept; one no longer usable is reported, never
+ * dropped silently. Otherwise `automaticBaseline` chooses.
+ */
+async function chooseBaseline(
+  view: TradingViewDevScan,
+  store: string,
+  previous: TradingViewDevScan | undefined,
+  reproduce: Reproduce,
+) {
+  const skipped: SkippedBaseline[] = [];
+  const named = previous?.scanId === view.scanId ? previous.baseline : undefined;
+  if (named && named.chosenBy !== 'tradingview-finish') {
+    try {
+      return { ...(await namedBaseline(view, named.scanId, store, reproduce)), search: undefined };
+    } catch (error) {
+      const reason = `named with tradingview-baseline, no longer usable: ${message(error)}`;
+      skipped.push({ scanId: named.scanId, reason });
+    }
+  }
+  const { reason, ...chosen } = await automaticBaseline(view, store, reproduce, skipped);
+  return { ...chosen, search: { reason, skipped } };
+}
+
+async function publishedView(store: string): Promise<TradingViewDevScan | undefined> {
+  try {
+    const path = join(resolve(store), TRADINGVIEW_DEV_SCAN_FILE);
+    return parseTradingViewDevScan(JSON.parse(await readFile(path, 'utf8')));
+  } catch {
+    return undefined; // Absent or unreadable: nothing to keep, and the new view replaces it.
+  }
+}
+
+/** Publishes a reproduced scan with its baseline and returns what the report says about it. */
+async function publishWithBaseline(
+  view: TradingViewDevScan,
+  store: string,
+  reproduce: Reproduce,
+): Promise<NonNullable<RetrievalReport['baseline']>> {
+  const previous = await publishedView(store);
+  const { baseline, comparison, search } = await chooseBaseline(view, store, previous, reproduce);
+  await publishTradingViewDevScan(
+    {
+      ...view,
+      ...(baseline ? { baseline } : {}),
+      ...(search ? { baselineSearch: search } : {}),
+    },
+    store,
+  );
+  return {
+    chosenBy: baseline?.chosenBy ?? null,
+    ...comparisonSummary(comparison),
+    reason: search?.reason ?? null,
+    skipped: [...(search?.skipped ?? [])],
+  };
+}
+
+/** What both CLI commands print about a comparison: counts and the moved setups, not every row. */
+export function comparisonSummary(comparison: ScanComparison) {
+  if (comparison.status !== 'COMPARED') return comparison;
+  const { changes, ...rest } = comparison;
+  return {
+    ...rest,
+    compared: changes.length,
+    long: setupCounts(changes, 'long'),
+    risk: setupCounts(changes, 'risk'),
+    scores: scoreCounts(changes),
+    changed: changes.filter(setupMoved),
+  };
 }
 
 /*
@@ -464,6 +682,17 @@ export interface RetrievalReport {
   importStatus: 'IMPORTED' | 'ALREADY_IMPORTED' | null;
   reproduction: string | null;
   refusal?: string;
+  /** UNCHANGED unless the scan reproduced: Research keeps the last published view. */
+  viewStatus: 'PUBLISHED' | 'UNCHANGED';
+  /** What "Changes since previous scan" shows, once published; `before` is the baseline. */
+  baseline:
+    | (ReturnType<typeof comparisonSummary> & {
+        chosenBy: BaselineChooser | null;
+        /** Why nothing is compared; null when a baseline is attached. */
+        reason: string | null;
+        skipped: SkippedBaseline[];
+      })
+    | null;
   research: string | null;
 }
 
@@ -710,10 +939,11 @@ export async function recordFailure(options: {
 }
 
 /**
- * Assembles the export from the captured files, imports it and reproduces the
- * scan offline. Missing, failed and conflicting symbols stay in the scan as
- * failures. The import's own refusal applies when a session became final
- * during retrieval. Success is never reported without a MATCH.
+ * Assembles the export from the captured files, records the scan and
+ * reproduces it offline, then publishes it with its baseline (`chooseBaseline`).
+ * Missing, failed and conflicting symbols stay in the scan as failures. The
+ * import's own refusal applies when a session became final during retrieval.
+ * Nothing is published, and success is never reported, without a MATCH.
  */
 export async function finishRetrieval(options: {
   store: string;
@@ -721,6 +951,8 @@ export async function finishRetrieval(options: {
   retrievalId: string;
   repositoryCommit: string;
   now?: () => number;
+  /** The offline check; replaced only by tests that need a scan which fails it. */
+  reproduce?: Reproduce;
 }): Promise<RetrievalReport> {
   const { dir, startedAt, records, conflicts } = await readRetrieval(
     options.store,
@@ -759,7 +991,7 @@ export async function finishRetrieval(options: {
   };
   const exportPath = join(resolve(options.store), `${options.retrievalId}.json`);
   await writeAtomic(exportPath, json(file));
-  const report = {
+  const report: Omit<RetrievalReport, 'outcome'> = {
     retrievalId: options.retrievalId,
     exportPath,
     retrieval: file.retrieval,
@@ -771,11 +1003,13 @@ export async function finishRetrieval(options: {
     scanId: null,
     importStatus: null,
     reproduction: null,
+    viewStatus: 'UNCHANGED',
+    baseline: null,
     research: null,
   };
-  let imported: Awaited<ReturnType<typeof importTradingViewScan>>;
+  let imported: Awaited<ReturnType<typeof recordTradingViewScan>>;
   try {
-    imported = await importTradingViewScan({
+    imported = await recordTradingViewScan({
       file: exportPath,
       store: options.scanStore,
       repositoryCommit: options.repositoryCommit,
@@ -785,8 +1019,13 @@ export async function finishRetrieval(options: {
     return { ...report, outcome: 'REFUSED', refusal: message(error) };
   }
   const { scan, scanId } = imported.snapshot;
-  const reproduced = await reproduceScan(scanId, options.scanStore);
+  const reproduce = options.reproduce ?? reproduceScan;
+  const reproduced = await reproduce(scanId, options.scanStore);
   const matched = reproduced.status === 'MATCH';
+  if (matched) {
+    report.baseline = await publishWithBaseline(imported.view, options.scanStore, reproduce);
+    report.viewStatus = 'PUBLISHED';
+  }
   const newest = scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.dataAsOf.newest;
   return {
     ...report,
