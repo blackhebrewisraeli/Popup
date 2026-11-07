@@ -35,7 +35,7 @@ changed, and understand the evidence behind each result. The user decides whethe
   `20261107T170244Z-76cde900` (6 Nov session), is the first possible baseline.
   [#141](https://github.com/blackhebrewisraeli/Popup/pull/141) (merged `9d06e6c`) named the scan
   form fields and recorded the post-#140 scan check.
-- **Reloading the published scan:** a draft PR adds **Reload local scan** to the TradingView review.
+- **Reloading the published scan:** draft [#142](https://github.com/blackhebrewisraeli/Popup/pull/142) adds **Reload local scan** to the TradingView review.
   It re-reads the local dev route only, keeps one coherent snapshot and labels a failed reload.
   Verified on labeled fixtures; not yet used on a real scan.
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
@@ -65,7 +65,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-07 · Reload the published TradingView scan in place · Open as a draft PR.** Decision:
+- **2026-11-07 · Reload the published TradingView scan in place · Draft
+  [#142](https://github.com/blackhebrewisraeli/Popup/pull/142).** Decision:
   the import query never re-read the file, and the header's refresh re-reads market data only, so a
   newly published scan stayed invisible on an open page. **Reload local scan** re-reads the dev route
   on request in every state; the header refresh is hidden while the review is open. A changed file
