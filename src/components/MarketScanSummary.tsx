@@ -207,6 +207,31 @@ function CohortRow({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Market
   );
 }
 
+/** A development import, and whether it is the published view or a saved scan. */
+function DevImportBadges({ saved }: Readonly<{ saved: boolean }>) {
+  return (
+    <>
+      <span className="market-scan-status market-scan-dev">Historical dev import</span>
+      <span className="market-scan-status market-scan-dev">
+        {saved ? 'Saved scan, not the published view' : 'Latest published scan'}
+      </span>
+    </>
+  );
+}
+
+/** When the agent session retrieved the bars; a saved snapshot alone never recorded it. */
+function RetrievedFact({ retrieval }: Readonly<{ retrieval: TradingViewDevSource['retrieval'] }>) {
+  return retrieval ? (
+    <Fact
+      label="Retrieved"
+      value={retrievalLabel(retrieval)}
+      detail="Owner's agent session; does not refresh"
+    />
+  ) : (
+    <Fact label="Retrieved" value="Not recorded" detail="Saved snapshot only; does not refresh" />
+  );
+}
+
 /**
  * What a Markets scan covered and found: universe, coverage, freshness, and
  * every evaluated asset for review, each explainable from its recorded values.
@@ -278,14 +303,7 @@ export function MarketScanSummary({
               {STATUS_LABEL[scan.status]}
             </span>
             {stale && <span className="market-scan-status market-scan-partial">Stale</span>}
-            {source && (
-              <span className="market-scan-status market-scan-dev">Historical dev import</span>
-            )}
-            {source && (
-              <span className="market-scan-status market-scan-dev">
-                {choice?.saved ? 'Saved scan, not the published view' : 'Latest published scan'}
-              </span>
-            )}
+            {source && <DevImportBadges saved={choice?.saved !== undefined} />}
             <span>
               {scanning ? 'Re-scanning… · ' : ''}
               {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
@@ -322,17 +340,7 @@ export function MarketScanSummary({
             value={`${coverage.evaluated} of ${coverage.supported} evaluated`}
             detail={coverageDetail}
           />
-          {source && (
-            <Fact
-              label="Retrieved"
-              value={source.retrieval ? retrievalLabel(source.retrieval) : 'Not recorded'}
-              detail={
-                source.retrieval
-                  ? "Owner's agent session; does not refresh"
-                  : 'Saved snapshot only; does not refresh'
-              }
-            />
-          )}
+          {source && <RetrievedFact retrieval={source.retrieval} />}
         </dl>
       </header>
       {scanned.length > 0 && (
