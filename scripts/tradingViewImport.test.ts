@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CandleProviderDataError } from '@/lib/binance';
 import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_FILE } from '@/lib/tradingViewDevScan';
-import { sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
+import { latestFinalSession, sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
 import { bars, EQUITY_NOW, falling, rising, wave } from '@/test/usEquityFixtures';
-import { reproduceScan, ScanSnapshotConflictError } from './marketScanStore';
+import { reproduceScan, saveScan, ScanSnapshotConflictError } from './marketScanStore';
 import {
+  attachBaseline,
   captureResponses,
   finishRetrieval,
   importInputs,
@@ -33,13 +34,13 @@ const NOTICE =
 const COMMIT = 'c'.repeat(40);
 const PATHS = [wave, rising, falling];
 
-function response(symbol: string, path = wave) {
+function response(symbol: string, path = wave, last?: string) {
   return {
     success: true,
     symbol,
     interval: '1D',
     notice: NOTICE,
-    bars: bars(path).map((bar) => ({
+    bars: bars(path, 200, last).map((bar) => ({
       t: sessionOpen(bar.session) / 1000,
       o: bar.open,
       h: bar.high,
@@ -52,22 +53,24 @@ function response(symbol: string, path = wave) {
 
 function exportOf(
   edit: (entries: TradingViewOhlcvExport['instruments']) => void = () => {},
+  at = EQUITY_NOW,
 ): TradingViewOhlcvExport {
+  const last = latestFinalSession(at)!;
   const instruments = selectDevScanUniverse().map((ticker, i) => ({
     ticker,
     symbol: TRADINGVIEW_SYMBOLS[ticker]!,
-    receivedAt: new Date(EQUITY_NOW - 60_000).toISOString(),
-    response: response(TRADINGVIEW_SYMBOLS[ticker]!, PATHS[i % PATHS.length]),
+    receivedAt: new Date(at - 60_000).toISOString(),
+    response: response(TRADINGVIEW_SYMBOLS[ticker]!, PATHS[i % PATHS.length], last),
   }));
   edit(instruments);
   return {
     schemaVersion: '1',
     source: 'tradingview-mcp',
     retrieval: {
-      startedAt: new Date(EQUITY_NOW - 120_000).toISOString(),
-      completedAt: new Date(EQUITY_NOW).toISOString(),
+      startedAt: new Date(at - 120_000).toISOString(),
+      completedAt: new Date(at).toISOString(),
     },
-    pineAlerts: { checkedAt: new Date(EQUITY_NOW).toISOString(), symbols: ['BINANCE:BTCUSDT'] },
+    pineAlerts: { checkedAt: new Date(at).toISOString(), symbols: ['BINANCE:BTCUSDT'] },
     instruments,
   };
 }
@@ -684,5 +687,106 @@ describe('TradingView retrieval capture', () => {
     const report = await finish();
     expect(report).toMatchObject({ outcome: 'REFUSED', scanId: null, reproduction: null });
     expect(report.refusal).toMatch(/became final during retrieval/);
+  });
+});
+
+describe('attachBaseline', () => {
+  const DAY = 86_400_000;
+  /** An earlier import (26 Oct session), then the displayed one (27 Oct), in one store. */
+  async function twoImports() {
+    const earlier = await importInto(exportOf(undefined, EQUITY_NOW - DAY), {
+      name: 'earlier.json',
+      now: EQUITY_NOW - DAY + 5 * 60_000,
+    });
+    const displayed = await importInto(exportOf(), { store: earlier.store });
+    const viewPath = join(earlier.store, TRADINGVIEW_DEV_SCAN_FILE);
+    const readView = async () =>
+      parseTradingViewDevScan(JSON.parse(await readFile(viewPath, 'utf8')));
+    return { store: earlier.store, earlier, displayed, viewPath, readView };
+  }
+
+  it('attaches a verified earlier import, and a new import drops it', async () => {
+    const { store, earlier, displayed, readView } = await twoImports();
+    const { comparison } = await attachBaseline({ store, baselineId: earlier.snapshot.scanId });
+    expect(comparison).toMatchObject({
+      status: 'COMPARED',
+      gap: { kind: 'NEXT' },
+      before: { scanId: earlier.snapshot.scanId, session: '2026-10-26', evaluated: 50 },
+      after: { scanId: displayed.snapshot.scanId, session: '2026-10-27', evaluated: 50 },
+      onlyAfter: [],
+      onlyBefore: [],
+    });
+    const view = await readView();
+    expect(view.scan).toEqual(displayed.snapshot.scan);
+    expect(view.baseline).toEqual({
+      scanId: earlier.snapshot.scanId,
+      importedAt: earlier.snapshot.completedAt,
+      scan: earlier.snapshot.scan,
+    });
+
+    await importInto(exportOf(), { store });
+    expect((await readView()).baseline).toBeUndefined();
+  });
+
+  it('refuses the displayed scan, another source, an unverified baseline or a stale view', async () => {
+    const { store, earlier, displayed, viewPath, readView } = await twoImports();
+    const attach = (baselineId: string) => attachBaseline({ store, baselineId });
+    await expect(attach(displayed.snapshot.scanId)).rejects.toThrow(/is the displayed scan/);
+
+    const market = await saveScan({
+      inputs: [
+        {
+          ticker: 'BTC-USD',
+          instrument: 'BINANCE:BTCUSDT',
+          error: { code: 'FETCH_FAILED', detail: 'fixture' },
+        },
+      ],
+      evaluationTime: EQUITY_NOW - DAY,
+      universeSource: 'assets_status',
+      equityProvider: null,
+      repositoryCommit: COMMIT,
+      store,
+      completedAt: EQUITY_NOW - DAY,
+    });
+    await expect(attach(market.snapshot.scanId)).rejects.toThrow(
+      /not a TradingView development import/,
+    );
+
+    const earlierPath = join(store, `${earlier.snapshot.scanId}.json`);
+    const original = await readFile(earlierPath, 'utf8');
+    const tampered = JSON.parse(original);
+    tampered.scan.results[0].model.signal_score += 1;
+    await writeFile(earlierPath, JSON.stringify(tampered));
+    await expect(attach(earlier.snapshot.scanId)).rejects.toThrow(
+      /does not reproduce \(OUTPUT_MISMATCH\)/,
+    );
+    await writeFile(earlierPath, original);
+
+    const view = await readView();
+    await writeFile(
+      viewPath,
+      JSON.stringify({ ...view, scan: { ...view.scan, status: 'FAILED' } }),
+    );
+    await expect(attach(earlier.snapshot.scanId)).rejects.toThrow(/is not snapshot/);
+    expect((await readView()).baseline).toBeUndefined();
+  });
+
+  it('attaches an incompatible baseline only to say what differs', async () => {
+    const { store, earlier, readView } = await twoImports();
+    const earlierPath = join(store, `${earlier.snapshot.scanId}.json`);
+    const older = JSON.parse(await readFile(earlierPath, 'utf8'));
+    older.scan.modelVersion = '0.9.0';
+    await writeFile(earlierPath, JSON.stringify(older));
+    // This checkout cannot re-derive model 0.9.0; that does not matter, since nothing is compared.
+    expect(await reproduceScan(earlier.snapshot.scanId, store)).toMatchObject({
+      status: 'MISMATCH',
+      reason: 'UNSUPPORTED_VERSION',
+    });
+    const { comparison } = await attachBaseline({ store, baselineId: earlier.snapshot.scanId });
+    expect(comparison).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'Model', before: '0.9.0', after: '1.0.0' }],
+    });
+    expect((await readView()).baseline?.scanId).toBe(earlier.snapshot.scanId);
   });
 });

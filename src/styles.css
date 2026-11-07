@@ -1157,6 +1157,51 @@ body {
 .scan-guide-details[open] > summary {
   margin-bottom: 12px;
 }
+/* Changes since previous scan: two recorded TradingView imports side by side, never a timeline. */
+.scan-changes {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.scan-changes .scan-facts {
+  margin-bottom: 8px;
+}
+.scan-changes-note {
+  margin-bottom: 10px;
+}
+.scan-changes-list {
+  gap: 0;
+  margin-top: 6px;
+}
+.scan-changes .scan-guide-details {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.scan-changes-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.scan-changes-row:hover {
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+.scan-changes-row.is-selected {
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+.scan-changes-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 .scan-guide {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ScanComparison } from '@/lib/scanChanges';
 import { ScanReview } from '@/components/ScanReview';
 import {
   scanStatusLabel,
@@ -197,6 +198,7 @@ export function MarketScanSummary({
   scanning,
   failed,
   source,
+  changes,
 }: Readonly<{
   scan: MarketScan | undefined;
   completedAt: number;
@@ -204,6 +206,8 @@ export function MarketScanSummary({
   failed: boolean;
   /** Set for the local TradingView development scan, which adds its provenance and full ranking. */
   source?: TradingViewDevSource;
+  /** The TradingView import against the earlier one the owner named. */
+  changes?: ScanComparison;
 }>) {
   if (!scan) {
     return (
@@ -300,7 +304,7 @@ export function MarketScanSummary({
           )}
         </dl>
       </header>
-      {scanned.length > 0 && <ScanReview scan={scan} source={source} />}
+      {scanned.length > 0 && <ScanReview scan={scan} source={source} changes={changes} />}
       {failures.length > 0 && (
         <section className="market-scan-failures" aria-label="Not evaluated this scan">
           <h3 className="market-scan-label">Not evaluated this scan</h3>

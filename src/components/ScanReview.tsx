@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
+import { ScanChanges } from '@/components/ScanChanges';
 import { Segmented } from '@/components/Segmented';
 import {
   FLAT_MOMENTUM,
@@ -20,6 +21,7 @@ import {
   type ModelSetups,
 } from '@/lib/canonicalModel';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
+import type { ScanComparison } from '@/lib/scanChanges';
 import { RISK_PROFILE_POLICIES, type RiskProfile } from '@/lib/portfolioBuilder';
 import {
   ageLabel,
@@ -970,7 +972,13 @@ function useWide(): boolean {
 export function ScanReview({
   scan,
   source,
-}: Readonly<{ scan: MarketScan; source: TradingViewDevSource | undefined }>) {
+  changes,
+}: Readonly<{
+  scan: MarketScan;
+  source: TradingViewDevSource | undefined;
+  /** TradingView imports only: the displayed scan against the earlier one the owner named. */
+  changes?: ScanComparison | undefined;
+}>) {
   // A scan opens on every ranked asset, so zero long setups never leaves an empty screen;
   // it stays a full answer under its own tab.
   const [view, setView] = useState<ScanView>('all');
@@ -980,13 +988,20 @@ export function ScanReview({
   const [selected, setSelected] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const reviewRef = useRef<HTMLDivElement>(null);
+  /** Where the sheet returns focus when the selection did not come from a ranked row. */
+  const openerRef = useRef<HTMLElement | null>(null);
   const evidenceId = useId();
-  const select = (ticker: string) => {
+  const select = (ticker: string, opener: HTMLElement | null = null) => {
+    openerRef.current = opener;
     setSelected(ticker);
     if (!wide) setSheetOpen(true);
   };
   const closeSheet = useCallback(() => setSheetOpen(false), []);
   const focusSelectedRow = useCallback(() => {
+    if (openerRef.current?.isConnected) {
+      openerRef.current.focus();
+      return;
+    }
     const rows = reviewRef.current?.querySelectorAll<HTMLElement>('[data-scan-row]') ?? [];
     [...rows].find((row) => row.dataset['scanRow'] === selected)?.focus();
   }, [selected]);
@@ -1099,6 +1114,16 @@ export function ScanReview({
       </p>
       <div className={cn('scan-desk', wide && 'is-wide')}>
         <div className="scan-desk-list">
+          {changes && (
+            <ScanChanges
+              comparison={changes}
+              symbols={source?.symbols ?? {}}
+              selected={selected}
+              wide={wide}
+              evidenceId={evidenceId}
+              onSelect={select}
+            />
+          )}
           {cohorts.map((cohort) => (
             <CohortResults
               key={cohort.assetClass}
