@@ -36,7 +36,10 @@ const UTC_CLOCK = new Intl.DateTimeFormat('en-GB', {
 });
 
 /** "30 Oct, 17:54–17:55 UTC": when the agent session retrieved the bars. */
-function retrievalLabel({ startedAt, completedAt }: TradingViewDevSource['retrieval']): string {
+function retrievalLabel({
+  startedAt,
+  completedAt,
+}: NonNullable<TradingViewDevSource['retrieval']>): string {
   const start = Date.parse(startedAt);
   const end = Date.parse(completedAt);
   const sameDay = startedAt.slice(0, 10) === completedAt.slice(0, 10);
@@ -88,8 +91,10 @@ function DevSourceNotes({
   const requested = new Set(Object.values(source.symbols));
   const asOfLabel = scan.cohorts[0] ? dataAsOfLabel(scan.cohorts[0]) : null;
   const alerted = source.pineAlerts?.symbols.filter((symbol) => requested.has(symbol)) ?? [];
+  const { retrieval } = source;
   let alerts = 'TradingView alerts were not checked.';
-  if (source.pineAlerts) {
+  if (source.snapshotOnly) alerts = 'No TradingView alert check is recorded with this snapshot.';
+  else if (source.pineAlerts) {
     alerts =
       alerted.length === 0
         ? `No TradingView alert exists on any of these symbols (checked ${UTC_TIME.format(Date.parse(source.pineAlerts.checkedAt))} UTC), so none of these setups was emitted by Pine.`
@@ -107,25 +112,39 @@ function DevSourceNotes({
         </li>
         <li>
           Daily bars retrieved by the owner&rsquo;s agent session through TradingView&rsquo;s MCP
-          server ({source.tool}, {source.interval}) from{' '}
-          {UTC_TIME.format(Date.parse(source.retrieval.startedAt))} to{' '}
-          {UTC_TIME.format(Date.parse(source.retrieval.completedAt))} UTC, then imported and scored
-          locally. The app has no TradingView connection; this is a development scan, not a licensed
-          product feed, and it does not refresh.
+          server ({source.tool}, {source.interval}){' '}
+          {retrieval
+            ? `from ${UTC_TIME.format(Date.parse(retrieval.startedAt))} to ${UTC_TIME.format(Date.parse(retrieval.completedAt))} UTC`
+            : `and scored as of ${UTC_TIME.format(scan.evaluationTime)} UTC`}
+          , then imported and scored locally. The app has no TradingView connection; this is a
+          development scan, not a licensed product feed, and it does not refresh.
         </li>
-        <li>TradingView&rsquo;s notice: &ldquo;{source.notice}&rdquo;</li>
+        {source.snapshotOnly && (
+          <li>
+            Only the saved snapshot is kept for this scan, not a view of it. A snapshot does not
+            record when retrieval started, TradingView&rsquo;s notice, how its members were chosen
+            or an alert check, so none of them is shown.
+          </li>
+        )}
+        {source.notice !== null && (
+          <li>TradingView&rsquo;s notice: &ldquo;{source.notice}&rdquo;</li>
+        )}
         <li>
           Split-adjusted only: dividends are not adjusted, and TradingView reports no split events,
           so an unadjusted split could not be cross-checked.
         </li>
         <li>
-          The notice&rsquo;s &ldquo;still forming&rdquo; bar is never scored: a session counts only
-          once final (9h after its close), and each score rests on the last{' '}
-          {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}). Data
-          may be delayed under the owner&rsquo;s plan.
+          {source.notice === null ? 'A' : 'The notice’s'} &ldquo;still forming&rdquo; bar is never
+          scored: a session counts only once final (9h after its close), and each score rests on the
+          last {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}).
+          Data may be delayed under the owner&rsquo;s plan.
         </li>
         <li>{alerts}</li>
-        <li>Universe: {source.selectionRule}</li>
+        <li>
+          Universe:{' '}
+          {source.selectionRule ??
+            `${scan.universe.members.length} requested; how they were chosen is not recorded with this snapshot.`}
+        </li>
       </ul>
     </section>
   );
@@ -262,6 +281,11 @@ export function MarketScanSummary({
             {source && (
               <span className="market-scan-status market-scan-dev">Historical dev import</span>
             )}
+            {source && (
+              <span className="market-scan-status market-scan-dev">
+                {choice?.saved ? 'Saved scan, not the published view' : 'Latest published scan'}
+              </span>
+            )}
             <span>
               {scanning ? 'Re-scanning… · ' : ''}
               {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
@@ -301,8 +325,12 @@ export function MarketScanSummary({
           {source && (
             <Fact
               label="Retrieved"
-              value={retrievalLabel(source.retrieval)}
-              detail="Owner's agent session; does not refresh"
+              value={source.retrieval ? retrievalLabel(source.retrieval) : 'Not recorded'}
+              detail={
+                source.retrieval
+                  ? "Owner's agent session; does not refresh"
+                  : 'Saved snapshot only; does not refresh'
+              }
             />
           )}
         </dl>

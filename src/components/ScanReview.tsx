@@ -118,7 +118,8 @@ function ReadingGuide({
   if (source) {
     const requested = new Set(Object.values(source.symbols));
     const alerted = source.pineAlerts?.symbols.filter((symbol) => requested.has(symbol)) ?? [];
-    if (!source.pineAlerts) alerts = 'Alerts were not checked for this import.';
+    if (source.snapshotOnly) alerts = 'No alert check is recorded with this snapshot.';
+    else if (!source.pineAlerts) alerts = 'Alerts were not checked for this import.';
     else if (alerted.length === 0) alerts = 'None exists on these symbols.';
     else alerts = `Alerts exist on ${alerted.join(', ')}.`;
   }
@@ -635,8 +636,12 @@ function limitations(
   const equity = cohort.assetClass === 'equity';
   const items: string[] = [];
   if (source) {
+    const { retrieval } = source;
+    const when = retrieval
+      ? `between ${UTC_TIME.format(Date.parse(retrieval.startedAt))} and ${UTC_TIME.format(Date.parse(retrieval.completedAt))} UTC`
+      : `(the saved snapshot does not record when), scored as of ${UTC_TIME.format(scan.evaluationTime)} UTC`;
     items.push(
-      `Imported historical development data: bars the owner's agent session retrieved from TradingView between ${UTC_TIME.format(Date.parse(source.retrieval.startedAt))} and ${UTC_TIME.format(Date.parse(source.retrieval.completedAt))} UTC, scored locally. Not a licensed feed, and it does not refresh.`,
+      `Imported historical development data: bars the owner's agent session retrieved from TradingView ${when}, scored locally. Not a licensed feed, and it does not refresh.`,
       'Split-adjusted only: dividends are not adjusted, and no split events were reported to cross-check.',
     );
   }

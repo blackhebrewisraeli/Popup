@@ -449,6 +449,7 @@ export function pineAlertNote(source: TradingViewDevSource | undefined, ticker: 
   if (!source) {
     return 'This scan does not read TradingView alerts. A standing setup is not an alert that fired.';
   }
+  if (source.snapshotOnly) return 'No TradingView alert check is recorded with this snapshot.';
   if (!source.pineAlerts) return 'TradingView alerts were not checked for this import.';
   const symbol = source.symbols[ticker];
   if (!symbol) return 'No TradingView symbol was recorded for this ticker.';

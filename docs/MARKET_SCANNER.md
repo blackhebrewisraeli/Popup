@@ -214,7 +214,7 @@ live coverage: every live scan still reports equities as `UNSUPPORTED`.
 | Retrieve bars           | Agent (`get_ohlcv`)      | 1D, `count` 1000 per symbol, signed in as the owner (OAuth), well under ~100 calls/min. `tradingview-capture` binds each saved response to its symbol in git-ignored `.zerochart-tradingview/`                                                              |
 | Check alerts            | Agent (`list_alerts`)    | Records which symbols hold any TradingView alert, so the panel can say whether Pine emitted anything                                                                                                                                                        |
 | Validate, score, record | App (CLI)                | `tradingview-finish` (or `tradingview-import` for a hand-built export): `us-equity-daily-v1`, canonical `1.0.0`, the last 199 final sessions; writes `.zerochart-scans/<SCAN_ID>.json` (reproducible with `scan-reproduce`) and `tradingview-dev-scan.json` |
-| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan` to this machine's loopback addresses; production builds have no such route                                                              |
+| Display                 | App (dev server)         | `scripts/tradingViewDevRoute.ts`, a `vite dev`-only plugin, serves that file at `/__zerochart/tradingview-dev-scan`, and each saved snapshot after it reproduces ([Saved scans](#saved-scans)), to this machine only; production builds have no such route  |
 | Decide                  | The owner                | Nothing in the panel is an action                                                                                                                                                                                                                           |
 
 ### Refreshing it (owner runbook)
@@ -338,8 +338,9 @@ same score, so a 90-member scan is never compared with a 50-member one, in eithe
 - `tradingview-baseline` with an import of the other universe attaches it only to show
   **Not comparable** with the universe as the difference; no score, setup or rank change is shown.
 
-**Moving between the two published views.** Research shows one view at a time
-(`tradingview-dev-scan.json`). When a finish or import publishes a view of the other universe, it
+**Moving between the two published views.** To look at the other universe without changing what
+is published, choose it under **Scan shown** ([Saved scans](#saved-scans)). Research publishes one
+view at a time (`tradingview-dev-scan.json`). When a finish or import publishes a view of the other universe, it
 first copies the published one, named baseline included, to
 `.zerochart-scans/tradingview-dev-scan.<scanId>.<sha256 prefix>.json` and reports the path as
 `preservedView`. To go back, copy that file over the published one and press
@@ -352,6 +353,50 @@ cp .zerochart-scans/tradingview-dev-scan.<scanId>.<prefix>.json .zerochart-scans
 Finishing the next default retrieval also publishes a 50-member view (and preserves the 90-member
 one the same way). Snapshots are never touched by either: both universes stay in the scan store and
 reproduce as before.
+
+### Saved scans
+
+Under `vite dev`, **Scan shown** above the TradingView review chooses what it shows: **Latest
+published scan** (`tradingview-dev-scan.json`, as before) or one TradingView snapshot saved in
+`.zerochart-scans/`. The list names each by scan ID, evaluated session, universe size and coverage,
+newest first, and marks `legacy` (recorded before exact symbols) and `published` (the published
+view's scan). The review header says **Latest published scan** or **Saved scan, not the published
+view**. Selecting a scan copies, publishes and replaces nothing: snapshots and the published view
+stay byte-identical. The source selector's count stays the published import's.
+
+- **Verified before it is shown.** On each selection and each **Reload saved scan**, the dev server
+  reads the snapshot and reproduces it offline from its own inputs, as `scan-reproduce` does. Only a
+  scan that reproduces shows results. Otherwise the review names the scan and its state, and shows
+  nothing from it:
+
+  | State                              | When                                                                     |
+  | ---------------------------------- | ------------------------------------------------------------------------ |
+  | Malformed                          | Not JSON, required fields missing, or another scan ID inside             |
+  | Cannot be checked by this checkout | Another snapshot schema, scanner version or model version                |
+  | Does not reproduce                 | Its inputs, universe, evaluation time or outputs do not re-derive (code) |
+  | No longer in the scan store        | Removed since it was listed, or not a TradingView snapshot               |
+
+  A snapshot-named file that is not JSON is not listed; the selector says how many there are.
+
+- **Only what was recorded.** Source notes and "Changes since previous scan" come from a published
+  or preserved view of exactly that scan (same scan ID, identical results). Without one, only the
+  snapshot is shown: the retrieval window, TradingView's notice, the selection rule and the alert
+  check read as not recorded, the symbols are those its inputs recorded (none for a legacy scan), and
+  no baseline is chosen after the fact. A recorded baseline is kept only while its own snapshot is
+  unchanged and reproduces; otherwise the view says why nothing is compared. Nothing is filled in
+  from today's instrument map.
+- **Reload stays on the selection.** With a saved scan selected, the button reads **Reload saved
+  scan**. It re-reads and re-checks that scan and the list, never the published view. A scan that
+  disappeared stays selected, marked "not in the scan store", until the owner picks another.
+- **Changing the scan** starts the review over: no selection, Compare or open evidence carries
+  across. Comparison rules and source isolation are unchanged. Switching to Market data and back
+  returns to the latest published scan.
+- **Access.** `/__zerochart/tradingview-saved-scans` lists and `/<scanId>` reads one. Only a scan
+  ID (`YYYYMMDDTHHMMSSZ-xxxxxxxx`) is accepted, never a path. Files are read directly in the store
+  and a symbolic link reads as absent. A read returns results, never candles. Like the published
+  route, it answers only this machine's loopback addresses, and only for a loopback `Host`
+  (`localhost`, `127.0.0.1`, `[::1]`), so a page that re-points its own name at this machine is
+  refused. Neither route exists in a production build.
 
 ### Changes since previous scan
 

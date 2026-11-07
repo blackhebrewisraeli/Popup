@@ -134,8 +134,10 @@ function Sides({ before, after }: Readonly<{ before: ScanSide; after: ScanSide }
   );
 }
 
-/** The view's record of how its baseline was chosen, or why there is none. */
-export type BaselineChoice = Readonly<Pick<TradingViewDevScan, 'baseline' | 'baselineSearch'>>;
+/** The view's record of how its baseline was chosen, or why there is none, and whether it is saved. */
+export type BaselineChoice = Readonly<
+  Pick<TradingViewDevScan, 'baseline' | 'baselineSearch' | 'saved'>
+>;
 
 function passedOver(search: TradingViewDevBaselineSearch | undefined): string {
   const skipped = search?.skipped ?? [];
@@ -196,11 +198,26 @@ export function ScanChanges({
   const titleId = useId();
   let body: ReactNode;
   const search = choice?.baselineSearch;
+  // tradingview-baseline names a baseline for the published view only, never a saved scan.
+  const saved = choice?.saved !== undefined;
   if (comparison.status === 'NO_BASELINE' && search?.reason) {
     body = (
       <p className="market-scan-empty">
-        No comparison is shown: {search.reason}.{passedOver(search)} To compare with a particular
-        import, name it with <code>npm run evaluate -- tradingview-baseline SCAN_ID</code>.
+        No comparison is shown: {search.reason}.{passedOver(search)}
+        {!saved && (
+          <>
+            {' '}
+            To compare with a particular import, name it with{' '}
+            <code>npm run evaluate -- tradingview-baseline SCAN_ID</code>.
+          </>
+        )}
+      </p>
+    );
+  } else if (comparison.status === 'NO_BASELINE' && saved) {
+    body = (
+      <p className="market-scan-empty">
+        No comparison is recorded with this saved scan, so nothing is compared. A baseline is chosen
+        only when a scan is published, and none is chosen for it now.
       </p>
     );
   } else if (comparison.status === 'NO_BASELINE') {

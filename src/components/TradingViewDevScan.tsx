@@ -1,19 +1,27 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { Radar, RefreshCw } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { Segmented } from '@/components/Segmented';
 import { Button } from '@/components/ui/button';
 import { compareScans } from '@/lib/scanChanges';
 import { UTC_TIME } from '@/lib/scanReview';
 import {
+  parseSavedScanList,
+  parseSavedScanRead,
   parseTradingViewDevScan,
   TRADINGVIEW_DEV_SCAN_ROUTE,
+  TRADINGVIEW_SAVED_SCANS_ROUTE,
+  type SavedScanEntry,
+  type SavedScanList,
+  type SavedScanRead,
   type TradingViewDevScan as DevScan,
+  type TradingViewSavedScan,
 } from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
 
 type DevScanQuery = UseQueryResult<DevScan | null>;
+type SavedScanQuery = UseQueryResult<SavedScanRead | null>;
 
 const READ_TIME = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
@@ -46,6 +54,27 @@ function DevScanState({
   );
 }
 
+/** One local read: 404 is "none", anything else that is not JSON the parser accepts is an error. */
+async function readLocal<T>(url: string, parse: (raw: unknown) => T): Promise<T | null> {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const raw: unknown = await response.json().catch(() => {
+    throw new Error('The file is not valid JSON.');
+  });
+  return parse(raw);
+}
+
+/** Local files only change on request: read once, then only when Reload asks. */
+const LOCAL_FILE = {
+  enabled: import.meta.env.DEV,
+  // Not Infinity: a failed reload marks the kept snapshot invalidated, and an invalidated
+  // query re-reads on focus, reconnect or remount. 'static' never re-reads by itself.
+  staleTime: 'static',
+  retryOnMount: false,
+  retry: false,
+} as const;
+
 /**
  * The local import, shared by the picker and the review: entering the review never
  * re-reads it, so both always show the same state. Only "Reload local scan" (or a page
@@ -54,66 +83,163 @@ function DevScanState({
 function useTradingViewDevScan() {
   return useQuery({
     queryKey: ['tradingview-dev-scan'],
-    queryFn: async () => {
-      const response = await fetch(TRADINGVIEW_DEV_SCAN_ROUTE, { cache: 'no-store' });
-      if (response.status === 404) return null;
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const raw: unknown = await response.json().catch(() => {
-        throw new Error('The file is not valid JSON.');
-      });
-      return parseTradingViewDevScan(raw);
-    },
-    enabled: import.meta.env.DEV,
-    // Not Infinity: a failed reload marks the kept snapshot invalidated, and an invalidated
-    // query re-reads on focus, reconnect or remount. 'static' never re-reads by itself.
-    staleTime: 'static',
-    retryOnMount: false,
-    retry: false,
+    queryFn: () => readLocal(TRADINGVIEW_DEV_SCAN_ROUTE, parseTradingViewDevScan),
+    ...LOCAL_FILE,
+  });
+}
+
+function useSavedScanList() {
+  return useQuery({
+    queryKey: ['tradingview-saved-scans'],
+    queryFn: () => readLocal(TRADINGVIEW_SAVED_SCANS_ROUTE, parseSavedScanList),
+    ...LOCAL_FILE,
   });
 }
 
 /**
- * Re-reads the file the dev route serves, on request only: never TradingView, an agent or
- * a scan. A click during a read joins it instead of starting another. After a failed read
- * the earlier snapshot stays on screen, named, and never presented as the published one.
+ * One saved scan, keyed by its ID: an answer for another selection is never shown for this
+ * one. Not cancelled when the selection moves on, so choosing it again joins the same read.
  */
-function ReloadLocalScan({ query }: Readonly<{ query: DevScanQuery }>) {
+function useSavedScan(scanId: string | null) {
+  return useQuery({
+    queryKey: ['tradingview-saved-scan', scanId],
+    queryFn: () =>
+      readLocal(
+        `${TRADINGVIEW_SAVED_SCANS_ROUTE}/${encodeURIComponent(scanId ?? '')}`,
+        parseSavedScanRead,
+      ),
+    ...LOCAL_FILE,
+    enabled: import.meta.env.DEV && scanId !== null,
+  });
+}
+
+/**
+ * Re-reads what is on screen, on request only: the published file, or the selected saved
+ * scan (checked again), never TradingView, an agent or a scan, and never the other one. A
+ * click during a read joins it. After a failed read the earlier state stays on screen, named.
+ */
+function ReloadLocalScan({
+  query,
+  shown,
+  saved,
+  onReload,
+}: Readonly<{
+  query: UseQueryResult<unknown>;
+  shown: { scanId: string; importedAt?: string } | undefined;
+  saved: boolean;
+  onReload: () => void;
+}>) {
   const reading = query.isFetching;
-  const shown = query.data;
   let status: ReactNode = null;
   // The first read has its own message in the panel below.
   if (reading) status = query.isPending ? null : 'Reading the local file…';
   else if (shown && !query.isError) {
     status = (
       <>
-        Scan <code>{shown.scanId}</code> · local file read {READ_TIME.format(query.dataUpdatedAt)}{' '}
-        UTC
+        {saved ? 'Saved scan' : 'Scan'} <code>{shown.scanId}</code> · local file read{' '}
+        {READ_TIME.format(query.dataUpdatedAt)} UTC
       </>
     );
   }
+  const imported = shown?.importedAt
+    ? `, imported ${UTC_TIME.format(Date.parse(shown.importedAt))} UTC`
+    : '';
   return (
-    <div className="devscan-reload">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        aria-disabled={reading}
-        onClick={() => void query.refetch({ cancelRefetch: false })}
-      >
+    <>
+      <Button type="button" variant="outline" size="sm" aria-disabled={reading} onClick={onReload}>
         <RefreshCw className={cn(reading && 'animate-spin')} aria-hidden="true" />
-        Reload local scan
+        {saved ? 'Reload saved scan' : 'Reload local scan'}
       </Button>
       <p className="devscan-reload-status" role="status">
         {status}
       </p>
       {!reading && query.isError && shown && (
         <p className="devscan-reload-failed" role="alert">
-          Reload failed ({query.error.message}). Still showing scan <code>{shown.scanId}</code>,
-          imported {UTC_TIME.format(Date.parse(shown.importedAt))} UTC; it may not be the published
-          scan.
+          Reload failed ({(query.error as Error).message}). Still showing{' '}
+          {saved ? 'saved scan' : 'scan'} <code>{shown.scanId}</code>
+          {imported};{' '}
+          {saved ? 'the stored file may have changed since.' : 'it may not be the published scan.'}
         </p>
       )}
-    </div>
+    </>
+  );
+}
+
+function savedLabel(entry: SavedScanEntry, published: boolean): string {
+  const count = (value: number | null) => value ?? '?';
+  return [
+    entry.scanId,
+    entry.session ? `${entry.session} session` : 'no evaluated session',
+    `${count(entry.members)} members`,
+    `${count(entry.evaluated)} of ${count(entry.supported)} evaluated`,
+    entry.legacy && 'legacy',
+    published && 'published',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * Which scan the review shows: the latest published one, or a saved snapshot from the
+ * scan store. Choosing one reads it; nothing is copied, published or replaced.
+ */
+function ScanShown({
+  list,
+  selected,
+  published,
+  onSelect,
+}: Readonly<{
+  list: UseQueryResult<SavedScanList | null>;
+  selected: string | null;
+  published: string | undefined;
+  onSelect: (scanId: string | null) => void;
+}>) {
+  const scans = list.data?.scans ?? [];
+  // A selection that left the store stays selected, and says so, until the owner changes it.
+  const gone = scans.some((entry) => entry.scanId === selected) ? null : selected;
+  return (
+    <label className="devscan-shown">
+      Scan shown
+      <select
+        className="portfolio-cash-input"
+        name="scan-shown"
+        value={selected ?? ''}
+        onChange={(event) => onSelect(event.target.value || null)}
+      >
+        <option value="">Latest published scan</option>
+        {(scans.length > 0 || gone !== null) && (
+          <optgroup label="Saved scans">
+            {gone && <option value={gone}>{gone} · not in the scan store</option>}
+            {scans.map((entry) => (
+              <option key={entry.scanId} value={entry.scanId}>
+                {savedLabel(entry, entry.scanId === published)}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </label>
+  );
+}
+
+/** What the list could not include, on a line of its own under the controls. */
+function SavedListNotes({ list }: Readonly<{ list: UseQueryResult<SavedScanList | null> }>) {
+  const unreadable = list.data?.unreadable ?? 0;
+  return (
+    <>
+      {list.isError && (
+        <p className="devscan-reload-failed" role="alert">
+          Saved scans could not be listed ({list.error.message}).
+        </p>
+      )}
+      {unreadable > 0 && (
+        <p className="devscan-list-note">
+          {unreadable === 1
+            ? '1 snapshot file could not be read and is not listed.'
+            : `${unreadable} snapshot files could not be read and are not listed.`}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -157,17 +283,123 @@ function DevScanContent({ query }: Readonly<{ query: DevScanQuery }>) {
   );
 }
 
+const REFUSED: Record<Exclude<SavedScanRead, { state: 'VERIFIED' }>['state'], string> = {
+  MALFORMED: 'is malformed',
+  INCOMPATIBLE: 'cannot be checked by this checkout',
+  NOT_REPRODUCED: 'does not reproduce offline from its own inputs',
+};
+
+const RECORDED: Record<string, string> = {
+  published: 'Source and comparison as recorded in the published view of this scan.',
+  preserved: 'Source and comparison as recorded in the preserved view of this scan.',
+  none: 'Only its snapshot is kept: no retrieval window, notice, selection rule, alert check or comparison was recorded with it, and none is filled in.',
+};
+
+function SavedNote({ scanId, saved }: Readonly<{ scanId: string; saved: TradingViewSavedScan }>) {
+  return (
+    <p className="devscan-saved">
+      Saved scan <code>{scanId}</code>, not the published view. It reproduced offline from its own
+      inputs, recorded at commit <code>{saved.repositoryCommit.slice(0, 7)}</code>.{' '}
+      {RECORDED[saved.view ?? 'none']}
+      {saved.legacy &&
+        ' Legacy evidence: recorded before exact TradingView symbols were kept, so it names none and is never a baseline.'}
+    </p>
+  );
+}
+
+/** A selected saved scan: shown only once it reproduces; every other state says why not. */
+function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: SavedScanQuery }>) {
+  if (query.isPending) {
+    return (
+      <DevScanState busy>
+        Reading saved scan <code>{scanId}</code> and reproducing it offline…
+      </DevScanState>
+    );
+  }
+  const read = query.data;
+  if (read?.state === 'VERIFIED') {
+    const { view } = read;
+    return (
+      <>
+        {view.saved && <SavedNote scanId={view.scanId} saved={view.saved} />}
+        <MarketScanSummary
+          key={`saved|${view.scanId}|${view.importedAt}|${view.baseline?.scanId ?? ''}`}
+          scan={view.scan}
+          completedAt={Date.parse(view.importedAt)}
+          scanning={false}
+          failed={false}
+          source={view.source}
+          changes={compareScans(view, view.baseline)}
+          choice={view}
+        />
+      </>
+    );
+  }
+  if (read) {
+    return (
+      <DevScanState alert>
+        Saved scan <code>{scanId}</code> {REFUSED[read.state]} ({read.reason}). Nothing from it is
+        shown.
+      </DevScanState>
+    );
+  }
+  if (query.isError) {
+    return (
+      <DevScanState alert>
+        Saved scan <code>{scanId}</code> could not be read ({query.error.message}).
+      </DevScanState>
+    );
+  }
+  return (
+    <DevScanState alert>
+      Saved scan <code>{scanId}</code> is no longer a TradingView snapshot in the scan store.
+      Nothing from it is shown.
+    </DevScanState>
+  );
+}
+
+function shownScan(read: SavedScanRead | null | undefined) {
+  if (!read) return undefined;
+  return read.state === 'VERIFIED' ? read.view : { scanId: read.scanId };
+}
+
 /**
- * The local TradingView development scan, under `vite dev` only. Loading,
- * nothing published and an unreadable file each say so; a partial scan is
- * never shown from a malformed file.
+ * The local TradingView development scan, under `vite dev` only: the latest
+ * published view, or a saved scan the owner selects. Loading, nothing published
+ * and an unreadable file each say so; a partial scan is never shown from a
+ * malformed file, and a saved one only after it reproduces.
  */
 export function TradingViewDevScan() {
-  const query = useTradingViewDevScan();
+  const published = useTradingViewDevScan();
+  const list = useSavedScanList();
+  const [selected, setSelected] = useState<string | null>(null);
+  const saved = useSavedScan(selected);
+  const reload = () => {
+    void list.refetch({ cancelRefetch: false });
+    void (selected === null ? published : saved).refetch({ cancelRefetch: false });
+  };
   return (
     <>
-      <ReloadLocalScan query={query} />
-      <DevScanContent query={query} />
+      <div className="devscan-reload">
+        <ScanShown
+          list={list}
+          selected={selected}
+          published={published.data?.scanId}
+          onSelect={setSelected}
+        />
+        <ReloadLocalScan
+          query={selected === null ? published : saved}
+          shown={selected === null ? (published.data ?? undefined) : shownScan(saved.data)}
+          saved={selected !== null}
+          onReload={reload}
+        />
+        <SavedListNotes list={list} />
+      </div>
+      {selected === null ? (
+        <DevScanContent query={published} />
+      ) : (
+        <SavedScanContent scanId={selected} query={saved} />
+      )}
     </>
   );
 }
