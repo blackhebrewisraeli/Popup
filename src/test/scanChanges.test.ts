@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelSetups } from '@/lib/canonicalModel';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
-import { compareScans, scoreCounts, setupCounts, type NamedScan } from '@/lib/scanChanges';
+import {
+  compareScans,
+  exactSymbol,
+  scoreCounts,
+  setupCounts,
+  type NamedScan,
+} from '@/lib/scanChanges';
 import {
   TRADINGVIEW_DEV_PROVIDER_ID,
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
@@ -18,9 +24,19 @@ import { bars, falling, rising, split, wave } from './usEquityFixtures';
 const PATHS = { AAPL: wave, KO: rising, MSFT: falling };
 const HOUR = 3_600_000;
 
+/**
+ * Each evaluated ticker is recorded as requested and confirmed on `NYSE:<ticker>`,
+ * or on the symbol `symbols` names; `null` records none, as a snapshot from before
+ * exact symbols were kept. A failed ticker was never retrieved, so records none.
+ */
 function scanOn(
   last: string,
-  options: { failed?: readonly string[]; later?: number; tickers?: readonly string[] } = {},
+  options: {
+    failed?: readonly string[];
+    later?: number;
+    tickers?: readonly string[];
+    symbols?: Readonly<Record<string, string | null>>;
+  } = {},
 ): NamedScan {
   const evaluationTime = sessionFinalAt(last) + HOUR + (options.later ?? 0);
   const inputs = (options.tickers ?? Object.keys(PATHS)).map((ticker): ScanInput => {
@@ -38,9 +54,12 @@ function scanOn(
     }
     const path = PATHS[ticker as keyof typeof PATHS] ?? wave;
     const series = split(bars(path, 200, last));
+    const symbol =
+      options.symbols?.[ticker] === undefined ? `NYSE:${ticker}` : options.symbols[ticker];
     return {
       ticker,
       instrument: `US:${ticker}`,
+      ...(symbol && { providerSymbol: { requested: symbol, validated: symbol } }),
       equity: { ...equity, series, fetchedAt: evaluationTime - 60_000, cached: false },
     };
   });
@@ -209,6 +228,103 @@ describe('compareScans', () => {
     // The baseline must be the earlier scan, never the displayed one or a later one.
     expect(fields(before, after)).toEqual(['Evaluated', 'Evaluated session']);
     expect(fields(after, after)).toEqual(['Evaluated']);
+  });
+
+  it('compares two readings of a ticker only on the same exact symbol', () => {
+    const before = recorded(scanOn('2026-10-26'), 'AAPL', { long: false });
+    const after = recorded(scanOn('2026-10-27'), 'AAPL', { long: true });
+    expect(after.scan.results.map(exactSymbol).sort()).toEqual([
+      'NYSE:AAPL',
+      'NYSE:KO',
+      'NYSE:MSFT',
+    ]);
+    const comparison = compareScans(after, before);
+    expect(comparison.status).toBe('COMPARED');
+    if (comparison.status !== 'COMPARED') throw new Error('not compared');
+    expect(comparison.changes[0]).toMatchObject({ ticker: 'AAPL', long: 'APPEARED' });
+  });
+
+  it('refuses the same ticker read on another exchange-qualified listing, rather than report a change', () => {
+    const before = recorded(scanOn('2026-10-26', { symbols: { AAPL: 'NASDAQ:AAPL' } }), 'AAPL', {
+      long: false,
+    });
+    const after = recorded(scanOn('2026-10-27', { symbols: { AAPL: 'NYSE:AAPL' } }), 'AAPL', {
+      long: true,
+    });
+    const comparison = compareScans(after, before);
+    expect(comparison).toEqual({
+      status: 'INCOMPATIBLE',
+      before: expect.objectContaining({ scanId: before.scanId }),
+      after: expect.objectContaining({ scanId: after.scanId }),
+      differences: [
+        { field: 'TradingView symbol', before: 'AAPL NASDAQ:AAPL', after: 'AAPL NYSE:AAPL' },
+      ],
+    });
+    // The generic instrument is the same, so only the exact symbol tells the listings apart.
+    expect(before.scan.results[0]?.instrument).toBe(after.scan.results[0]?.instrument);
+
+    // A listing change counts even where the asset failed: it was requested on another symbol.
+    const failedNow = edit(scanOn('2026-10-27', { failed: ['AAPL'] }), (scan) => ({
+      ...scan,
+      results: scan.results.map((result) =>
+        result.ticker === 'AAPL'
+          ? { ...result, providerSymbol: { requested: 'NYSE:AAPL', validated: null } }
+          : result,
+      ),
+    }));
+    expect(compareScans(failedNow, before)).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'TradingView symbol' }],
+    });
+  });
+
+  it('never establishes identity from a scan that recorded no exact symbol', () => {
+    const legacy = { AAPL: null, KO: null, MSFT: null };
+    const before = recorded(scanOn('2026-10-26', { symbols: legacy }), 'AAPL', { long: false });
+    const after = recorded(scanOn('2026-10-27'), 'AAPL', { long: true });
+    const none = 'Not recorded or not confirmed for any of the 3 evaluated in both';
+    expect(compareScans(after, before)).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'Exact symbol', before: none, after: 'Recorded and confirmed' }],
+    });
+    // Two legacy scans are not vouched for by today's instrument map either.
+    expect(compareScans(scanOn('2026-10-27', { symbols: legacy }), before)).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'Exact symbol', before: none, after: none }],
+    });
+    // One ticker without a symbol is enough, and it is named.
+    expect(compareScans(after, scanOn('2026-10-26', { symbols: { KO: null } }))).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [
+        {
+          field: 'Exact symbol',
+          before: 'Not recorded or not confirmed for KO',
+          after: 'Recorded and confirmed',
+        },
+      ],
+    });
+  });
+
+  it('does not accept an evaluated reading whose response never confirmed its symbol', () => {
+    const unconfirmed = edit(scanOn('2026-10-27'), (scan) => ({
+      ...scan,
+      results: scan.results.map((result) =>
+        result.ticker === 'MSFT'
+          ? { ...result, providerSymbol: { requested: 'NYSE:MSFT', validated: 'NASDAQ:MSFT' } }
+          : result,
+      ),
+    }));
+    expect(exactSymbol(unconfirmed.scan.results.find((r) => r.ticker === 'MSFT')!)).toBeNull();
+    expect(compareScans(unconfirmed, scanOn('2026-10-26'))).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [
+        {
+          field: 'Exact symbol',
+          before: 'Recorded and confirmed',
+          after: 'Not recorded or not confirmed for MSFT',
+        },
+      ],
+    });
   });
 
   it('treats a re-import of the same evaluated session as a revision, not a new session', () => {

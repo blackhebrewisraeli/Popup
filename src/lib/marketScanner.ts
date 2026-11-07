@@ -110,11 +110,25 @@ export interface ScanFetchError {
   detail: string;
 }
 
+/**
+ * The exact provider symbol requested for a ticker (TradingView's exchange-qualified
+ * `NASDAQ:AAPL`), and the symbol the provider's own response named, recorded only when
+ * that response was accepted as the ticker's series; null otherwise. Absent from
+ * snapshots recorded before it was kept, and from inputs nothing was requested for:
+ * their exact identity is unknown.
+ */
+export interface ProviderSymbol {
+  requested: string;
+  validated: string | null;
+}
+
 /** One universe member as collected: raw provider candles, or why there are none. */
 export interface ScanInput {
   ticker: string;
   /** The provider instrument scored for the ticker; null when its class is unsupported. */
   instrument: string | null;
+  /** Part of the input, so its hash covers it. */
+  providerSymbol?: ProviderSymbol;
   /** Crypto: Binance klines, fetched during this scan. */
   candles?: readonly Candle[];
   /** Equities: the provider series for `range`, and when it was fetched (earlier, if cached). */
@@ -143,6 +157,8 @@ export interface ScanAssetResult {
   ticker: string;
   assetClass: TickerKind;
   instrument: string | null;
+  /** Copied from the input; absent when the input recorded none. */
+  providerSymbol?: ProviderSymbol;
   status: ScanAssetStatus;
   /** Why the asset was not evaluated; null when it was. */
   detail: string | null;
@@ -482,6 +498,8 @@ function assess(
     ticker: input.ticker,
     assetClass,
     instrument: input.instrument,
+    // Only when recorded: an older snapshot's results must re-derive byte for byte.
+    ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
     status: 'UNSUPPORTED',
     detail: null,
     dataAsOf: null,

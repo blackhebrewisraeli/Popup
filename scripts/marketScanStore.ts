@@ -34,7 +34,14 @@ export interface ScanSnapshot {
 }
 
 export type ScanSnapshotDifference =
-  'INPUTS' | 'UNIVERSE' | 'ATTRIBUTION' | 'EVALUATION_TIME' | 'OUTPUTS' | 'SNAPSHOT';
+  | 'INPUTS'
+  | 'UNIVERSE'
+  | 'ATTRIBUTION'
+  | 'EVALUATION_TIME'
+  | 'OUTPUTS'
+  | 'SNAPSHOT'
+  /** The stored snapshot predates exact provider symbols; it is kept as it is. */
+  | 'PROVENANCE';
 
 /** A retry targeted an immutable snapshot whose verified evidence is not equivalent. */
 export class ScanSnapshotConflictError extends Error {
@@ -346,6 +353,10 @@ function snapshotDifferences(
   existing: ScanSnapshot,
   candidate: ScanSnapshot,
 ): ScanSnapshotDifference[] {
+  // Every other field would differ for that reason alone; the old snapshot is never rewritten.
+  const recorded = (snapshot: ScanSnapshot) =>
+    snapshot.inputs.some((input) => input.providerSymbol);
+  if (!recorded(existing) && recorded(candidate)) return ['PROVENANCE'];
   const differences: ScanSnapshotDifference[] = [];
   if (
     stableSerialize({ inputs: normalizeInputs(existing.inputs), hashes: existing.inputHashes }) !==

@@ -2,12 +2,17 @@ import { mkdtemp, readFile, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TradingViewDevScan } from '@/components/TradingViewDevScan';
-import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_FILE } from '@/lib/tradingViewDevScan';
+import type { ScanInput } from '@/lib/marketScanner';
+import {
+  parseTradingViewDevScan,
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_SCAN_FILE,
+} from '@/lib/tradingViewDevScan';
 import { latestFinalSession, sessionOpen } from '@/lib/usEquityDaily';
-import { saveScan } from '../../scripts/marketScanStore';
+import { reproduceScan, saveScan, type ScanSnapshot } from '../../scripts/marketScanStore';
 import {
   attachBaseline,
   captureResponses,
@@ -100,6 +105,32 @@ async function edit(root: string, scanId: string, change: (snapshot: RawSnapshot
   const snapshot = JSON.parse(await readFile(path, 'utf8')) as RawSnapshot;
   change(snapshot);
   await writeFile(path, JSON.stringify(snapshot));
+}
+
+/**
+ * Re-records a stored snapshot from changed inputs, as another checkout or instrument
+ * map would have written it: hashes and outputs are derived again, so it still
+ * reproduces, and its scan ID (evaluation time and universe) is the same.
+ */
+async function rerecord(
+  root: string,
+  scanId: string,
+  change: (inputs: readonly ScanInput[]) => ScanInput[],
+) {
+  const path = join(root, 'scans', `${scanId}.json`);
+  const stored = JSON.parse(await readFile(path, 'utf8')) as ScanSnapshot;
+  const elsewhere = await mkdtemp(join(tmpdir(), 'zerochart-tv-rerecord-'));
+  const written = await saveScan({
+    inputs: change(stored.inputs),
+    evaluationTime: stored.scan.evaluationTime,
+    universeSource: stored.scan.universe.source,
+    equityProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    repositoryCommit: stored.repositoryCommit,
+    store: elsewhere,
+    completedAt: Date.parse(stored.completedAt),
+  });
+  expect(written.snapshot.scanId).toBe(scanId);
+  await writeFile(path, await readFile(written.path, 'utf8'));
 }
 
 /** Research → TradingView import, served the view file exactly as the dev route would. */
@@ -249,6 +280,85 @@ describe('tradingview-finish to Research', { timeout: 60_000 }, () => {
       `Passed over: ${older.scanId} (not comparable: Model 0.9.0 → 1.0.0); ${tampered.scanId} (does not reproduce (OUTPUT_MISMATCH)).`,
     );
     expect(changes).toHaveTextContent('1 session between them (26 Oct) was never evaluated');
+  });
+
+  it('compares only on the same exact symbols, whether the baseline is chosen or named', async () => {
+    const root = await store();
+    const scans = join(root, 'scans');
+    const oldest = await refresh(root, EQUITY_NOW - 2 * DAY); // 23 Oct, exact symbols recorded
+    const legacy = await refresh(root, EQUITY_NOW - DAY); // 26 Oct
+    const relisted = await refresh(root, EQUITY_NOW - DAY + HOUR); // 26 Oct, later revision
+    // As written before exact symbols were kept: the same evidence without them.
+    await rerecord(root, legacy.scanId, (inputs) =>
+      inputs.map(({ providerSymbol: _recorded, ...input }) => input),
+    );
+    // As if the instrument map had named another listing of AAPL then.
+    await rerecord(root, relisted.scanId, (inputs) =>
+      inputs.map((input) =>
+        input.ticker === 'AAPL'
+          ? { ...input, providerSymbol: { requested: 'NYSE:AAPL', validated: 'NYSE:AAPL' } }
+          : input,
+      ),
+    );
+    // Both are consistent evidence: they are passed over for identity, not for tampering.
+    for (const { scanId } of [legacy, relisted]) {
+      expect(await reproduceScan(scanId, scans)).toEqual({ status: 'MATCH', scanId });
+    }
+    const listing = 'TradingView symbol AAPL NYSE:AAPL → AAPL NASDAQ:AAPL';
+    const unrecorded =
+      'Exact symbol Not recorded or not confirmed for any of the 50 evaluated in both → Recorded and confirmed';
+
+    const displayed = await refresh(root, EQUITY_NOW);
+    expect(displayed.baseline).toMatchObject({
+      status: 'COMPARED',
+      chosenBy: 'tradingview-finish',
+      before: { scanId: oldest.scanId, session: '2026-10-23' },
+      skipped: [
+        { scanId: relisted.scanId, reason: `not comparable: ${listing}` },
+        { scanId: legacy.scanId, reason: `not comparable: ${unrecorded}` },
+      ],
+    });
+    let changes = await research(root);
+    expect(changes).toHaveTextContent(`Baseline${oldest.scanId}23 Oct session`);
+    expect(changes).toHaveTextContent(
+      `Passed over: ${relisted.scanId} (not comparable: ${listing})`,
+    );
+    cleanup();
+
+    // The owner names the relisted import: attached only to say why nothing is compared.
+    const named = await attachBaseline({ store: scans, baselineId: relisted.scanId });
+    expect(named.comparison).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [
+        { field: 'TradingView symbol', before: 'AAPL NYSE:AAPL', after: 'AAPL NASDAQ:AAPL' },
+      ],
+    });
+    expect((await readView(root)).baseline).toMatchObject({
+      scanId: relisted.scanId,
+      chosenBy: 'tradingview-baseline',
+    });
+    changes = await research(root);
+    expect(changes).toHaveTextContent('Not comparable');
+    expect(
+      within(changes).getByRole('row', {
+        name: 'TradingView symbol AAPL NYSE:AAPL AAPL NASDAQ:AAPL',
+      }),
+    ).toBeInTheDocument();
+    expect(within(changes).queryByRole('list', { name: 'Setups that changed' })).toBeNull();
+    cleanup();
+
+    // A legacy baseline is refused the same way, never matched up through today's map.
+    const old = await attachBaseline({ store: scans, baselineId: legacy.scanId });
+    expect(old.comparison).toMatchObject({
+      status: 'INCOMPATIBLE',
+      differences: [{ field: 'Exact symbol' }],
+    });
+    // And a baseline on the same exact symbols is compared.
+    const same = await attachBaseline({ store: scans, baselineId: oldest.scanId });
+    expect(same.comparison).toMatchObject({
+      status: 'COMPARED',
+      before: { scanId: oldest.scanId },
+    });
   });
 
   it('shows the verified scan with the reason when there is no usable baseline', async () => {

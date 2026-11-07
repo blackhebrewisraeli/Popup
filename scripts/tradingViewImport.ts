@@ -265,10 +265,23 @@ export function importInputs(file: TradingViewOhlcvExport, evaluationTime: numbe
   const range = equityRequestRange(evaluationTime);
   const entries = new Map(file.instruments.map((entry) => [entry.ticker, entry]));
   return selectDevScanUniverse().map((ticker): ScanInput => {
-    const input: ScanInput = { ticker, instrument: usEquityInstrument(ticker) };
-    if (range === null) return { ...input, error: EQUITY_CALENDAR_ERROR };
+    const entry = entries.get(ticker);
+    const exported = range && exportedSeries(entry, ticker, range.from);
+    const input: ScanInput = {
+      ticker,
+      instrument: usEquityInstrument(ticker),
+      // The symbol the agent asked for, validated only when tradingViewSeries accepted the
+      // response, which requires the response's own `symbol` to equal it. Nothing
+      // requested, nothing recorded.
+      ...(entry && {
+        providerSymbol: {
+          requested: entry.symbol,
+          validated: exported && 'series' in exported ? entry.symbol : null,
+        },
+      }),
+    };
+    if (range === null || exported === null) return { ...input, error: EQUITY_CALENDAR_ERROR };
     const equity = { provider: TRADINGVIEW_DEV_PROVIDER_ID, range };
-    const exported = exportedSeries(entries.get(ticker), ticker, range.from);
     if ('error' in exported) return { ...input, equity, error: exported.error };
     const { series, receivedAt } = exported;
     return { ...input, equity: { ...equity, series, fetchedAt: receivedAt, cached: false } };
@@ -337,7 +350,12 @@ async function recordTradingViewScan(options: {
       tool: 'get_ohlcv',
       interval: '1D',
       retrieval: file.retrieval,
-      symbols: TRADINGVIEW_SYMBOLS,
+      // What this scan's evidence recorded as requested, not today's instrument map.
+      symbols: Object.fromEntries(
+        snapshot.inputs.flatMap(({ ticker, providerSymbol }) =>
+          providerSymbol ? [[ticker, providerSymbol.requested]] : [],
+        ),
+      ),
       notice: [...new Set(notices)].join('\n') || 'No market-data notice was returned.',
       selectionRule: SELECTION_RULE,
       pineAlerts: file.pineAlerts ?? null,

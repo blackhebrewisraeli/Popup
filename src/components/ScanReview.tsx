@@ -41,6 +41,7 @@ import {
   ratio,
   resultAsOfLabel,
   rowReason,
+  symbolEvidence,
   UTC_TIME,
   viewResults,
   type ScanExplanation,
@@ -699,7 +700,6 @@ function Evidence({
 }>) {
   const titleId = useId();
   const explanation = explainResult(model, setups);
-  const symbol = source?.symbols[result.ticker];
   const raw = model.components.weights;
   const unrounded =
     raw.rsi * model.components.rsiScore +
@@ -711,7 +711,8 @@ function Evidence({
       'Source',
       PROVIDER_LABEL[cohort.provider ?? ''] ?? cohort.provider ?? 'Not recorded',
     ]),
-    ['Instrument', [result.instrument, symbol].filter(Boolean).join(' · ') || 'Not recorded'],
+    ['Instrument', result.instrument ?? 'Not recorded'],
+    ...(source ? [['TradingView symbol', symbolEvidence(result, source)] as [string, string]] : []),
     ...scanRow(['Timeframe', `${scan.timeframe.toUpperCase()} · ${cohort.calendar}`]),
     ...scanRow(['Model', `${model.version} · scanner ${scan.scannerVersion}`]),
     ...scanRow(['Candle policy', cohort.candlePolicyVersion ?? 'Not recorded']),

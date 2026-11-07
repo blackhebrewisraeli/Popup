@@ -144,13 +144,21 @@ function passedOver(search: TradingViewDevBaselineSearch | undefined): string {
   return ` Passed over: ${items.join('; ')}.`;
 }
 
-function ChosenBy({ choice }: Readonly<{ choice: BaselineChoice | undefined }>) {
+function ChosenBy({
+  choice,
+  comparable = true,
+}: Readonly<{ choice: BaselineChoice | undefined; comparable?: boolean }>) {
   if (!choice?.baseline) return null;
+  let how = 'Named by the owner with tradingview-baseline.';
+  if (choice.baseline.chosenBy === 'tradingview-finish') {
+    // tradingview-finish never chooses an incomparable baseline; an older view can hold one.
+    how = comparable
+      ? 'Chosen by tradingview-finish: the most recent import of an earlier session that is comparable and reproduces.'
+      : 'Chosen by tradingview-finish when this view was published, under earlier checks; this checkout does not find it comparable.';
+  }
   return (
     <p className="market-scan-fit scan-changes-note">
-      {choice.baseline.chosenBy === 'tradingview-finish'
-        ? 'Chosen by tradingview-finish: the most recent import of an earlier session that is comparable and reproduces.'
-        : 'Named by the owner with tradingview-baseline.'}
+      {how}
       {passedOver(choice.baselineSearch)}
     </p>
   );
@@ -207,7 +215,7 @@ export function ScanChanges({
     body = (
       <>
         <Sides before={comparison.before} after={comparison.after} />
-        <ChosenBy choice={choice} />
+        <ChosenBy choice={choice} comparable={false} />
         <p className="market-scan-fit scan-changes-note">
           Not comparable: readings taken under different terms are different measurements, so no
           setup or score change is shown.

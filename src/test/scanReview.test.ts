@@ -16,6 +16,7 @@ import {
   pineAlertNote,
   regimeRule,
   resultAsOfLabel,
+  symbolEvidence,
   viewResults,
 } from '@/lib/scanReview';
 import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
@@ -272,7 +273,7 @@ describe('cohortFreshness', () => {
   });
 });
 
-describe('pineAlertNote', () => {
+describe('pineAlertNote and symbolEvidence', () => {
   const source: TradingViewDevSource = {
     tool: 'get_ohlcv',
     interval: '1D',
@@ -298,5 +299,22 @@ describe('pineAlertNote', () => {
     expect(pineAlertNote(alerted, 'AAPL')).toBe(
       'A TradingView alert exists on NASDAQ:AAPL. This scan cannot tell whether it fired.',
     );
+  });
+
+  it('states the exact symbol only from the result’s recorded evidence', () => {
+    const reading = (ticker: string, providerSymbol?: ScanAssetResult['providerSymbol']) =>
+      ({ ticker, ...(providerSymbol && { providerSymbol }) }) as ScanAssetResult;
+    const confirmed = { requested: 'NASDAQ:AAPL', validated: 'NASDAQ:AAPL' };
+    expect(symbolEvidence(reading('AAPL', confirmed), source)).toBe(
+      'NASDAQ:AAPL · requested, and named by TradingView’s response',
+    );
+    expect(
+      symbolEvidence(reading('AAPL', { requested: 'NASDAQ:AAPL', validated: null }), source),
+    ).toBe('NASDAQ:AAPL requested · the response did not confirm it');
+    // Legacy evidence: the view's own list is named, never presented as the evidence.
+    expect(symbolEvidence(reading('AAPL'), source)).toBe(
+      'Not recorded in this scan’s evidence. The view lists NASDAQ:AAPL, unverified.',
+    );
+    expect(symbolEvidence(reading('MSFT'), source)).toBe('Not recorded in this scan’s evidence.');
   });
 });

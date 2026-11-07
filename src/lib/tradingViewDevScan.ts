@@ -23,7 +23,11 @@ export interface TradingViewDevSource {
   tool: 'get_ohlcv';
   interval: '1D';
   retrieval: { startedAt: string; completedAt: string };
-  /** Ticker → exact exchange-qualified TradingView symbol requested. */
+  /**
+   * Ticker → exact exchange-qualified TradingView symbol requested, as the scan's inputs
+   * recorded it. Views written before inputs recorded it hold the instrument map at import
+   * time: unverified, and never the evidence (each result's `providerSymbol` is).
+   */
   symbols: Readonly<Record<string, string>>;
   /** TradingView's own market-data notice, verbatim (adjustment, session, delay). */
   notice: string;

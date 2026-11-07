@@ -331,8 +331,9 @@ retrieval again keeps a named baseline while it still passes those checks; if it
 finish says why under `skipped` and chooses again. A new scan starts a new choice: a named baseline
 belongs to the scan it was named for. `tradingview-import` publishes without a baseline.
 
-- **Comparable** means the same source, timeframe, universe, recorded instrument per ticker, scanner
-  and model versions, and candle policy, with the baseline evaluated first. Otherwise the view says
+- **Comparable** means the same source, timeframe, universe, recorded instrument and exact
+  TradingView symbol per ticker, scanner and model versions, and candle policy, with the baseline
+  evaluated first. Otherwise the view says
   **Not comparable**, lists what differs and shows no change. Such a baseline is attached without
   reproduction, since none of its results is shown.
 - **Shown:** each scan's evaluated session and coverage; how many Long setups and Risk warnings
@@ -343,9 +344,26 @@ belongs to the scan it was named for. `tradingview-import` publishes without a b
 - **Sessions:** two imports of the same session are a revision of its data, not a new session.
   Sessions between the two that were never evaluated are named: a change could have happened on any
   of them, so this is two readings, not a timed transition, and never an alert.
-- **Identity:** a snapshot does not record the exchange-qualified TradingView symbol, so identity is
-  compared on the recorded instrument (`US:<ticker>`) and provider; the symbol shown is the
-  displayed import's.
+- **Identity:** the ticker is the display name and `US:<ticker>` the generic instrument; neither
+  tells two listings apart. Each input records `providerSymbol`: the exact exchange-qualified symbol
+  requested (`NASDAQ:AAPL`) and, only when TradingView's response was accepted as that ticker's
+  series, the symbol the response named. It is part of the input, so the input hash covers it, and
+  each result carries a copy, so reproduction re-derives it. Nothing requested, nothing recorded.
+  - A ticker requested on a different symbol in the two scans is **Not comparable**
+    (`TradingView symbol`), whatever its status: another listing is never an appeared or cleared
+    setup.
+  - Every asset evaluated in both must carry the same requested symbol, confirmed by the response,
+    on both sides. Otherwise the pair is **Not comparable** (`Exact symbol`), naming the tickers.
+  - **Legacy evidence is refused, not presented as limited.** Snapshots recorded before exact
+    symbols were kept (every TradingView import up to 2026-11-07) still reproduce and still display,
+    but they cannot be a baseline, and they are never matched up through today's instrument map:
+    `tradingview-finish` passes them over and `tradingview-baseline` attaches them only to say why.
+    Their evidence panel says the symbol is not recorded; the list the view wrote at import is named
+    as unverified. Nothing rewrites them: importing a legacy export again is refused as a
+    `PROVENANCE` conflict. The first comparison is therefore between two imports made with this
+    format, on different sessions.
+  - Hashes show the evidence is consistent with itself, not who wrote it. Removing every symbol and
+    recomputing the hashes leaves a snapshot that reads as legacy, which is refused.
 
 The export file (`scripts/tradingViewImport.ts`, `TradingViewOhlcvExport`) holds `retrieval.startedAt`
 and `completedAt`, the alert check, and one entry per ticker: `symbol`, `receivedAt` and the response,

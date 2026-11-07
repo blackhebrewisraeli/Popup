@@ -3,10 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CandleProviderDataError } from '@/lib/binance';
-import { parseTradingViewDevScan, TRADINGVIEW_DEV_SCAN_FILE } from '@/lib/tradingViewDevScan';
+import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
+import {
+  parseTradingViewDevScan,
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_SCAN_FILE,
+  TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+} from '@/lib/tradingViewDevScan';
 import { latestFinalSession, sessionOpen, US_EQUITY_INSTRUMENTS } from '@/lib/usEquityDaily';
 import { bars, EQUITY_NOW, falling, rising, wave } from '@/test/usEquityFixtures';
-import { reproduceScan, saveScan, ScanSnapshotConflictError } from './marketScanStore';
+import { hashInputs, reproduceScan, saveScan, ScanSnapshotConflictError } from './marketScanStore';
 import {
   attachBaseline,
   captureResponses,
@@ -419,6 +425,16 @@ describe('importTradingViewScan', () => {
     expect(byTicker.get(d!)?.detail).toMatch(/adjustment basis is unresolved/);
     expect(byTicker.get(e!)).toMatchObject({ status: 'FETCH_FAILED' });
     expect(byTicker.get(e!)?.detail).toMatch(/did not succeed/);
+    // What was requested stays recorded; no failed response counts as validating it.
+    const unconfirmed = (ticker: string) => ({
+      requested: TRADINGVIEW_SYMBOLS[ticker],
+      validated: null,
+    });
+    expect(byTicker.get(a!)?.providerSymbol).toEqual(unconfirmed(a!));
+    expect(byTicker.get(b!)).not.toHaveProperty('providerSymbol');
+    expect(byTicker.get(c!)?.providerSymbol).toEqual({ requested: 'BOATS:X', validated: null });
+    expect(byTicker.get(d!)?.providerSymbol).toEqual(unconfirmed(d!));
+    expect(byTicker.get(e!)?.providerSymbol).toEqual(unconfirmed(e!));
   });
 
   it('refuses a retrieval that a session close interrupted, and files it does not recognise', async () => {
@@ -481,6 +497,127 @@ describe('importTradingViewScan', () => {
     expect(snapshot.scan.status).toBe('FAILED');
     expect(snapshot.scan.coverage.byStatus.FETCH_FAILED).toBe(50);
     expect(view.source.notice).toBe('No market-data notice was returned.');
+  });
+});
+
+describe('exact TradingView symbol evidence', () => {
+  /** A stored snapshot as raw JSON, so a test can write what the types forbid. */
+  type Raw = {
+    inputs: Array<{ ticker: string; providerSymbol?: { requested: string } }>;
+    inputHashes: Record<string, string>;
+    scan: { results: Array<{ ticker: string; providerSymbol?: { requested: string } }> };
+  };
+  const withoutSymbol = <T extends { providerSymbol?: unknown }>(items: readonly T[]) =>
+    items.map(({ providerSymbol: _recorded, ...rest }) => rest);
+
+  it('records the requested and validated symbol per asset inside its hashed input', async () => {
+    const { snapshot, view } = await importInto(exportOf());
+    for (const input of snapshot.inputs) {
+      const symbol = TRADINGVIEW_SYMBOLS[input.ticker]!;
+      expect(input.providerSymbol).toEqual({ requested: symbol, validated: symbol });
+      // The display ticker and the generic instrument stay what they were.
+      expect(input.instrument).toBe(`US:${input.ticker}`);
+    }
+    for (const result of snapshot.scan.results) {
+      expect(result.providerSymbol?.requested).toBe(TRADINGVIEW_SYMBOLS[result.ticker]);
+    }
+    const [first] = snapshot.inputs;
+    const relisted = { ...first!, providerSymbol: { requested: 'NYSE:X', validated: 'NYSE:X' } };
+    expect(hashInputs([relisted])[first!.ticker]).not.toBe(snapshot.inputHashes[first!.ticker]);
+    // The view lists what the evidence recorded, not the instrument map.
+    expect(view.source.symbols).toEqual(
+      Object.fromEntries(
+        snapshot.inputs.map((input) => [input.ticker, input.providerSymbol?.requested]),
+      ),
+    );
+  });
+
+  it.each([
+    {
+      label: 'a requested symbol, its hash left as it was',
+      reason: 'INPUT_HASH_MISMATCH',
+      tamper: (raw: Raw) => {
+        raw.inputs[0]!.providerSymbol!.requested = 'NYSE:TAMPERED';
+      },
+    },
+    {
+      label: 'a requested symbol, with its input hash recomputed',
+      reason: 'OUTPUT_MISMATCH',
+      tamper: (raw: Raw) => {
+        raw.inputs[0]!.providerSymbol!.requested = 'NYSE:TAMPERED';
+        raw.inputHashes = hashInputs(raw.inputs as unknown as ScanInput[]);
+      },
+    },
+    {
+      label: 'a result’s symbol alone',
+      reason: 'OUTPUT_MISMATCH',
+      tamper: (raw: Raw) => {
+        raw.scan.results[0]!.providerSymbol!.requested = 'NYSE:TAMPERED';
+      },
+    },
+    {
+      label: 'a symbol removed from one input and its result',
+      reason: 'INPUT_HASH_MISMATCH',
+      tamper: (raw: Raw) => {
+        const ticker = raw.inputs[0]!.ticker;
+        delete raw.inputs[0]!.providerSymbol;
+        delete raw.scan.results.find((result) => result.ticker === ticker)!.providerSymbol;
+      },
+    },
+  ])(
+    'does not reproduce a snapshot with tampered provenance: $label',
+    async ({ tamper, reason }) => {
+      const { store, snapshot } = await importInto(exportOf());
+      const path = join(store, `${snapshot.scanId}.json`);
+      const raw = JSON.parse(await readFile(path, 'utf8')) as Raw;
+      tamper(raw);
+      await writeFile(path, JSON.stringify(raw));
+      expect(await reproduceScan(snapshot.scanId, store)).toEqual({
+        status: 'MISMATCH',
+        scanId: snapshot.scanId,
+        reason,
+      });
+    },
+  );
+
+  it('reproduces a snapshot recorded before exact symbols were kept, and never rewrites it', async () => {
+    const file = exportOf();
+    const evaluationTime = Date.parse(file.retrieval.completedAt);
+    const inputs = importInputs(file, evaluationTime);
+    // What this checkout wrote for the same export before it kept exact symbols.
+    const store = await mkdtemp(join(tmpdir(), 'zerochart-tv-legacy-'));
+    const legacy = await saveScan({
+      inputs: withoutSymbol(inputs),
+      evaluationTime,
+      universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+      equityProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+      repositoryCommit: COMMIT,
+      store,
+      completedAt: evaluationTime + 60_000,
+    });
+    expect(JSON.stringify(legacy.snapshot)).not.toMatch(/providerSymbol|NASDAQ:|NYSE:|AMEX:/);
+    expect(await reproduceScan(legacy.snapshot.scanId, store)).toEqual({
+      status: 'MATCH',
+      scanId: legacy.snapshot.scanId,
+    });
+
+    // Every score, rank and setup is the same with the symbol recorded as without it.
+    const current = evaluateScan(inputs, {
+      evaluationTime,
+      universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+      equityProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    });
+    expect({ ...current, results: withoutSymbol(current.results) }).toEqual(legacy.snapshot.scan);
+
+    // Importing the same export again neither rewrites the old snapshot nor infers its symbols.
+    const bytes = await readFile(legacy.path, 'utf8');
+    const error = await importInto(file, { store }).then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(ScanSnapshotConflictError);
+    expect(error).toMatchObject({ scanId: legacy.snapshot.scanId, differences: ['PROVENANCE'] });
+    expect(await readFile(legacy.path, 'utf8')).toBe(bytes);
   });
 });
 
