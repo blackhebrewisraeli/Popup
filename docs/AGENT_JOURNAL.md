@@ -39,13 +39,18 @@ changed, and understand the evidence behind each result. The user decides whethe
   (merged `abcc241`) adds **Reload local scan** to the TradingView review. It re-reads the local
   dev route only, keeps one coherent snapshot and labels a failed reload. First used on a real scan
   in the full-universe work below.
-- **Full configured universe:** draft [#143](https://github.com/blackhebrewisraeli/Popup/pull/143) adds an opt-in
-  `tradingview-start --universe all` (all 90 configured US equities and ETFs). The 50-member
-  universe stays the default, on the same symbols. A retrieval freezes its universe and symbols at
-  start, scans of different universes are never compared, and publishing over the other universe's
-  view keeps a copy of it. One real full-universe scan, `20261107T223109Z-aca6476d` (6 Nov session),
-  is now the published Research view; the 50-member view is preserved beside it
-  ([how to return](MARKET_SCANNER.md#two-universes)).
+- **Full configured universe:** [#143](https://github.com/blackhebrewisraeli/Popup/pull/143)
+  (merged `1a2cd8e`) adds an opt-in `tradingview-start --universe all` (all 90 configured US
+  equities and ETFs). The 50-member universe stays the default, on the same symbols. A retrieval
+  freezes its universe and symbols at start, scans of different universes are never compared, and
+  publishing over the other universe's view keeps a copy of it. One real full-universe scan,
+  `20261107T223109Z-aca6476d` (6 Nov session), is now the published Research view; the 50-member
+  view is preserved beside it ([how to return](MARKET_SCANNER.md#two-universes)).
+- **Saved scans in Research:** draft [#144](https://github.com/blackhebrewisraeli/Popup/pull/144)
+  adds **Scan shown** to the local TradingView review: the latest published scan or any saved
+  TradingView snapshot, reproduced offline before it is shown, with only what was recorded for it.
+  Nothing is copied or published, so the 50-member scan can be viewed beside the published 90
+  ([Saved scans](MARKET_SCANNER.md#saved-scans)).
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
@@ -56,7 +61,7 @@ changed, and understand the evidence behind each result. The user decides whethe
 `tradingview-finish` should list the full-universe import `20261107T223109Z-aca6476d` under
 `skipped` as not comparable (Universe), choose `20261107T170244Z-76cde900` as the baseline, and
 report the 90-member view under `preservedView`. Research should show the same counts after
-**Reload local scan**, without a page refresh.
+**Reload local scan**, without a page refresh, and both scans under **Scan shown**.
 
 See the [scanner runbook](MARKET_SCANNER.md) for retrieval, import, reproduction, and review.
 The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is for engineering handoffs.
@@ -75,7 +80,25 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-08 · Full configured US equity universe, opt-in · Draft [#143](https://github.com/blackhebrewisraeli/Popup/pull/143).**
+- **2026-11-08 · Select a saved TradingView scan in Research · Draft
+  [#144](https://github.com/blackhebrewisraeli/Popup/pull/144).** Decision: viewing the other
+  universe meant copying a preserved view over the published one. **Scan shown** now lists every
+  TradingView snapshot in the scan store (ID, session, universe size, coverage) beside **Latest
+  published scan**. The dev server reproduces a selected snapshot offline before showing it, and
+  shows only what was recorded: source and comparison from a published or preserved view of
+  exactly that scan, otherwise the snapshot alone, with retrieval window, notice, selection rule
+  and alert check not recorded and no baseline chosen after the fact. Malformed, incompatible,
+  non-reproducing and removed scans each have a state. Reload stays on the selection. The route
+  takes only a scan ID, treats a symbolic link as absent, never writes, and refuses non-loopback
+  peers and non-loopback `Host` headers. Evidence: unit tests for the route, the store reader and
+  the review. Labeled fixtures built through start → capture → finish, in a scratch worktree:
+  50 → 90 → 50 with no page refresh, every row matching its snapshot, each refused state, a removed
+  and restored file, ten rapid changes (one read per scan), keyboard, phone width and dark mode.
+  Local real-data run: the six TradingView snapshots listed (crypto scans excluded, four legacy),
+  all reproduce, 50 → 90 → 50 and a legacy scan matched their snapshots row for row, and all 15
+  files in the real store stayed byte-identical. Next: the 9 Nov comparison above.
+
+- **2026-11-08 · Full configured US equity universe, opt-in · Merged in [#143](https://github.com/blackhebrewisraeli/Popup/pull/143) (`1a2cd8e`).**
   Decision: the 50-member scan stays the default. `--universe all` requests all 90 configured US
   equities and ETFs. The 40 added tickers were resolved with TradingView `search_symbols`: each has
   exactly one US primary-venue listing (WMT is now on NASDAQ), so none was ambiguous or
