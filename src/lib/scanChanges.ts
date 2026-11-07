@@ -153,25 +153,25 @@ export function exactSymbol(result: ScanAssetResult): string | null {
 function symbolDifferences(before: MarketScan, after: MarketScan): Difference[] {
   const earlier = new Map(before.results.map((result) => [result.ticker, result]));
   const pairs = after.results.flatMap((now) => {
-    const then = earlier.get(now.ticker);
-    return then ? [{ then, now }] : [];
+    const prior = earlier.get(now.ticker);
+    return prior ? [{ prior, now }] : [];
   });
   const found: Difference[] = [];
-  const moved = pairs.filter(({ then, now }) => {
-    const [was, is] = [then.providerSymbol?.requested, now.providerSymbol?.requested];
+  const moved = pairs.filter(({ prior, now }) => {
+    const [was, is] = [prior.providerSymbol?.requested, now.providerSymbol?.requested];
     return was !== undefined && is !== undefined && was !== is;
   });
   if (moved.length > 0) {
-    const list = (side: 'then' | 'now') =>
+    const list = (side: 'prior' | 'now') =>
       moved.map((pair) => `${pair.now.ticker} ${pair[side].providerSymbol?.requested}`).join(', ');
-    found.push({ field: 'TradingView symbol', before: list('then'), after: list('now') });
+    found.push({ field: 'TradingView symbol', before: list('prior'), after: list('now') });
   }
   const both = pairs.filter(
-    (pair) => !moved.includes(pair) && evaluated(pair.then) && evaluated(pair.now),
+    (pair) => !moved.includes(pair) && evaluated(pair.prior) && evaluated(pair.now),
   );
-  const unknown = (side: 'then' | 'now') =>
+  const unknown = (side: 'prior' | 'now') =>
     both.filter((pair) => exactSymbol(pair[side]) === null).map((pair) => pair.now.ticker);
-  const [was, is] = [unknown('then'), unknown('now')];
+  const [was, is] = [unknown('prior'), unknown('now')];
   if (was.length > 0 || is.length > 0) {
     const evidence = (tickers: string[]) => {
       if (tickers.length === 0) return 'Recorded and confirmed';
