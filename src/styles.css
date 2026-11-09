@@ -3631,6 +3631,94 @@ body {
   flex-wrap: wrap;
   gap: 12px;
 }
+/* Owner-only Binance Spot balances (docs/BINANCE_SPOT_ACCOUNT.md). */
+.spot-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+.spot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.spot-head > div {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+.spot-chip {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  vertical-align: middle;
+  color: var(--muted-foreground);
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.spot-note,
+.spot-status {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.spot-note {
+  margin-top: 6px;
+  max-width: 68ch;
+}
+.spot-status:empty {
+  display: none;
+}
+.spot-failed {
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid color-mix(in oklch, var(--signal-red) 30%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--signal-red) 6%, transparent);
+  color: var(--signal-red);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.spot-card .portfolio-cash-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.spot-card .portfolio-cash-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.spot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font:
+    500 13px 'JetBrains Mono',
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.spot-table th,
+.spot-table td {
+  padding: 9px 0 9px 12px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.spot-table th:first-child {
+  padding-left: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+.spot-table thead th {
+  border-top: 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .zone-divider {
   margin: 44px 0 0;
   border: 0;

@@ -6,6 +6,7 @@ import { usePortfolio } from '@/lib/portfolioStore';
 import { LEDGER_NAMES, type PortfolioType } from '@/lib/portfolioAccounting';
 import { downloadCsv, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { loadWalkForward, walkForwardCsv } from '@/lib/engine/walkForwardLogger';
+import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
@@ -111,6 +112,9 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
           </div>
         </section>
       </div>
+
+      {/* Keyed by user so one account's snapshot can never render for another. */}
+      {user && <BinanceSpotBalances key={user.id} />}
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />
