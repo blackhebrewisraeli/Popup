@@ -11,6 +11,10 @@ verify_jwt = false
 [functions.market-analytics]
 verify_jwt = false
 
+# Signed-in callers only; the handler then serves the configured owner alone.
+[functions.binance-spot-account]
+verify_jwt = true
+
 [db]
 # Match production so the CI fresh-database check runs the same Postgres.
 major_version = 17

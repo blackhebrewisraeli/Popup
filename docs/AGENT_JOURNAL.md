@@ -9,7 +9,9 @@ changed, and understand the evidence behind each result. The user decides whethe
 
 - TradingView is the selected source for the equity scanner. The current equity flow is local
   and owner-initiated through an authenticated agent. It does not establish unattended or
-  production TradingView access. The existing Binance paths are separate.
+  production TradingView access. The existing Binance market-data paths are separate, and so is
+  the owner-only, read-only [Binance Spot balance view](BINANCE_SPOT_ACCOUNT.md): balances only,
+  never orders, transfers or analysis.
 - Prioritize the owner's private trial and friction observed in real use. Keep public rollout,
   automated trading, new providers, and campaign expansion outside the current phase.
 - Keep functional verification separate from investment outcomes. A technical score is not a
@@ -46,11 +48,15 @@ changed, and understand the evidence behind each result. The user decides whethe
   publishing over the other universe's view keeps a copy of it. One real full-universe scan,
   `20261107T223109Z-aca6476d` (6 Nov session), is now the published Research view; the 50-member
   view is preserved beside it ([how to return](MARKET_SCANNER.md#two-universes)).
-- **Saved scans in Research:** draft [#144](https://github.com/blackhebrewisraeli/Popup/pull/144)
-  adds **Scan shown** to the local TradingView review: the latest published scan or any saved
+- **Saved scans in Research:** [#144](https://github.com/blackhebrewisraeli/Popup/pull/144)
+  (merged `25a62ba`) adds **Scan shown** to the local TradingView review: the latest published scan or any saved
   TradingView snapshot, reproduced offline before it is shown, with only what was recorded for it.
   Nothing is copied or published, so the 50-member scan can be viewed beside the published 90
   ([Saved scans](MARKET_SCANNER.md#saved-scans)).
+- **Binance Spot balances:** a draft PR adds an owner-only, read-only balance card to Account,
+  served by a new `binance-spot-account` edge function. Verified with synthetic responses only. No
+  credential is configured, the function is not deployed and no live read has run
+  ([setup and boundaries](BINANCE_SPOT_ACCOUNT.md)).
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
@@ -80,8 +86,27 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-08 · Select a saved TradingView scan in Research · Draft
-  [#144](https://github.com/blackhebrewisraeli/Popup/pull/144).** Decision: viewing the other
+- **2026-11-10 · Owner-only read-only Binance Spot balances · Draft PR.** Decision: the smallest
+  account connection is one Supabase edge function that asks Supabase Auth who the caller is,
+  serves only the configured owner ID, and can send three GETs to Binance: server time, key
+  permissions, account balances. Credentials are function secrets; a missing owner, flag, key or
+  secret disables it. A key with any trading, withdrawal or transfer capability is refused, and
+  one whose permissions cannot be confirmed is reported as unverified; the account's `canTrade`
+  flag is not consulted. The Account card shows asset, available and locked as Binance's decimal
+  strings, the last successful read, a stale label after 5 minutes and a manual refresh. It holds
+  one snapshot in memory, separate from every Popup ledger, with no valuation. Evidence: synthetic
+  responses and fake credentials cover signing against Binance's documented example, time
+  handling, owner, anonymous and wrong-user access before any provider call, permission refusal
+  and unverified, precision, locked funds, an empty account, 429 and 418, timeouts, malformed
+  data, failed refresh with retained balances, out-of-order refreshes, credential leakage and the
+  GET-only allowlist. The card was checked in the browser at desktop and phone width, in light
+  and dark, from the keyboard, with the function's answers simulated in the page. Not verified:
+  any read against Binance; whether the deployed function's region may reach Binance's signed
+  endpoints. Next: the owner follows [the setup steps](BINANCE_SPOT_ACCOUNT.md#owner-setup), then
+  one live read-only check.
+
+- **2026-11-08 · Select a saved TradingView scan in Research · Merged in
+  [#144](https://github.com/blackhebrewisraeli/Popup/pull/144) (`25a62ba`).** Decision: viewing the other
   universe meant copying a preserved view over the published one. **Scan shown** now lists every
   TradingView snapshot in the scan store (ID, session, universe size, coverage) beside **Latest
   published scan**. The dev server reproduces a selected snapshot offline before showing it, and

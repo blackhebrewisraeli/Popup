@@ -22,6 +22,7 @@ export default defineConfig({
         // Deno-only `npm:` imports: Vite can't load these to measure them.
         'supabase/functions/_shared/feed.ts',
         'supabase/functions/tv-webhook/index.ts',
+        'supabase/functions/binance-spot-account/index.ts',
       ],
     },
   },
