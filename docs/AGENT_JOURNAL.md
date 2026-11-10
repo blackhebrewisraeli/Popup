@@ -88,6 +88,23 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
+- **2026-11-10 · Owner-only Binance Spot execution history · Draft PR [#148](https://github.com/blackhebrewisraeli/Popup/pull/148).** Decision:
+  extend the existing read-only account function with signed `GET /api/v3/myTrades`, never a
+  trading endpoint. The Account view manually reads one of 12 explicit USDT pairs over 1, 6 or 24
+  hours, 100 fills per page. It preserves each fill and its recorded commission asset, deduplicates
+  by symbol plus trade ID, uses an HMAC-validated continuation, and labels finite/partial coverage;
+  it never writes a Popup ledger or derives value, P&L, cost basis or tax. Evidence: official
+  Binance Spot documentation; labeled synthetic fixtures; 1,335 tests, typecheck, lint and build;
+  and an isolated local Auth → edge function → synthetic provider run with anonymous 401,
+  wrong-user 403, owner 200, a 100-record partial first page and IDs 101–102 on continuation. The
+  byte-identical committed handler ran in edge runtime 1.76.2, logs were aggregate-only, and the
+  disposable stack had zero public tables. In headless Chrome the manual-only read showed 100 then
+  102 fills, kept two fills for one order and exact BNB/USDT fees; keyboard focus survived paging,
+  and the 375 px view had no page overflow. Real Binance and hosted deployment: NOT RUN. A short
+  feasibility note records what a broad TradingView crypto scan still lacks; no scanner was built.
+  Next: after an explicitly authorized deployment, compare one known pair/range (and continuation,
+  if present) with Binance's own UI without widening the pair set or claiming lifetime history.
+
 - **2026-11-10 · Recover the Sonar fixes pushed after #144 merged · Open PR
   [#147](https://github.com/blackhebrewisraeli/Popup/pull/147).** Decision: commit `d656ad3` reached
   the #144 branch after the merge, so `main` never received it. It is cherry-picked unchanged onto

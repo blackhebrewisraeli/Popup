@@ -3719,6 +3719,113 @@ body {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.spot-executions {
+  display: grid;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.spot-executions-head {
+  display: grid;
+  gap: 14px;
+}
+.spot-executions h4 {
+  font:
+    600 15px 'DM Sans',
+    sans-serif;
+  letter-spacing: -0.01em;
+}
+.spot-execution-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+.spot-execution-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.spot-execution-controls select {
+  min-height: 34px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  font:
+    500 12px 'JetBrains Mono',
+    monospace;
+}
+.spot-execution-controls select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.spot-coverage {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--border);
+}
+.spot-coverage > div {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--card);
+}
+.spot-coverage dt {
+  color: var(--muted-foreground);
+  font:
+    600 9px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.spot-coverage dd {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.spot-execution-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.spot-execution-table {
+  min-width: 1040px;
+  white-space: nowrap;
+}
+.spot-execution-table th,
+.spot-execution-table td {
+  padding-inline: 10px;
+}
+.spot-execution-table th:first-child,
+.spot-execution-table td:first-child {
+  padding-left: 10px;
+  text-align: left;
+}
+@media (max-width: 480px) {
+  .spot-execution-controls {
+    align-items: stretch;
+  }
+  .spot-execution-controls label,
+  .spot-execution-controls .portfolio-cash-btn {
+    flex: 1 1 100%;
+  }
+  .spot-execution-controls select {
+    width: 100%;
+  }
+}
 .zone-divider {
   margin: 44px 0 0;
   border: 0;

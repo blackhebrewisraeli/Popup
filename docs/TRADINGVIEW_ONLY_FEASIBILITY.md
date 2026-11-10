@@ -17,6 +17,17 @@ subscribers. Users decide whether and where to invest. Automatic trading is out 
 providers (Binance, Yahoo, IBKR, equity vendors) appear below only as today's sources, never as
 the proposal.
 
+### What is still missing for a broad TradingView crypto scan
+
+The current local TradingView scanner is the configured US equity/ETF workflow, and the existing
+crypto paths do not turn it into a broad TradingView crypto scan. Such a scan still needs an
+explicit, versioned crypto-pair universe with exact exchange-qualified symbol resolution; retrieval
+of enough final (not forming) TradingView bars for every pair; UTC-session coverage and retry
+evidence; same-universe snapshot storage and offline reproduction; and authorization for the data
+access and use described below. The Binance execution-history view is private account inspection,
+not market-data input, and supplies none of those pieces. This note is an inspection finding only;
+no crypto scanner is added here.
+
 ## 1. Current integration
 
 ```text

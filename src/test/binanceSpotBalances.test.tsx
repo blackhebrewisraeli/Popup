@@ -377,6 +377,7 @@ describe('separation from Popup ledgers', () => {
     for (const file of [
       'src/lib/binanceSpotAccount.ts',
       'src/components/BinanceSpotBalances.tsx',
+      'src/components/BinanceSpotExecutions.tsx',
     ]) {
       const source = readFileSync(file, 'utf8');
       const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);

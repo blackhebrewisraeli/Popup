@@ -1,15 +1,15 @@
 # Binance Spot account view (owner-only, read-only)
 
-The Account zone can show the owner's Binance Spot balances: asset, available quantity and locked
-quantity, with the time of the last successful read. It reads; it does nothing else.
+The Account zone can show the owner's Binance Spot balances and a manually requested, symbol-scoped
+list of executed Spot fills. It reads; it does nothing else.
 
-TradingView remains the source for market analysis. Binance supplies account balances only.
+TradingView remains the source for market analysis. Binance supplies account records only.
 
 ## Boundaries
 
-- **No trading surface.** The integration can send three `GET` requests to `api.binance.com` and
-  nothing else: server time, API-key permissions, account balances. There is no order, cancel,
-  withdrawal or transfer code.
+- **No trading surface.** The integration can send four `GET` requests to `api.binance.com` and
+  nothing else: server time, API-key permissions, account balances and symbol-scoped account
+  executions (`/api/v3/myTrades`). There is no order, cancel, withdrawal or transfer code.
 - **One owner.** The edge function serves the single user ID in `BINANCE_SPOT_OWNER_USER_ID`. It
   asks Supabase Auth who the caller is before it reads a credential or contacts Binance. Anonymous
   callers get 401 and other signed-in users get 403. With no owner configured, everyone gets 403.
@@ -26,8 +26,50 @@ TradingView remains the source for market analysis. Binance supplies account bal
 - **Separate from Popup's books.** The snapshot lives in the Account component's memory only. It is
   not cached, stored, or written to any table, and it never becomes a deposit, position or
   transaction in paper trading, tracked holdings or simulations.
-- **Quantities only.** Values are the decimal strings Binance sent, never parsed to floats or
-  rounded. No valuation, total, P&L or cost basis is derived, and USDT is not treated as USD.
+- **Recorded amounts only.** Values are the decimal strings Binance sent, never parsed to floats or
+  rounded. A fill's commission amount stays attached to its recorded commission asset; BNB or
+  another asset is not converted to USDT/USD. No valuation, total, P&L, cost basis or tax result is
+  derived, and USDT is not treated as USD.
+
+## Execution-history coverage
+
+**Binance contract, read on 2026-11-10.** The authenticated account endpoint is signed
+`GET /api/v3/myTrades`. `symbol` is required, so there is no one-request "all account trades"
+answer. The endpoint accepts `startTime`, `endTime`, `fromId` and `limit`; the time between start
+and end may not exceed 24 hours; `limit` defaults to 500 and is at most 1,000. Without `orderId`
+the request weight is 20. `fromId` is inclusive (trades with ID greater than or equal to it).
+General Spot REST ordering is chronological; with `startTime`, the oldest records from that time
+are returned first. The response records a fill's `symbol`, trade `id`, `orderId`, `time`,
+`isBuyer`, `qty`, `price`, `quoteQty`, `commission` and `commissionAsset`. Binance's commission FAQ
+explains that commission may be paid from the received asset or in BNB when the discount is enabled
+and sufficient BNB exists. The recorded amount and asset are therefore kept together without an
+invented conversion.
+
+Popup deliberately narrows that contract:
+
+- The supported set is exactly `BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `AVAXUSDT`, `LINKUSDT`,
+  `BNBUSDT`, `XRPUSDT`, `ADAUSDT`, `DOGEUSDT`, `DOTUSDT`, `MATICUSDT`, `LTCUSDT`. It is the app's
+  existing explicitly known crypto set mapped to USDT pairs, not every pair ever used by the
+  account. At most four may be requested through the server contract; the first UI uses one at a
+  time.
+- One first-page request covers at most 24 hours and asks for at most 100 fills per selected pair.
+  A full page produces an opaque, HMAC-validated continuation. Later pages use the documented
+  inclusive `fromId` contract with the previous last trade ID plus one, retain the original range,
+  and drop records outside it. A page shorter than 100, or one that crosses the requested end,
+  completes that pair. An exactly full final page is conservatively labeled "more results" until
+  the next request returns fewer.
+- Fills are not orders. Multiple fills sharing one `orderId` remain separate. The execution
+  identity is `(symbol, trade ID)`, including when pages overlap or the same numeric trade ID occurs
+  on another symbol.
+- The view names selected pairs, requested range, records shown, retrieval time, partial failures
+  and whether another page may remain. It never calls a selected finite window lifetime history.
+  Binance does not state a lifetime-retention guarantee for this endpoint in the cited contract,
+  so Popup makes none.
+- No execution read runs on mount or in the background. It is manual. A failed refresh retains and
+  labels the prior in-memory result; a changed selection clears it; a late answer cannot replace a
+  newer selection. Logout or account change unmounts and clears the private state.
+- Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
+  Executions alone cannot reconstruct balances.
 
 ## States
 
@@ -47,6 +89,13 @@ TradingView remains the source for market analysis. Binance supplies account bal
 Answers are applied in request order, and a snapshot is never replaced by one Binance produced
 earlier, so overlapping refreshes cannot move the view backwards.
 
+The execution section starts with no provider request. **Load executions** shows the exact pair and
+range, record count, retrieval time and whether another page may remain. Zero records says so for
+that selection. A failed page names the failure and retains prior records; partial pages name the
+failed pairs/pages. Invalid selections/continuations, permission refusal, rate limits, timeouts and
+malformed provider records remain distinct. A rate limit pauses both load buttons for Binance's
+`Retry-After` duration (60 seconds when none is usable).
+
 ## Binance documentation used
 
 Read on 2026-11-10.
@@ -55,7 +104,13 @@ Read on 2026-11-10.
   HMAC-SHA256 over the query string, `X-MBX-APIKEY` header, `timestamp`, `recvWindow` (default 5000 ms,
   maximum 60000; a timestamp more than 1 s ahead of the server is rejected).
 - [Account endpoints](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints):
-  `GET /api/v3/account`, weight 20, `omitZeroBalances`.
+  `GET /api/v3/account`, weight 20, `omitZeroBalances`; and `GET /api/v3/myTrades`, required symbol,
+  weight 20 without `orderId`, max 1,000, max 24-hour time range, inclusive `fromId`, fill and
+  commission fields.
+- [General REST API information](https://developers.binance.com/en/docs/products/spot/rest-api):
+  chronological ordering and the `startTime`/`endTime` ordering rules.
+- [Commission FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md):
+  how the received asset or BNB can be the fee asset.
 - [General endpoints](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/general-endpoints):
   `GET /api/v3/time`, weight 1.
 - [Limits](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/limits): limits are per
@@ -68,8 +123,9 @@ How they are applied (`supabase/functions/binance-spot-account/handler.ts`):
 - Each signed request is stamped with Binance's own clock (from `/api/v3/time`) plus the time elapsed
   since that answer, so local clock skew does not matter and the stamp is never ahead of Binance.
   `recvWindow` is fixed at 5000 ms and never widened. A rejected timestamp is reported, not retried.
-- One refresh costs weight 22 against a per-IP limit in the thousands per minute. Nothing retries
-  automatically. After a 429 or 418 the view disables refresh for the time Binance names (60 s if
+- One balance refresh costs weight 22. One execution page costs 22 plus 20 per selected pair. The
+  UI selects one pair, so it costs 42. Nothing retries automatically. After a 429 or 418 the view
+  reports the rate limit and the balance view disables refresh for the time Binance names (60 s if
   it names none).
 - Each request has a 4 s timeout; redirects are refused.
 
@@ -113,9 +169,14 @@ To turn it off, unset `BINANCE_SPOT_READONLY_ENABLED` (the owner sees **Not conf
 Three levels, kept apart. Only the first two have been run.
 
 **Unit and fixture.** Synthetic responses and fake credentials in
-`src/test/binanceSpotAccountHandler.test.ts` and `src/test/binanceSpotBalances.test.tsx`. This
-includes one initial read under React StrictMode, and an answer that arrives after the account
-changed being ignored.
+`src/test/binanceSpotAccountHandler.test.ts`, `src/test/binanceSpotBalances.test.tsx` and
+`src/test/binanceSpotExecutions.test.tsx`. Balance coverage includes one initial read under React
+StrictMode and an answer that arrives after the account changed being ignored. Execution coverage
+includes multiple fills with one order ID, duplicate and overlapping pages, the same trade ID on
+different symbols, decimal precision and commission assets, pagination boundaries and signed
+continuations, partial failure, invalid symbol/range/continuation, refusal before Binance, rate
+limits, timeouts, malformed records, account switching/late responses, keyboard controls, no
+storage/ledger imports and the fixed four-GET allowlist.
 
 **Local runtime integration (2026-11-10).** Browser → edge function → Supabase Auth → account
 reader → card, on an isolated local Supabase stack (CLI 2.118, edge runtime 1.76.2) with two
@@ -147,8 +208,27 @@ throwaway users: the configured owner and another user. Nothing was simulated in
 
 What this does not show: the hosted runtime's version and region, or anything about Binance itself.
 
+**Execution-history local runtime integration (2026-11-10).** A second isolated local Supabase
+stack (CLI 2.118, edge runtime 1.76.2) used two new throwaway users. A disposable entry file outside
+the repository routed only `api.binance.com` calls to a synthetic provider and imported a copied
+`handler.ts`; SHA-256 confirmed the copy was byte-identical to the committed file. There is no
+production test switch, provider URL or authentication bypass.
+
+- Anonymous execution request: 401. Other signed-in user: 403. Both stopped before the synthetic
+  provider. Owner: 200.
+- The first owner request selected BTCUSDT and ETHUSDT over one finite range. It returned 100
+  distinct BTC fills, kept two fills sharing order 700, preserved BNB and USDT commission assets,
+  reported the synthetic ETH timeout as partial, and returned a continuation.
+- The continuation was accepted through the same Auth/function path and requested the next IDs;
+  it returned trade IDs 101 and 102 with no further page.
+- Function logs contained only outcome, status, duration, record count, selected-symbol count,
+  partial and `hasMore`: no identity, symbol, trade, amount, credential, token or signature.
+- The disposable database contained the two Auth users and zero public tables, so no Popup ledger
+  or other application row could be written. The stack was stopped without a backup.
+
 **Real Binance: NOT RUN.** No Binance credential is configured for this project, none was
-requested, and whether the function is deployed was not checked. Two things only a live read can
-show: that the deployed function's region is allowed to reach `api.binance.com` for signed requests
-(a blocked region shows as "Binance reported an error"), and that Binance still returns key
-permissions in the documented shape.
+requested, and whether the function is deployed was not checked. A later authorized owner check
+must confirm that the deployed function's region can reach Binance signed endpoints, Binance still
+returns key permissions in the documented shape, and one known pair/range plus one continuation
+(if available) matches the owner's Binance execution UI character for character. It must not widen
+the pair set or claim lifetime completeness.
