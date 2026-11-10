@@ -8,7 +8,6 @@ import type {
   SpotBalance,
   SpotExecution,
   SpotExecutionCoverage,
-  SpotExecutionFailure,
 } from '../../supabase/functions/binance-spot-account/handler';
 
 export type {
