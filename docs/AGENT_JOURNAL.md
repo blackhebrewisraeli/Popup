@@ -88,6 +88,16 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
+- **2026-11-10 · Recover the Sonar fixes pushed after #144 merged · Open PR
+  [#147](https://github.com/blackhebrewisraeli/Popup/pull/147).** Decision: commit `d656ad3` reached
+  the #144 branch after the merge, so `main` never received it. It is cherry-picked unchanged onto
+  current `main`: the scan summary's dev-import badges and Retrieved fact become two small
+  components, and the **Scan shown** label text sits in a `span`. Same rendered output; no scanner,
+  model, provider or account behavior changes. Evidence: fixtures only. The scan-summary,
+  saved-scan and source-selector tests pass unchanged, with typecheck, lint, the full suite and
+  build. No browser run. Next: after merge, delete `feat/saved-tradingview-scan-selector`, which
+  then holds nothing `main` lacks.
+
 - **2026-11-10 · Binance Spot balances through the local runtime; one initial read · Draft PR
   [#146](https://github.com/blackhebrewisraeli/Popup/pull/146).**
   Decision: the card sent its first read twice in development, because React StrictMode re-runs the

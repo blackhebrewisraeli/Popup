@@ -199,7 +199,7 @@ function ScanShown({
   const gone = scans.some((entry) => entry.scanId === selected) ? null : selected;
   return (
     <label className="devscan-shown">
-      Scan shown
+      <span>Scan shown</span>
       <select
         className="portfolio-cash-input"
         name="scan-shown"
