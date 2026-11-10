@@ -48,6 +48,7 @@ export function BinanceSpotBalances({
   const [now, setNow] = useState(() => Date.now());
   const seqRef = useRef(0);
   const mountedRef = useRef(true);
+  const initialReadRef = useRef(false);
 
   const refresh = useCallback(() => {
     const seq = ++seqRef.current;
@@ -68,7 +69,13 @@ export function BinanceSpotBalances({
 
   useEffect(() => {
     mountedRef.current = true;
-    refresh();
+    // React StrictMode runs this effect, its cleanup and the effect again on
+    // one instance. The first run's read is still in flight and its answer is
+    // still wanted, so the second run must not send another.
+    if (!initialReadRef.current) {
+      initialReadRef.current = true;
+      refresh();
+    }
     // Re-evaluates "stale" and the rate-limit pause as time passes.
     const tick = setInterval(() => setNow(Date.now()), 5000);
     return () => {
