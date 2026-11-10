@@ -75,9 +75,10 @@ How they are applied (`supabase/functions/binance-spot-account/handler.ts`):
 
 ## Owner setup
 
-Not done yet: no credential is configured anywhere and the function is not deployed. Until then the
-Account zone shows nothing new. Do these yourself; never paste a key or secret into a chat, issue,
-commit or screenshot.
+Not done yet. The code is merged ([#145](https://github.com/blackhebrewisraeli/Popup/pull/145)), but
+no credential has been configured and the function has not been deployed by any agent. Until then
+the Account zone shows nothing new. Do these yourself; never paste a key or secret into a chat,
+issue, commit or screenshot.
 
 1. In Binance, create an API key with **Enable Reading** only. Leave trading, margin, futures,
    withdrawals, internal transfer and universal transfer off. Supabase edge functions have no fixed
@@ -98,17 +99,56 @@ commit or screenshot.
    | `BINANCE_SPOT_READONLY_ENABLED` | `true` (anything else disables the view) |
 
 4. Deploy the function: `supabase functions deploy binance-spot-account --project-ref <project-ref>`.
-5. Sign in to Popup as that user and open **Account**.
+5. Sign in to Popup as that user and open **Account**. Expect **Connected. Key verified
+   read-only** and your balances. **Not configured** means a secret from step 3 is missing or the
+   flag is not exactly `true`. No card at all means the owner ID does not match your user, or the
+   function is not deployed. "Binance reported an error" on a correct key points at the function's
+   region. This first live read is the check that has not been run.
 
 To turn it off, unset `BINANCE_SPOT_READONLY_ENABLED` (the owner sees **Not configured**) or
 `BINANCE_SPOT_OWNER_USER_ID` (nobody sees anything), and delete the key in Binance.
 
 ## Verification
 
-Covered with synthetic responses and fake credentials in
-`src/test/binanceSpotAccountHandler.test.ts` and `src/test/binanceSpotBalances.test.tsx`.
+Three levels, kept apart. Only the first two have been run.
 
-**Not run:** a read against the real Binance API. No Binance credential is configured for this
-project. Two things only a live read can show: that the deployed function's region is allowed to
-reach `api.binance.com` for signed requests (a blocked region shows as "Binance reported an
-error"), and that Binance still returns key permissions in the documented shape.
+**Unit and fixture.** Synthetic responses and fake credentials in
+`src/test/binanceSpotAccountHandler.test.ts` and `src/test/binanceSpotBalances.test.tsx`. This
+includes one initial read under React StrictMode, and an answer that arrives after the account
+changed being ignored.
+
+**Local runtime integration (2026-11-10).** Browser → edge function → Supabase Auth → account
+reader → card, on an isolated local Supabase stack (CLI 2.118, edge runtime 1.76.2) with two
+throwaway users: the configured owner and another user. Nothing was simulated in the browser.
+
+- The committed function tree, unmodified, loads and serves in the local edge runtime. No
+  `Authorization` header or the anon key: 401. The other user: 403. The owner with no enabled
+  connection: **Not configured**, in the card. `GET`: 405.
+- Reads that reach the provider used a local entry file, kept outside the repository, that sends
+  the three `api.binance.com` requests to a synthetic server and then imports the committed
+  `index.ts` and `handler.ts` byte for byte. The function has no test mode, provider URL setting or
+  bypass. The synthetic server checked every signed request: `GET`, the key in the header, a
+  valid HMAC signature, `recvWindow` 5000.
+- Owner: three provider requests per read, and the card shows the synthetic quantities character
+  for character, including a 36-digit one. Anonymous, other user and no owner configured: refused
+  with zero provider requests.
+- In the card: connected, empty, key refused (on first load and on refresh; balances are never
+  requested), failed refresh with the earlier balances kept, rate-limit pause (a click during the
+  pause sends nothing), and **Stale** after five minutes with no further request.
+- Logging out, or switching to the other user, while a 3.5 s read was in flight: the card was gone
+  at once and the late answer changed nothing. The other user saw no card and caused no provider
+  request. No session or balance key was left in browser storage.
+- Refresh from the keyboard (Enter and Space) keeps focus on the button. At 375 px there is no
+  horizontal scroll; a very long quantity wraps inside its cell.
+- Each page load sends one read. Before the fix in this change, the development build sent two.
+- Function logs held outcome, status, duration, provider error code and asset count only: no key,
+  secret, token, signature, user ID, email, asset name or quantity. Every table in the local
+  `public` schema stayed empty.
+
+What this does not show: the hosted runtime's version and region, or anything about Binance itself.
+
+**Real Binance: NOT RUN.** No Binance credential is configured for this project, none was
+requested, and whether the function is deployed was not checked. Two things only a live read can
+show: that the deployed function's region is allowed to reach `api.binance.com` for signed requests
+(a blocked region shows as "Binance reported an error"), and that Binance still returns key
+permissions in the documented shape.

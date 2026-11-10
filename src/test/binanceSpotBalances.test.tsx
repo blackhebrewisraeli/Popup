@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -195,6 +196,43 @@ describe('Binance Spot balance view', () => {
     // One read at a time: a second activation while reading does nothing.
     fireEvent.click(button);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads once on mount under React StrictMode, and still refreshes on request', async () => {
+    const { read, answer } = deferredReads();
+    render(
+      <StrictMode>
+        <BinanceSpotBalances read={read} />
+      </StrictMode>,
+    );
+    // StrictMode runs the mount effect, its cleanup, and the effect again.
+    expect(read).toHaveBeenCalledTimes(1);
+    await answer(0, connected(new Date().toISOString()));
+    expect(within(screen.getByRole('table')).getByText('0.50000000')).toBeVisible();
+    expect(refreshButton()).toHaveAttribute('aria-disabled', 'false');
+    fireEvent.click(refreshButton());
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an answer that arrives after the account changed', async () => {
+    const first = deferredReads();
+    const second = deferredReads();
+    const { container, rerender } = render(
+      <StrictMode>
+        <BinanceSpotBalances key="user-a" read={first.read} />
+      </StrictMode>,
+    );
+    rerender(
+      <StrictMode>
+        <BinanceSpotBalances key="user-b" read={second.read} />
+      </StrictMode>,
+    );
+    await first.answer(0, connected(new Date().toISOString()));
+    expect(container).toBeEmptyDOMElement();
+    expect(second.read).toHaveBeenCalledTimes(1);
+    await second.answer(0, { state: 'not_configured' });
+    expect(screen.getByRole('status')).toHaveTextContent(/^Not configured\./);
+    expect(screen.queryByRole('table')).toBeNull();
   });
 
   it('survives a read that throws', async () => {

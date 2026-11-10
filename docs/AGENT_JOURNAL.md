@@ -53,10 +53,12 @@ changed, and understand the evidence behind each result. The user decides whethe
   TradingView snapshot, reproduced offline before it is shown, with only what was recorded for it.
   Nothing is copied or published, so the 50-member scan can be viewed beside the published 90
   ([Saved scans](MARKET_SCANNER.md#saved-scans)).
-- **Binance Spot balances:** a draft PR adds an owner-only, read-only balance card to Account,
-  served by a new `binance-spot-account` edge function. Verified with synthetic responses only. No
-  credential is configured, the function is not deployed and no live read has run
-  ([setup and boundaries](BINANCE_SPOT_ACCOUNT.md)).
+- **Binance Spot balances:** [#145](https://github.com/blackhebrewisraeli/Popup/pull/145) (merged
+  `c054ffd`) adds an owner-only, read-only balance card to Account, served by a new
+  `binance-spot-account` edge function. Draft [#146](https://github.com/blackhebrewisraeli/Popup/pull/146) fixes the duplicate first read and
+  records a local runtime check with throwaway users and a synthetic provider. No credential is
+  configured and no read against Binance has run
+  ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
@@ -86,7 +88,27 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-10 · Owner-only read-only Binance Spot balances · Draft PR.** Decision: the smallest
+- **2026-11-10 · Binance Spot balances through the local runtime; one initial read · Draft PR
+  [#146](https://github.com/blackhebrewisraeli/Popup/pull/146).**
+  Decision: the card sent its first read twice in development, because React StrictMode re-runs the
+  mount effect on one instance. The effect now starts the first read once per instance and keeps
+  listening for its answer. Manual refresh, the rate-limit pause, request ordering and the
+  per-user remount are unchanged, and nothing is cached. Evidence, three levels. Unit and fixture:
+  a StrictMode test that failed before the fix, and an answer arriving after the account changed.
+  Local runtime integration: on an isolated local Supabase stack with two throwaway users, the
+  unmodified function loaded and refused anonymous (401) and wrong-user (403) callers and told the
+  owner **Not configured**. With a local entry file outside the repository routing the three
+  Binance requests to a synthetic server, the owner saw the synthetic balances character for
+  character, refused callers caused zero provider requests, and connected, empty, key-refused,
+  failed-refresh, rate-limited and stale states, logout and account switching with a late answer,
+  keyboard refresh and phone width were checked in the browser. Logs held no credential, identity
+  or balance, and no table was written
+  ([details](BINANCE_SPOT_ACCOUNT.md#verification)). Real Binance: NOT RUN. No credential is
+  configured, and the hosted function's deployment was not checked. Next: the owner follows
+  [the setup steps](BINANCE_SPOT_ACCOUNT.md#owner-setup), then one live read-only check.
+
+- **2026-11-10 · Owner-only read-only Binance Spot balances · Merged in
+  [#145](https://github.com/blackhebrewisraeli/Popup/pull/145) (`c054ffd`).** Decision: the smallest
   account connection is one Supabase edge function that asks Supabase Auth who the caller is,
   serves only the configured owner ID, and can send three GETs to Binance: server time, key
   permissions, account balances. Credentials are function secrets; a missing owner, flag, key or
