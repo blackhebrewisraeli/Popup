@@ -55,7 +55,7 @@ changed, and understand the evidence behind each result. The user decides whethe
   ([Saved scans](MARKET_SCANNER.md#saved-scans)).
 - **Binance Spot balances:** [#145](https://github.com/blackhebrewisraeli/Popup/pull/145) (merged
   `c054ffd`) adds an owner-only, read-only balance card to Account, served by a new
-  `binance-spot-account` edge function. A follow-up draft PR fixes the duplicate first read and
+  `binance-spot-account` edge function. Draft [#146](https://github.com/blackhebrewisraeli/Popup/pull/146) fixes the duplicate first read and
   records a local runtime check with throwaway users and a synthetic provider. No credential is
   configured and no read against Binance has run
   ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
@@ -88,7 +88,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-10 · Binance Spot balances through the local runtime; one initial read · Draft PR.**
+- **2026-11-10 · Binance Spot balances through the local runtime; one initial read · Draft PR
+  [#146](https://github.com/blackhebrewisraeli/Popup/pull/146).**
   Decision: the card sent its first read twice in development, because React StrictMode re-runs the
   mount effect on one instance. The effect now starts the first read once per instance and keeps
   listening for its answer. Manual refresh, the rate-limit pause, request ordering and the
