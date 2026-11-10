@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { BinanceSpotExecutions } from '@/components/BinanceSpotExecutions';
 import {
   applySpotRead,
   INITIAL_SPOT_VIEW,
@@ -165,6 +166,8 @@ export function BinanceSpotBalances({
             </tbody>
           </table>
         ))}
+
+      <BinanceSpotExecutions />
     </section>
   );
 }

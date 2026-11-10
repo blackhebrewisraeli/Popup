@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   checkKeyPermissions,
   ENDPOINTS,
+  EXECUTION_PAGE_LIMIT,
   handleSpotAccount,
   hmacSha256Hex,
   parseBalances,
+  parseExecutions,
   RECV_WINDOW_MS,
+  SUPPORTED_EXECUTION_SYMBOLS,
 } from '../../supabase/functions/binance-spot-account/handler';
 
 // Everything below is synthetic: fake users, fake credentials, invented balances.
@@ -55,6 +58,23 @@ const ACCOUNT = {
   ],
 };
 
+const execution = (id: number, symbol = 'BTCUSDT', overrides: Record<string, unknown> = {}) => ({
+  symbol,
+  id,
+  orderId: 9000,
+  orderListId: -1,
+  price: '64000.12345678',
+  qty: '0.00000001',
+  quoteQty: '0.0006400012345678',
+  commission: '0.000000000123456789',
+  commissionAsset: 'BNB',
+  time: 1_800_000_000_000 + id,
+  isBuyer: true,
+  isMaker: false,
+  isBestMatch: true,
+  ...overrides,
+});
+
 type Reply = Response | Error | (() => Response);
 interface Scenario {
   env?: Record<string, string | undefined>;
@@ -64,9 +84,11 @@ interface Scenario {
   time?: Reply;
   permissions?: Reply;
   account?: Reply;
+  trades?: Reply | Reply[];
   /** Successive values of the function's clock. */
   clock?: number[];
   method?: string;
+  body?: unknown;
 }
 
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -81,11 +103,18 @@ async function call(scenario: Scenario = {}) {
     [ENDPOINTS.time]: scenario.time ?? ok({ serverTime: SERVER_TIME }),
     [ENDPOINTS.keyPermissions]: scenario.permissions ?? ok(READ_ONLY_KEY),
     [ENDPOINTS.account]: scenario.account ?? ok(ACCOUNT),
+    [ENDPOINTS.trades]: Array.isArray(scenario.trades)
+      ? (scenario.trades[0] ?? ok([]))
+      : (scenario.trades ?? ok([])),
   };
+  const tradeReplies = Array.isArray(scenario.trades) ? [...scenario.trades] : null;
   const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     calls.push({ url, method: init?.method ?? 'GET', headers: new Headers(init?.headers) });
-    const reply = replies[url.pathname];
+    const reply =
+      url.pathname === ENDPOINTS.trades && tradeReplies
+        ? tradeReplies.shift()
+        : replies[url.pathname];
     if (reply === undefined) throw new Error(`unexpected request to ${url.pathname}`);
     if (reply instanceof Error) throw reply;
     return typeof reply === 'function' ? reply() : reply;
@@ -96,7 +125,11 @@ async function call(scenario: Scenario = {}) {
     scenario.authorization === undefined ? `Bearer ${OWNER_TOKEN}` : scenario.authorization;
   const req = new Request('https://project.supabase.test/functions/v1/binance-spot-account', {
     method: scenario.method ?? 'POST',
-    headers: authorization === null ? {} : { Authorization: authorization },
+    headers: {
+      ...(authorization === null ? {} : { Authorization: authorization }),
+      ...(scenario.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(scenario.body === undefined ? {} : { body: JSON.stringify(scenario.body) }),
   });
   const res = await handleSpotAccount(req, {
     env: (name) => env[name],
@@ -318,11 +351,12 @@ describe('binance-spot-account: read-only key boundary', () => {
     expect(body).toEqual({ state: 'error', error: 'binance_auth' });
   });
 
-  it('can only send GET requests to three fixed Binance paths', async () => {
+  it('can only send GET requests to four fixed Binance paths', async () => {
     expect(Object.values(ENDPOINTS)).toEqual([
       '/api/v3/time',
       '/sapi/v1/account/apiRestrictions',
       '/api/v3/account',
+      '/api/v3/myTrades',
     ]);
     const { calls, binance } = await call();
     for (const c of binance) {
@@ -395,6 +429,191 @@ describe('binance-spot-account: balances', () => {
   it('refuses a 200 that is not JSON', async () => {
     const { body } = await call({ account: new Response('not json', { status: 200 }) });
     expect(body).toEqual({ state: 'error', error: 'malformed_response' });
+  });
+});
+
+describe('binance-spot-account: execution history', () => {
+  const range = {
+    startTime: 1_800_000_000_000,
+    endTime: 1_800_000_010_000,
+  };
+
+  it('preserves individual fills, exact decimals and commission assets', async () => {
+    const btc = [
+      execution(1, 'BTCUSDT', { orderId: 42, commissionAsset: 'BNB' }),
+      execution(2, 'BTCUSDT', {
+        orderId: 42,
+        isBuyer: false,
+        qty: '123456789012345678.123456789012345678',
+        price: '0.000000000000000001',
+        quoteQty: '123456789012345678.123456789012345678',
+        commission: '0.000000000000000001',
+        commissionAsset: 'USDT',
+      }),
+      execution(2, 'BTCUSDT', { orderId: 42 }), // duplicate in one provider page
+    ];
+    const eth = [execution(1, 'ETHUSDT', { orderId: 42, commissionAsset: 'ETH' })];
+    const { res, body, binance } = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT', 'ETHUSDT'], ...range },
+      trades: [ok(btc), ok(eth)],
+    });
+    expect(res.status).toBe(200);
+    expect(body?.['state']).toBe('executions');
+    expect(body?.['executions']).toEqual([
+      expect.objectContaining({
+        symbol: 'BTCUSDT',
+        tradeId: '1',
+        orderId: '42',
+        side: 'buy',
+        commissionAsset: 'BNB',
+      }),
+      expect.objectContaining({
+        symbol: 'ETHUSDT',
+        tradeId: '1',
+        orderId: '42',
+        commissionAsset: 'ETH',
+      }),
+      expect.objectContaining({
+        symbol: 'BTCUSDT',
+        tradeId: '2',
+        orderId: '42',
+        side: 'sell',
+        quantity: '123456789012345678.123456789012345678',
+        price: '0.000000000000000001',
+        quoteQuantity: '123456789012345678.123456789012345678',
+        commission: '0.000000000000000001',
+        commissionAsset: 'USDT',
+      }),
+    ]);
+    expect(body?.['coverage']).toMatchObject({
+      symbols: ['BTCUSDT', 'ETHUSDT'],
+      ...range,
+      returned: 3,
+      hasMore: false,
+      partial: false,
+      limitation: 'selected_pairs_and_24h_window',
+    });
+    const tradeCalls = binance.filter((request) => request.url.pathname === ENDPOINTS.trades);
+    expect(tradeCalls).toHaveLength(2);
+    for (const request of tradeCalls) {
+      expect(request.url.searchParams.get('startTime')).toBe(String(range.startTime));
+      expect(request.url.searchParams.get('endTime')).toBe(String(range.endTime));
+      expect(request.url.searchParams.get('limit')).toBe(String(EXECUTION_PAGE_LIMIT));
+    }
+  });
+
+  it('issues a validated continuation at the page boundary and advances fromId', async () => {
+    const fullPage = Array.from({ length: EXECUTION_PAGE_LIMIT }, (_, index) =>
+      execution(index + 1),
+    );
+    const first = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT'], ...range },
+      trades: ok(fullPage),
+    });
+    expect(first.body?.['coverage']).toMatchObject({
+      returned: EXECUTION_PAGE_LIMIT,
+      hasMore: true,
+    });
+    const continuation = first.body?.['continuation'];
+    expect(typeof continuation).toBe('string');
+    expect(String(continuation)).not.toContain(API_SECRET);
+
+    const second = await call({
+      body: { action: 'executions', continuation },
+      trades: ok([execution(101)]),
+    });
+    expect(second.body?.['coverage']).toMatchObject({ returned: 1, hasMore: false });
+    const tradeCall = second.binance.find((request) => request.url.pathname === ENDPOINTS.trades);
+    expect(tradeCall?.url.searchParams.get('fromId')).toBe('101');
+    expect(tradeCall?.url.searchParams.has('startTime')).toBe(false);
+    expect(tradeCall?.url.searchParams.has('endTime')).toBe(false);
+  });
+
+  it('reports a failed symbol as partial while retaining successful records', async () => {
+    const { res, body } = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT', 'ETHUSDT'], ...range },
+      trades: [ok([execution(1)]), timeoutError()],
+    });
+    expect(res.status).toBe(200);
+    expect(body?.['executions']).toEqual([expect.objectContaining({ symbol: 'BTCUSDT' })]);
+    expect(body?.['coverage']).toMatchObject({
+      returned: 1,
+      partial: true,
+      failures: [{ symbol: 'ETHUSDT', error: 'timeout' }],
+    });
+  });
+
+  it.each([
+    ['an unsupported symbol', { symbols: ['FAKEUSDT'], ...range }],
+    ['a duplicate symbol', { symbols: ['BTCUSDT', 'BTCUSDT'], ...range }],
+    ['an empty symbol list', { symbols: [], ...range }],
+    [
+      'a range over 24 hours',
+      { symbols: ['BTCUSDT'], startTime: range.startTime, endTime: range.startTime + 86_400_001 },
+    ],
+    [
+      'a backwards range',
+      { symbols: ['BTCUSDT'], startTime: range.endTime, endTime: range.startTime },
+    ],
+    ['a forged continuation', { continuation: 'forged.not-a-signature' }],
+    ['a continuation mixed with a symbol', { continuation: 'x.y', symbols: ['BTCUSDT'] }],
+  ])('refuses %s before contacting Binance', async (_, request) => {
+    const { res, body, binance } = await call({ body: { action: 'executions', ...request } });
+    expect(res.status).toBe(400);
+    expect(body).toEqual({ state: 'error', error: 'invalid_request' });
+    expect(binance).toEqual([]);
+  });
+
+  it('refuses anonymous and wrong-user execution reads before provider requests', async () => {
+    for (const scenario of [{ authorization: null }, { user: ok({ id: STRANGER }) }]) {
+      const result = await call({
+        ...scenario,
+        body: { action: 'executions', symbols: ['BTCUSDT'], ...range },
+      });
+      expect(result.binance).toEqual([]);
+      expect(result.res.status).toBe(scenario.authorization === null ? 401 : 403);
+    }
+  });
+
+  it('rejects malformed identifiers and records outside the requested window safely', async () => {
+    expect(
+      parseExecutions([execution(Number.MAX_SAFE_INTEGER + 1)], 'BTCUSDT', 1, 2_000_000_000_000),
+    ).toBeNull();
+    const parsed = parseExecutions(
+      [
+        execution(1, 'BTCUSDT', { time: range.startTime - 1 }),
+        execution(2, 'BTCUSDT', { time: range.startTime }),
+        execution(3, 'BTCUSDT', { time: range.endTime + 1 }),
+      ],
+      'BTCUSDT',
+      range.startTime,
+      range.endTime,
+    );
+    expect(parsed?.executions.map((item) => item.tradeId)).toEqual(['2']);
+    expect(parsed?.crossedEnd).toBe(true);
+  });
+
+  it('uses exactly the documented fixed GET allowlist and bounded symbol set', () => {
+    expect(Object.values(ENDPOINTS)).toEqual([
+      '/api/v3/time',
+      '/sapi/v1/account/apiRestrictions',
+      '/api/v3/account',
+      '/api/v3/myTrades',
+    ]);
+    expect(SUPPORTED_EXECUTION_SYMBOLS).toEqual([
+      'BTCUSDT',
+      'ETHUSDT',
+      'SOLUSDT',
+      'AVAXUSDT',
+      'LINKUSDT',
+      'BNBUSDT',
+      'XRPUSDT',
+      'ADAUSDT',
+      'DOGEUSDT',
+      'DOTUSDT',
+      'MATICUSDT',
+      'LTCUSDT',
+    ]);
   });
 });
 
@@ -483,6 +702,15 @@ describe('binance-spot-account: nothing secret leaves the function', () => {
       },
       { account: new Response(`{"code":-1000,"msg":"${API_SECRET}"}`, { status: 500 }) },
       { account: new TypeError(`fetch failed for key ${API_KEY}`) },
+      {
+        body: {
+          action: 'executions',
+          symbols: ['BTCUSDT'],
+          startTime: 1_800_000_000_000,
+          endTime: 1_800_000_001_000,
+        },
+        trades: new Response(`{"code":-1000,"msg":"${API_SECRET}"}`, { status: 500 }),
+      },
     ];
     for (const scenario of scenarios) {
       const { text, res, lines, binance } = await call(scenario);

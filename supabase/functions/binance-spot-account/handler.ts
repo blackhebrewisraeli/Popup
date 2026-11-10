@@ -1,7 +1,7 @@
-// Owner-only, read-only Binance Spot balances (docs/BINANCE_SPOT_ACCOUNT.md).
+// Owner-only, read-only Binance Spot account records (docs/BINANCE_SPOT_ACCOUNT.md).
 // Free of Deno globals so vitest covers it from src/test; index.ts wires the env.
 //
-// The whole Binance surface of this integration is the three GET requests in
+// The whole Binance surface of this integration is the four GET requests in
 // ENDPOINTS. There is no order, cancel, withdrawal or transfer call, and
 // `binanceGet` cannot send another method or reach another host or path.
 //
@@ -16,6 +16,8 @@
 //     https://developers.binance.com/docs/binance-spot-api-docs/rest-api/limits
 //   GET /sapi/v1/account/apiRestrictions:
 //     https://developers.binance.com/docs/wallet/account/api-key-permission
+//   GET /api/v3/myTrades:
+//     https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints
 
 const BINANCE_ORIGIN = 'https://api.binance.com';
 
@@ -24,11 +26,38 @@ export const ENDPOINTS = {
   time: '/api/v3/time',
   keyPermissions: '/sapi/v1/account/apiRestrictions',
   account: '/api/v3/account',
+  trades: '/api/v3/myTrades',
 } as const;
 
 /** Binance's default, and the value it recommends not exceeding. Never widened. */
 export const RECV_WINDOW_MS = 5000;
 const REQUEST_TIMEOUT_MS = 4000;
+
+/**
+ * The account-history surface is deliberately smaller than Binance's symbol
+ * catalogue. This is the app's existing explicitly-known crypto set, mapped
+ * through src/lib/ticker.ts to Spot USDT pairs. It is not complete account
+ * coverage and must never be described that way.
+ */
+export const SUPPORTED_EXECUTION_SYMBOLS = [
+  'BTCUSDT',
+  'ETHUSDT',
+  'SOLUSDT',
+  'AVAXUSDT',
+  'LINKUSDT',
+  'BNBUSDT',
+  'XRPUSDT',
+  'ADAUSDT',
+  'DOGEUSDT',
+  'DOTUSDT',
+  'MATICUSDT',
+  'LTCUSDT',
+] as const;
+const SUPPORTED_EXECUTION_SYMBOL_SET = new Set<string>(SUPPORTED_EXECUTION_SYMBOLS);
+export const EXECUTION_PAGE_LIMIT = 100;
+export const MAX_EXECUTION_RANGE_MS = 24 * 60 * 60 * 1000;
+const MAX_SELECTED_EXECUTION_SYMBOLS = 4;
+const CONTINUATION_VERSION = 1;
 
 /** Documented key capabilities that must all be reported, and reported off. */
 const MUST_BE_OFF = [
@@ -52,9 +81,44 @@ export interface SpotBalance {
   locked: string;
 }
 
+export interface SpotExecution {
+  symbol: string;
+  /** Decimal integer strings avoid losing 64-bit Binance identifiers in JSON clients. */
+  tradeId: string;
+  orderId: string;
+  time: number;
+  side: 'buy' | 'sell';
+  /** Decimal strings exactly as Binance sent them; never parsed to a float. */
+  quantity: string;
+  price: string;
+  quoteQuantity: string;
+  commission: string;
+  commissionAsset: string;
+}
+
+export interface SpotExecutionFailure {
+  symbol: string;
+  error: Exclude<SpotErrorCode, 'unauthenticated' | 'forbidden'>;
+  retryAfterSeconds?: number;
+}
+
+export interface SpotExecutionCoverage {
+  symbols: string[];
+  startTime: number;
+  endTime: number;
+  returned: number;
+  retrievedAt: string;
+  hasMore: boolean;
+  partial: boolean;
+  failures: SpotExecutionFailure[];
+  /** Binance documents symbol-scoped, finite requests, not lifetime completeness. */
+  limitation: 'selected_pairs_and_24h_window';
+}
+
 export type SpotErrorCode =
   | 'unauthenticated'
   | 'forbidden'
+  | 'invalid_request'
   | 'binance_auth'
   | 'permissions_refused'
   | 'permissions_unverified'
@@ -66,6 +130,12 @@ export type SpotErrorCode =
 
 export type SpotAccountResponse =
   | { state: 'connected'; readAt: string; balances: SpotBalance[] }
+  | {
+      state: 'executions';
+      executions: SpotExecution[];
+      coverage: SpotExecutionCoverage;
+      continuation?: string;
+    }
   | { state: 'not_configured' }
   | {
       state: 'error';
@@ -81,6 +151,22 @@ export interface AccountDeps {
   /** One JSON line per request. Never given a key, secret, token, signature or balance. */
   log: (line: string) => void;
   now?: () => number;
+}
+
+interface ExecutionRequest {
+  action: 'executions';
+  symbols?: unknown;
+  startTime?: unknown;
+  endTime?: unknown;
+  continuation?: unknown;
+}
+
+interface ContinuationState {
+  v: number;
+  symbols: string[];
+  startTime: number;
+  endTime: number;
+  nextBySymbol: Record<string, string>;
 }
 
 class Failure extends Error {
@@ -101,6 +187,7 @@ const CORS = {
 const STATUS: Record<SpotErrorCode, number> = {
   unauthenticated: 401,
   forbidden: 403,
+  invalid_request: 400,
   rate_limited: 429,
   timeout: 504,
   binance_auth: 502,
@@ -151,6 +238,178 @@ export function checkKeyPermissions(
 
 const DECIMAL = /^\d+(\.\d+)?$/;
 const ZERO = /^0+(\.0+)?$/;
+const DECIMAL_INTEGER = /^\d+$/;
+
+function isSafeId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Parse one documented myTrades page without rounding or merging fills. */
+export function parseExecutions(
+  body: unknown,
+  expectedSymbol: string,
+  startTime: number,
+  endTime: number,
+): { executions: SpotExecution[]; lastTradeId: string | null; crossedEnd: boolean } | null {
+  if (!Array.isArray(body)) return null;
+  const executions: SpotExecution[] = [];
+  const seen = new Set<string>();
+  let lastTradeId: string | null = null;
+  let crossedEnd = false;
+  for (const row of body) {
+    if (!isRecord(row)) return null;
+    const {
+      symbol,
+      id,
+      orderId,
+      time,
+      isBuyer,
+      qty,
+      price,
+      quoteQty,
+      commission,
+      commissionAsset,
+    } = row;
+    if (symbol !== expectedSymbol || !SUPPORTED_EXECUTION_SYMBOL_SET.has(symbol)) return null;
+    if (!isSafeId(id) || !isSafeId(orderId)) return null;
+    if (typeof time !== 'number' || !Number.isSafeInteger(time) || time <= 0) return null;
+    if (typeof isBuyer !== 'boolean') return null;
+    for (const decimal of [qty, price, quoteQty, commission]) {
+      if (typeof decimal !== 'string' || !DECIMAL.test(decimal)) return null;
+    }
+    if (
+      typeof commissionAsset !== 'string' ||
+      commissionAsset.length === 0 ||
+      commissionAsset.length > 32
+    ) {
+      return null;
+    }
+    const tradeId = String(id);
+    if (lastTradeId !== null && BigInt(tradeId) < BigInt(lastTradeId)) return null;
+    lastTradeId = tradeId;
+    if (time > endTime) {
+      crossedEnd = true;
+      continue;
+    }
+    if (time < startTime) continue;
+    const identity = `${symbol}:${tradeId}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    executions.push({
+      symbol,
+      tradeId,
+      orderId: String(orderId),
+      time,
+      side: isBuyer ? 'buy' : 'sell',
+      quantity: qty as string,
+      price: price as string,
+      quoteQuantity: quoteQty as string,
+      commission: commission as string,
+      commissionAsset,
+    });
+  }
+  return { executions, lastTradeId, crossedEnd };
+}
+
+function base64UrlEncode(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(value: string): string | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(value) || value.length > 4096) return null;
+  try {
+    const padded = value
+      .replaceAll('-', '+')
+      .replaceAll('_', '/')
+      .padEnd(Math.ceil(value.length / 4) * 4, '=');
+    const binary = atob(padded);
+    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index++) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+async function encodeContinuation(state: ContinuationState, secret: string): Promise<string> {
+  const payload = base64UrlEncode(JSON.stringify(state));
+  return `${payload}.${await hmacSha256Hex(secret, payload)}`;
+}
+
+async function decodeContinuation(
+  token: unknown,
+  secret: string,
+): Promise<ContinuationState | null> {
+  if (typeof token !== 'string' || token.length > 5000) return null;
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra !== undefined || !/^[a-f0-9]{64}$/.test(signature))
+    return null;
+  const expected = await hmacSha256Hex(secret, payload);
+  if (!constantTimeEqual(signature, expected)) return null;
+  const decoded = base64UrlDecode(payload);
+  if (decoded === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || value['v'] !== CONTINUATION_VERSION) return null;
+  const symbols = value['symbols'];
+  const startTime = value['startTime'];
+  const endTime = value['endTime'];
+  const nextBySymbol = value['nextBySymbol'];
+  if (!validSymbols(symbols) || !validRange(startTime, endTime) || !isRecord(nextBySymbol))
+    return null;
+  if (Object.keys(nextBySymbol).some((symbol) => !symbols.includes(symbol))) return null;
+  const parsedNext: Record<string, string> = {};
+  for (const [symbol, id] of Object.entries(nextBySymbol)) {
+    if (typeof id !== 'string' || !DECIMAL_INTEGER.test(id)) return null;
+    parsedNext[symbol] = id;
+  }
+  if (Object.keys(parsedNext).length === 0) return null;
+  return {
+    v: CONTINUATION_VERSION,
+    symbols,
+    startTime: startTime as number,
+    endTime: endTime as number,
+    nextBySymbol: parsedNext,
+  };
+}
+
+function validSymbols(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= MAX_SELECTED_EXECUTION_SYMBOLS &&
+    value.every(
+      (symbol) => typeof symbol === 'string' && SUPPORTED_EXECUTION_SYMBOL_SET.has(symbol),
+    ) &&
+    new Set(value).size === value.length
+  );
+}
+
+function validRange(startTime: unknown, endTime: unknown): boolean {
+  return (
+    typeof startTime === 'number' &&
+    typeof endTime === 'number' &&
+    Number.isSafeInteger(startTime) &&
+    Number.isSafeInteger(endTime) &&
+    startTime > 0 &&
+    endTime > startTime &&
+    endTime - startTime <= MAX_EXECUTION_RANGE_MS
+  );
+}
 
 /** Non-zero balances sorted by asset, or null when the body is not the documented shape. */
 export function parseBalances(body: unknown): SpotBalance[] | null {
@@ -220,11 +479,11 @@ async function binanceGet(
   throw new Failure('provider_error', extra);
 }
 
-async function readBalances(
+async function verifiedSignedQuery(
   deps: AccountDeps,
   apiKey: string,
   apiSecret: string,
-): Promise<SpotBalance[]> {
+): Promise<(params: string) => Promise<string>> {
   const now = deps.now ?? Date.now;
 
   const time = await binanceGet(deps, 'time');
@@ -265,6 +524,16 @@ async function readBalances(
   }
   if (check.verdict === 'unverified') throw new Failure('permissions_unverified');
 
+  return signedQuery;
+}
+
+async function readBalances(
+  deps: AccountDeps,
+  apiKey: string,
+  apiSecret: string,
+): Promise<SpotBalance[]> {
+  const signedQuery = await verifiedSignedQuery(deps, apiKey, apiSecret);
+
   const account = await binanceGet(deps, 'account', {
     apiKey,
     query: await signedQuery('omitZeroBalances=true&'),
@@ -272,6 +541,138 @@ async function readBalances(
   const balances = parseBalances(account);
   if (balances === null) throw new Failure('malformed_response');
   return balances;
+}
+
+function failureForSymbol(symbol: string, failure: Failure): SpotExecutionFailure {
+  return {
+    symbol,
+    error:
+      failure.code === 'unauthenticated' || failure.code === 'forbidden'
+        ? 'provider_error'
+        : failure.code,
+    ...(failure.extra.retryAfterSeconds === undefined
+      ? {}
+      : { retryAfterSeconds: failure.extra.retryAfterSeconds }),
+  };
+}
+
+async function readExecutions(
+  deps: AccountDeps,
+  apiKey: string,
+  apiSecret: string,
+  request: ExecutionRequest,
+): Promise<Extract<SpotAccountResponse, { state: 'executions' }>> {
+  let symbols: string[];
+  let startTime: number;
+  let endTime: number;
+  let nextBySymbol: Record<string, string>;
+
+  if (request.continuation !== undefined) {
+    if (
+      request.symbols !== undefined ||
+      request.startTime !== undefined ||
+      request.endTime !== undefined
+    ) {
+      throw new Failure('invalid_request');
+    }
+    const continuation = await decodeContinuation(request.continuation, apiSecret);
+    if (continuation === null) throw new Failure('invalid_request');
+    ({ symbols, startTime, endTime, nextBySymbol } = continuation);
+  } else {
+    if (!validSymbols(request.symbols) || !validRange(request.startTime, request.endTime)) {
+      throw new Failure('invalid_request');
+    }
+    symbols = request.symbols;
+    startTime = request.startTime as number;
+    endTime = request.endTime as number;
+    nextBySymbol = Object.fromEntries(symbols.map((symbol) => [symbol, '']));
+  }
+
+  const signedQuery = await verifiedSignedQuery(deps, apiKey, apiSecret);
+  const executions: SpotExecution[] = [];
+  const failures: SpotExecutionFailure[] = [];
+  const next: Record<string, string> = {};
+  const seen = new Set<string>();
+
+  for (const symbol of symbols) {
+    const fromId = nextBySymbol[symbol];
+    if (fromId === undefined) continue; // This symbol completed on an earlier page.
+    try {
+      const params =
+        fromId === ''
+          ? `symbol=${symbol}&startTime=${startTime}&endTime=${endTime}&limit=${EXECUTION_PAGE_LIMIT}&`
+          : `symbol=${symbol}&fromId=${fromId}&limit=${EXECUTION_PAGE_LIMIT}&`;
+      const body = await binanceGet(deps, 'trades', {
+        apiKey,
+        query: await signedQuery(params),
+      });
+      const parsed = parseExecutions(body, symbol, startTime, endTime);
+      if (parsed === null) throw new Failure('malformed_response');
+      for (const execution of parsed.executions) {
+        const identity = `${execution.symbol}:${execution.tradeId}`;
+        if (!seen.has(identity)) {
+          seen.add(identity);
+          executions.push(execution);
+        }
+      }
+      if (
+        Array.isArray(body) &&
+        body.length === EXECUTION_PAGE_LIMIT &&
+        parsed.lastTradeId !== null &&
+        !parsed.crossedEnd
+      ) {
+        next[symbol] = (BigInt(parsed.lastTradeId) + 1n).toString();
+      }
+    } catch (error) {
+      const failure = error instanceof Failure ? error : new Failure('provider_error');
+      failures.push(failureForSymbol(symbol, failure));
+      // A rate limit is IP-wide. Stop rather than spend more provider requests;
+      // untouched symbols are explicitly reported as failed for this page.
+      if (failure.code === 'rate_limited') {
+        for (const remaining of symbols.slice(symbols.indexOf(symbol) + 1)) {
+          if (nextBySymbol[remaining] !== undefined)
+            failures.push(failureForSymbol(remaining, failure));
+        }
+        break;
+      }
+    }
+  }
+
+  executions.sort(
+    (left, right) =>
+      left.time - right.time ||
+      left.symbol.localeCompare(right.symbol) ||
+      (BigInt(left.tradeId) < BigInt(right.tradeId)
+        ? -1
+        : BigInt(left.tradeId) > BigInt(right.tradeId)
+          ? 1
+          : 0),
+  );
+  const retrievedAt = new Date((deps.now ?? Date.now)()).toISOString();
+  const hasMore = Object.keys(next).length > 0;
+  return {
+    state: 'executions',
+    executions,
+    coverage: {
+      symbols,
+      startTime,
+      endTime,
+      returned: executions.length,
+      retrievedAt,
+      hasMore,
+      partial: failures.length > 0,
+      failures,
+      limitation: 'selected_pairs_and_24h_window',
+    },
+    ...(hasMore
+      ? {
+          continuation: await encodeContinuation(
+            { v: CONTINUATION_VERSION, symbols, startTime, endTime, nextBySymbol: next },
+            apiSecret,
+          ),
+        }
+      : {}),
+  };
 }
 
 /** The signed-in user's id according to Supabase Auth, or null. */
@@ -292,6 +693,22 @@ async function authenticatedUserId(req: Request, deps: AccountDeps): Promise<str
   } catch {
     return null; // Fail closed: an unverifiable caller is not the owner.
   }
+}
+
+async function requestedOperation(req: Request): Promise<'balances' | ExecutionRequest | null> {
+  const text = await req.text().catch(() => '');
+  if (text === '') return 'balances';
+  if (text.length > 6000) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(body) || body['action'] !== 'executions') return null;
+  const allowed = new Set(['action', 'symbols', 'startTime', 'endTime', 'continuation']);
+  if (Object.keys(body).some((key) => !allowed.has(key))) return null;
+  return body as unknown as ExecutionRequest;
 }
 
 export async function handleSpotAccount(req: Request, deps: AccountDeps): Promise<Response> {
@@ -352,6 +769,17 @@ export async function handleSpotAccount(req: Request, deps: AccountDeps): Promis
   }
 
   try {
+    const operation = await requestedOperation(req);
+    if (operation === null) return fail(new Failure('invalid_request'));
+    if (operation !== 'balances') {
+      const result = await readExecutions(deps, apiKey, apiSecret, operation);
+      return respond(200, result, {
+        records: result.executions.length,
+        symbols: result.coverage.symbols.length,
+        partial: result.coverage.partial,
+        hasMore: result.coverage.hasMore,
+      });
+    }
     const balances = await readBalances(deps, apiKey, apiSecret);
     return respond(
       200,
