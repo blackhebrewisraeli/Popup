@@ -244,6 +244,42 @@ function isSafeId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+const isDecimal = (value: unknown): value is string =>
+  typeof value === 'string' && DECIMAL.test(value);
+
+/** One documented myTrades row, exactly as Binance wrote it, or null when it is not that shape. */
+function parseExecutionRow(row: unknown, expectedSymbol: string): SpotExecution | null {
+  if (!isRecord(row)) return null;
+  const { symbol, id, orderId, time, isBuyer, qty, price, quoteQty, commission, commissionAsset } =
+    row;
+  if (symbol !== expectedSymbol || !SUPPORTED_EXECUTION_SYMBOL_SET.has(symbol)) return null;
+  if (!isSafeId(id) || !isSafeId(orderId)) return null;
+  if (typeof time !== 'number' || !Number.isSafeInteger(time) || time <= 0) return null;
+  if (typeof isBuyer !== 'boolean') return null;
+  if (!isDecimal(qty) || !isDecimal(price) || !isDecimal(quoteQty) || !isDecimal(commission)) {
+    return null;
+  }
+  if (
+    typeof commissionAsset !== 'string' ||
+    commissionAsset.length === 0 ||
+    commissionAsset.length > 32
+  ) {
+    return null;
+  }
+  return {
+    symbol,
+    tradeId: String(id),
+    orderId: String(orderId),
+    time,
+    side: isBuyer ? 'buy' : 'sell',
+    quantity: qty,
+    price,
+    quoteQuantity: quoteQty,
+    commission,
+    commissionAsset,
+  };
+}
+
 /** Parse one documented myTrades page without rounding or merging fills. */
 export function parseExecutions(
   body: unknown,
@@ -257,65 +293,24 @@ export function parseExecutions(
   let lastTradeId: string | null = null;
   let crossedEnd = false;
   for (const row of body) {
-    if (!isRecord(row)) return null;
-    const {
-      symbol,
-      id,
-      orderId,
-      time,
-      isBuyer,
-      qty,
-      price,
-      quoteQty,
-      commission,
-      commissionAsset,
-    } = row;
-    if (symbol !== expectedSymbol || !SUPPORTED_EXECUTION_SYMBOL_SET.has(symbol)) return null;
-    if (!isSafeId(id) || !isSafeId(orderId)) return null;
-    if (typeof time !== 'number' || !Number.isSafeInteger(time) || time <= 0) return null;
-    if (typeof isBuyer !== 'boolean') return null;
-    for (const decimal of [qty, price, quoteQty, commission]) {
-      if (typeof decimal !== 'string' || !DECIMAL.test(decimal)) return null;
-    }
-    if (
-      typeof commissionAsset !== 'string' ||
-      commissionAsset.length === 0 ||
-      commissionAsset.length > 32
-    ) {
-      return null;
-    }
-    const tradeId = String(id);
+    const execution = parseExecutionRow(row, expectedSymbol);
+    if (execution === null) return null;
+    const { tradeId, time } = execution;
     if (lastTradeId !== null && BigInt(tradeId) < BigInt(lastTradeId)) return null;
     lastTradeId = tradeId;
-    if (time > endTime) {
-      crossedEnd = true;
-      continue;
-    }
-    if (time < startTime) continue;
-    const identity = `${symbol}:${tradeId}`;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    executions.push({
-      symbol,
-      tradeId,
-      orderId: String(orderId),
-      time,
-      side: isBuyer ? 'buy' : 'sell',
-      quantity: qty as string,
-      price: price as string,
-      quoteQuantity: quoteQty as string,
-      commission: commission as string,
-      commissionAsset,
-    });
+    crossedEnd ||= time > endTime;
+    if (time > endTime || time < startTime || seen.has(tradeId)) continue;
+    seen.add(tradeId);
+    executions.push(execution);
   }
   return { executions, lastTradeId, crossedEnd };
 }
 
 function base64UrlEncode(value: string): string {
-  const bytes = new TextEncoder().encode(value);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+  // A continuation is a few hundred bytes, well inside the argument limit of a spread.
+  const binary = String.fromCodePoint(...new TextEncoder().encode(value));
+  // '=' occurs in base64 only as trailing padding.
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
 function base64UrlDecode(value: string): string | null {
@@ -326,7 +321,7 @@ function base64UrlDecode(value: string): string | null {
       .replaceAll('_', '/')
       .padEnd(Math.ceil(value.length / 4) * 4, '=');
     const binary = atob(padded);
-    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.codePointAt(0) ?? 0));
   } catch {
     return null;
   }
@@ -336,7 +331,7 @@ function constantTimeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false;
   let difference = 0;
   for (let index = 0; index < left.length; index++) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+    difference |= (left.codePointAt(index) ?? 0) ^ (right.codePointAt(index) ?? 0);
   }
   return difference === 0;
 }
@@ -556,98 +551,104 @@ function failureForSymbol(symbol: string, failure: Failure): SpotExecutionFailur
   };
 }
 
+/** The pairs, window and per-pair cursors a request asks for: a fresh selection or a signed continuation. */
+async function executionSelection(
+  request: ExecutionRequest,
+  apiSecret: string,
+): Promise<Omit<ContinuationState, 'v'>> {
+  const { symbols, startTime, endTime } = request;
+  if (request.continuation === undefined) {
+    if (!validSymbols(symbols) || !validRange(startTime, endTime)) {
+      throw new Failure('invalid_request');
+    }
+    return {
+      symbols,
+      startTime: startTime as number,
+      endTime: endTime as number,
+      nextBySymbol: Object.fromEntries(symbols.map((symbol) => [symbol, ''])),
+    };
+  }
+  if (symbols !== undefined || startTime !== undefined || endTime !== undefined) {
+    throw new Failure('invalid_request');
+  }
+  const continuation = await decodeContinuation(request.continuation, apiSecret);
+  if (continuation === null) throw new Failure('invalid_request');
+  return continuation;
+}
+
+/** One myTrades page for one pair, and the trade ID the next page starts from (null: no more). */
+async function readSymbolPage(
+  deps: AccountDeps,
+  signed: { apiKey: string; query: (params: string) => Promise<string> },
+  symbol: string,
+  fromId: string,
+  range: { startTime: number; endTime: number },
+): Promise<{ executions: SpotExecution[]; next: string | null }> {
+  const { startTime, endTime } = range;
+  const params =
+    fromId === ''
+      ? `symbol=${symbol}&startTime=${startTime}&endTime=${endTime}&limit=${EXECUTION_PAGE_LIMIT}&`
+      : `symbol=${symbol}&fromId=${fromId}&limit=${EXECUTION_PAGE_LIMIT}&`;
+  const body = await binanceGet(deps, 'trades', {
+    apiKey: signed.apiKey,
+    query: await signed.query(params),
+  });
+  const parsed = parseExecutions(body, symbol, startTime, endTime);
+  if (parsed === null) throw new Failure('malformed_response');
+  const fullPage = Array.isArray(body) && body.length === EXECUTION_PAGE_LIMIT;
+  const more = fullPage && parsed.lastTradeId !== null && !parsed.crossedEnd;
+  return {
+    executions: parsed.executions,
+    next: more ? (BigInt(parsed.lastTradeId as string) + 1n).toString() : null,
+  };
+}
+
+/** Time, then pair, then trade ID compared as the integer it is (it can exceed 2^53). */
+function compareExecutions(left: SpotExecution, right: SpotExecution): number {
+  const byTimeAndPair = left.time - right.time || left.symbol.localeCompare(right.symbol);
+  if (byTimeAndPair !== 0) return byTimeAndPair;
+  const difference = BigInt(left.tradeId) - BigInt(right.tradeId);
+  if (difference === 0n) return 0;
+  return difference < 0n ? -1 : 1;
+}
+
 async function readExecutions(
   deps: AccountDeps,
   apiKey: string,
   apiSecret: string,
   request: ExecutionRequest,
 ): Promise<Extract<SpotAccountResponse, { state: 'executions' }>> {
-  let symbols: string[];
-  let startTime: number;
-  let endTime: number;
-  let nextBySymbol: Record<string, string>;
-
-  if (request.continuation !== undefined) {
-    if (
-      request.symbols !== undefined ||
-      request.startTime !== undefined ||
-      request.endTime !== undefined
-    ) {
-      throw new Failure('invalid_request');
-    }
-    const continuation = await decodeContinuation(request.continuation, apiSecret);
-    if (continuation === null) throw new Failure('invalid_request');
-    ({ symbols, startTime, endTime, nextBySymbol } = continuation);
-  } else {
-    if (!validSymbols(request.symbols) || !validRange(request.startTime, request.endTime)) {
-      throw new Failure('invalid_request');
-    }
-    symbols = request.symbols;
-    startTime = request.startTime as number;
-    endTime = request.endTime as number;
-    nextBySymbol = Object.fromEntries(symbols.map((symbol) => [symbol, '']));
-  }
-
-  const signedQuery = await verifiedSignedQuery(deps, apiKey, apiSecret);
+  const { symbols, startTime, endTime, nextBySymbol } = await executionSelection(
+    request,
+    apiSecret,
+  );
+  const signed = { apiKey, query: await verifiedSignedQuery(deps, apiKey, apiSecret) };
+  // Each pair is read once and its page holds only its own, already distinct, trades.
   const executions: SpotExecution[] = [];
   const failures: SpotExecutionFailure[] = [];
   const next: Record<string, string> = {};
-  const seen = new Set<string>();
+  // A pair with no cursor completed on an earlier page.
+  const pending = symbols.filter((symbol) => nextBySymbol[symbol] !== undefined);
 
-  for (const symbol of symbols) {
-    const fromId = nextBySymbol[symbol];
-    if (fromId === undefined) continue; // This symbol completed on an earlier page.
+  for (const [index, symbol] of pending.entries()) {
     try {
-      const params =
-        fromId === ''
-          ? `symbol=${symbol}&startTime=${startTime}&endTime=${endTime}&limit=${EXECUTION_PAGE_LIMIT}&`
-          : `symbol=${symbol}&fromId=${fromId}&limit=${EXECUTION_PAGE_LIMIT}&`;
-      const body = await binanceGet(deps, 'trades', {
-        apiKey,
-        query: await signedQuery(params),
+      const page = await readSymbolPage(deps, signed, symbol, nextBySymbol[symbol] as string, {
+        startTime,
+        endTime,
       });
-      const parsed = parseExecutions(body, symbol, startTime, endTime);
-      if (parsed === null) throw new Failure('malformed_response');
-      for (const execution of parsed.executions) {
-        const identity = `${execution.symbol}:${execution.tradeId}`;
-        if (!seen.has(identity)) {
-          seen.add(identity);
-          executions.push(execution);
-        }
-      }
-      if (
-        Array.isArray(body) &&
-        body.length === EXECUTION_PAGE_LIMIT &&
-        parsed.lastTradeId !== null &&
-        !parsed.crossedEnd
-      ) {
-        next[symbol] = (BigInt(parsed.lastTradeId) + 1n).toString();
-      }
+      executions.push(...page.executions);
+      if (page.next !== null) next[symbol] = page.next;
     } catch (error) {
       const failure = error instanceof Failure ? error : new Failure('provider_error');
-      failures.push(failureForSymbol(symbol, failure));
       // A rate limit is IP-wide. Stop rather than spend more provider requests;
       // untouched symbols are explicitly reported as failed for this page.
-      if (failure.code === 'rate_limited') {
-        for (const remaining of symbols.slice(symbols.indexOf(symbol) + 1)) {
-          if (nextBySymbol[remaining] !== undefined)
-            failures.push(failureForSymbol(remaining, failure));
-        }
-        break;
-      }
+      const failed = failure.code === 'rate_limited' ? pending.slice(index) : [symbol];
+      failures.push(...failed.map((each) => failureForSymbol(each, failure)));
+      if (failure.code === 'rate_limited') break;
     }
   }
 
-  executions.sort(
-    (left, right) =>
-      left.time - right.time ||
-      left.symbol.localeCompare(right.symbol) ||
-      (BigInt(left.tradeId) < BigInt(right.tradeId)
-        ? -1
-        : BigInt(left.tradeId) > BigInt(right.tradeId)
-          ? 1
-          : 0),
-  );
+  executions.sort(compareExecutions);
   const retrievedAt = new Date((deps.now ?? Date.now)()).toISOString();
   const hasMore = Object.keys(next).length > 0;
   return {

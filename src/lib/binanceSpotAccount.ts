@@ -11,7 +11,12 @@ import type {
   SpotExecutionFailure,
 } from '../../supabase/functions/binance-spot-account/handler';
 
-export type { SpotBalance, SpotExecution, SpotExecutionCoverage, SpotExecutionFailure };
+export type {
+  SpotBalance,
+  SpotExecution,
+  SpotExecutionCoverage,
+  SpotExecutionFailure,
+} from '../../supabase/functions/binance-spot-account/handler';
 
 /** The function's answer, or `unavailable` when it gave none we recognize (not deployed, signed out). */
 export type SpotRead =
@@ -167,17 +172,24 @@ export function parseSpotExecutionRead(body: unknown): SpotExecutionRead {
   };
 }
 
-/** One read of the owner's Spot balances through the edge function. Never throws. */
-export async function readSpotAccount(): Promise<SpotRead> {
+/**
+ * One POST to the edge function, read with `parse`. Never throws: a non-2xx
+ * answer carries its reason in the JSON body, and anything else is a timeout
+ * or a network failure.
+ */
+async function invokeSpot<T>(
+  body: Record<string, unknown> | undefined,
+  parse: (body: unknown) => T,
+): Promise<T | SpotFailure> {
   try {
     const { data, error } = await supabase.functions.invoke('binance-spot-account', {
       method: 'POST',
+      ...(body ? { body } : {}),
       timeout: READ_TIMEOUT_MS,
     });
-    if (!error) return parseSpotRead(data);
+    if (!error) return parse(data);
     const context: unknown = (error as { context?: unknown }).context;
-    // The function answered with a non-2xx status; its JSON body says why.
-    if (context instanceof Response) return parseSpotRead(await context.json().catch(() => null));
+    if (context instanceof Response) return parse(await context.json().catch(() => null));
     const aborted = context instanceof Error && context.name === 'AbortError';
     return { state: 'error', error: aborted ? 'timeout' : 'network' };
   } catch {
@@ -185,30 +197,16 @@ export async function readSpotAccount(): Promise<SpotRead> {
   }
 }
 
+/** One read of the owner's Spot balances through the edge function. Never throws. */
+export function readSpotAccount(): Promise<SpotRead> {
+  return invokeSpot(undefined, parseSpotRead);
+}
+
 /** Manual-only read of one execution page. The browser never creates a Binance query. */
-export async function readSpotExecutions(
+export function readSpotExecutions(
   request: SpotExecutionSelection | { continuation: string },
 ): Promise<SpotExecutionRead> {
-  try {
-    const body =
-      'continuation' in request
-        ? { action: 'executions', continuation: request.continuation }
-        : { action: 'executions', ...request };
-    const { data, error } = await supabase.functions.invoke('binance-spot-account', {
-      method: 'POST',
-      body,
-      timeout: READ_TIMEOUT_MS,
-    });
-    if (!error) return parseSpotExecutionRead(data);
-    const context: unknown = (error as { context?: unknown }).context;
-    if (context instanceof Response) {
-      return parseSpotExecutionRead(await context.json().catch(() => null));
-    }
-    const aborted = context instanceof Error && context.name === 'AbortError';
-    return { state: 'error', error: aborted ? 'timeout' : 'network' };
-  } catch {
-    return { state: 'error', error: 'network' };
-  }
+  return invokeSpot({ action: 'executions', ...request }, parseSpotExecutionRead);
 }
 
 export interface SpotView {

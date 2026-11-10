@@ -76,6 +76,165 @@ function deduplicate(executions: SpotExecution[]): SpotExecution[] {
   });
 }
 
+/** What a button says instead of its own label while no read can start. */
+function busyLabel(loading: boolean, paused: boolean): string | null {
+  if (loading) return 'Loading…';
+  if (paused) return 'Rate limited';
+  return null;
+}
+
+/** Seconds to hold off after a rate limit, whole-read or for one pair; null when there was none. */
+function backoffSeconds(result: SpotExecutionRead): number | null {
+  if (result.state === 'error') {
+    if (result.error !== 'rate_limited') return null;
+    return result.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS;
+  }
+  if (result.state !== 'executions') return null;
+  const limited = result.coverage.failures.find((item) => item.error === 'rate_limited');
+  return limited ? (limited.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS) : null;
+}
+
+/** The records to show after an answer: a failed refresh keeps them unless access was lost. */
+function nextSnapshot(
+  current: ExecutionSnapshot | null,
+  result: SpotExecutionRead,
+  more: boolean,
+): ExecutionSnapshot | null {
+  if (result.state === 'error') {
+    return result.error === 'unauthenticated' || result.error === 'forbidden' ? null : current;
+  }
+  if (result.state !== 'executions') return null;
+  return {
+    executions: deduplicate([...(more && current ? current.executions : []), ...result.executions]),
+    symbols: result.coverage.symbols,
+    startTime: result.coverage.startTime,
+    endTime: result.coverage.endTime,
+    retrievedAt: result.coverage.retrievedAt,
+    lastPageReturned: result.coverage.returned,
+    continuation: result.continuation ?? null,
+    partialFailures: result.coverage.failures,
+  };
+}
+
+function ExecutionResults({
+  snapshot,
+  busy,
+  onNextPage,
+}: Readonly<{
+  snapshot: ExecutionSnapshot;
+  busy: string | null;
+  onNextPage: (continuation: string) => void;
+}>) {
+  const next = snapshot.continuation;
+  return (
+    <>
+      <dl className="spot-coverage" aria-label="Execution history coverage">
+        <div>
+          <dt>Pairs</dt>
+          <dd>{snapshot.symbols.join(', ')}</dd>
+        </div>
+        <div>
+          <dt>Requested range</dt>
+          <dd>
+            <time dateTime={new Date(snapshot.startTime).toISOString()}>
+              {new Date(snapshot.startTime).toLocaleString()}
+            </time>{' '}
+            –{' '}
+            <time dateTime={new Date(snapshot.endTime).toISOString()}>
+              {new Date(snapshot.endTime).toLocaleString()}
+            </time>
+          </dd>
+        </div>
+        <div>
+          <dt>Records shown</dt>
+          <dd>{snapshot.executions.length}</dd>
+        </div>
+        <div>
+          <dt>Retrieved</dt>
+          <dd>
+            <time dateTime={snapshot.retrievedAt}>
+              {new Date(snapshot.retrievedAt).toLocaleString()}
+            </time>
+          </dd>
+        </div>
+        <div>
+          <dt>More results</dt>
+          <dd>{next ? 'Yes' : 'No'}</dd>
+        </div>
+      </dl>
+
+      {snapshot.partialFailures.length > 0 && (
+        <p className="spot-failed" role="alert">
+          Partial retrieval. Failed pairs/pages:{' '}
+          {snapshot.partialFailures
+            .map((item) => `${item.symbol} (${item.error.replaceAll('_', ' ')})`)
+            .join(', ')}
+          . Records shown are retained.
+        </p>
+      )}
+
+      {snapshot.executions.length === 0 ? (
+        <p className="spot-note">
+          Binance returned no executions for the selected pair in this requested range.
+        </p>
+      ) : (
+        <div className="spot-execution-scroll">
+          <table className="spot-table spot-execution-table">
+            <caption className="sr-only">Binance Spot execution history</caption>
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Pair</th>
+                <th scope="col">Side</th>
+                <th scope="col">Trade ID</th>
+                <th scope="col">Order ID</th>
+                <th scope="col">Quantity</th>
+                <th scope="col">Price</th>
+                <th scope="col">Quote quantity</th>
+                <th scope="col">Commission</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.executions.map((execution) => (
+                <tr key={`${execution.symbol}:${execution.tradeId}`}>
+                  <td>
+                    <time dateTime={new Date(execution.time).toISOString()}>
+                      {new Date(execution.time).toLocaleString()}
+                    </time>
+                  </td>
+                  <th scope="row">{execution.symbol}</th>
+                  <td>{execution.side}</td>
+                  <td>{execution.tradeId}</td>
+                  <td>{execution.orderId}</td>
+                  <td>{execution.quantity}</td>
+                  <td>{execution.price}</td>
+                  <td>{execution.quoteQuantity}</td>
+                  <td>
+                    {execution.commission} {execution.commissionAsset}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="spot-note">
+        Commissions stay in the asset Binance recorded; Popup does not convert BNB or another fee
+        asset into USDT or USD. Execution history alone cannot reconstruct all balances.
+      </p>
+      <button
+        type="button"
+        className="portfolio-cash-btn"
+        aria-disabled={busy !== null || !next}
+        onClick={next ? () => onNextPage(next) : undefined}
+      >
+        {busy ?? (next ? 'Load next page' : 'No more results')}
+      </button>
+    </>
+  );
+}
+
 export function BinanceSpotExecutions({
   read = readSpotExecutions,
 }: Readonly<{
@@ -112,12 +271,13 @@ export function BinanceSpotExecutions({
     setLoading(false);
   };
 
+  const paused = now < pausedUntil;
+  const busy = busyLabel(loading, paused);
+
+  /** A null continuation starts over from the selected pair and range. */
   const load = useCallback(
-    (more: boolean) => {
-      if (loading) return;
-      if (now < pausedUntil) return;
-      const continuation = more ? snapshot?.continuation : null;
-      if (more && !continuation) return;
+    (continuation: string | null) => {
+      if (busy !== null) return;
       const selectionKey = selectionRef.current;
       const seq = ++seqRef.current;
       setLoading(true);
@@ -129,55 +289,18 @@ export function BinanceSpotExecutions({
       void read(request)
         .catch((): SpotExecutionRead => ({ state: 'error', error: 'network' }))
         .then((result) => {
-          if (
-            !mountedRef.current ||
-            seq !== seqRef.current ||
-            selectionKey !== selectionRef.current
-          ) {
-            return;
-          }
+          const current =
+            mountedRef.current && seq === seqRef.current && selectionKey === selectionRef.current;
+          if (!current) return;
           setLoading(false);
-          if (result.state === 'error') {
-            if (result.error === 'unauthenticated' || result.error === 'forbidden')
-              setSnapshot(null);
-            setFailure(result);
-            if (result.error === 'rate_limited') {
-              setPausedUntil(
-                Date.now() + (result.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS) * 1000,
-              );
-            }
-            return;
-          }
-          if (result.state !== 'executions') {
-            setSnapshot(null);
-            setFailure(null);
-            return;
-          }
-          setSnapshot((current) => ({
-            executions: deduplicate([
-              ...(more && current ? current.executions : []),
-              ...result.executions,
-            ]),
-            symbols: result.coverage.symbols,
-            startTime: result.coverage.startTime,
-            endTime: result.coverage.endTime,
-            retrievedAt: result.coverage.retrievedAt,
-            lastPageReturned: result.coverage.returned,
-            continuation: result.continuation ?? null,
-            partialFailures: result.coverage.failures,
-          }));
-          const limited = result.coverage.failures.find((item) => item.error === 'rate_limited');
-          if (limited) {
-            setPausedUntil(
-              Date.now() + (limited.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS) * 1000,
-            );
-          }
+          setFailure(result.state === 'error' ? result : null);
+          setSnapshot((shown) => nextSnapshot(shown, result, continuation !== null));
+          const backoff = backoffSeconds(result);
+          if (backoff !== null) setPausedUntil(Date.now() + backoff * 1000);
         });
     },
-    [hours, loading, now, pausedUntil, read, snapshot, symbol],
+    [busy, hours, read, symbol],
   );
-
-  const paused = now < pausedUntil;
 
   return (
     <section className="spot-executions" aria-labelledby="spot-executions-title">
@@ -191,7 +314,7 @@ export function BinanceSpotExecutions({
         </div>
         <div className="spot-execution-controls">
           <label>
-            Pair
+            <span>Pair</span>
             <select
               name="binance-execution-symbol"
               value={symbol}
@@ -203,7 +326,7 @@ export function BinanceSpotExecutions({
             </select>
           </label>
           <label>
-            Range
+            <span>Range</span>
             <select
               name="binance-execution-range"
               value={hours}
@@ -219,11 +342,10 @@ export function BinanceSpotExecutions({
           <button
             type="button"
             className="portfolio-cash-btn"
-            aria-disabled={loading || paused}
-            onClick={loading || paused ? undefined : () => load(false)}
+            aria-disabled={busy !== null}
+            onClick={() => load(null)}
           >
-            <History size={13} aria-hidden="true" />{' '}
-            {loading ? 'Loading…' : paused ? 'Rate limited' : 'Load executions'}
+            <History size={13} aria-hidden="true" /> {busy ?? 'Load executions'}
           </button>
         </div>
       </div>
@@ -235,119 +357,7 @@ export function BinanceSpotExecutions({
         </p>
       )}
 
-      {snapshot && (
-        <>
-          <dl className="spot-coverage" aria-label="Execution history coverage">
-            <div>
-              <dt>Pairs</dt>
-              <dd>{snapshot.symbols.join(', ')}</dd>
-            </div>
-            <div>
-              <dt>Requested range</dt>
-              <dd>
-                <time dateTime={new Date(snapshot.startTime).toISOString()}>
-                  {new Date(snapshot.startTime).toLocaleString()}
-                </time>{' '}
-                –{' '}
-                <time dateTime={new Date(snapshot.endTime).toISOString()}>
-                  {new Date(snapshot.endTime).toLocaleString()}
-                </time>
-              </dd>
-            </div>
-            <div>
-              <dt>Records shown</dt>
-              <dd>{snapshot.executions.length}</dd>
-            </div>
-            <div>
-              <dt>Retrieved</dt>
-              <dd>
-                <time dateTime={snapshot.retrievedAt}>
-                  {new Date(snapshot.retrievedAt).toLocaleString()}
-                </time>
-              </dd>
-            </div>
-            <div>
-              <dt>More results</dt>
-              <dd>{snapshot.continuation ? 'Yes' : 'No'}</dd>
-            </div>
-          </dl>
-
-          {snapshot.partialFailures.length > 0 && (
-            <p className="spot-failed" role="alert">
-              Partial retrieval. Failed pairs/pages:{' '}
-              {snapshot.partialFailures
-                .map((item) => `${item.symbol} (${item.error.replaceAll('_', ' ')})`)
-                .join(', ')}
-              . Records shown are retained.
-            </p>
-          )}
-
-          {snapshot.executions.length === 0 ? (
-            <p className="spot-note">
-              Binance returned no executions for the selected pair in this requested range.
-            </p>
-          ) : (
-            <div className="spot-execution-scroll">
-              <table className="spot-table spot-execution-table">
-                <caption className="sr-only">Binance Spot execution history</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Time</th>
-                    <th scope="col">Pair</th>
-                    <th scope="col">Side</th>
-                    <th scope="col">Trade ID</th>
-                    <th scope="col">Order ID</th>
-                    <th scope="col">Quantity</th>
-                    <th scope="col">Price</th>
-                    <th scope="col">Quote quantity</th>
-                    <th scope="col">Commission</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {snapshot.executions.map((execution) => (
-                    <tr key={`${execution.symbol}:${execution.tradeId}`}>
-                      <td>
-                        <time dateTime={new Date(execution.time).toISOString()}>
-                          {new Date(execution.time).toLocaleString()}
-                        </time>
-                      </td>
-                      <th scope="row">{execution.symbol}</th>
-                      <td>{execution.side}</td>
-                      <td>{execution.tradeId}</td>
-                      <td>{execution.orderId}</td>
-                      <td>{execution.quantity}</td>
-                      <td>{execution.price}</td>
-                      <td>{execution.quoteQuantity}</td>
-                      <td>
-                        {execution.commission} {execution.commissionAsset}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <p className="spot-note">
-            Commissions stay in the asset Binance recorded; Popup does not convert BNB or another
-            fee asset into USDT or USD. Execution history alone cannot reconstruct all balances.
-          </p>
-          <button
-            type="button"
-            className="portfolio-cash-btn"
-            aria-disabled={loading || paused || !snapshot.continuation}
-            onClick={loading || paused || !snapshot.continuation ? undefined : () => load(true)}
-          >
-            {loading
-              ? 'Loading…'
-              : paused
-                ? 'Rate limited'
-                : snapshot.continuation
-                  ? 'Load next page'
-                  : 'No more results'}
-          </button>
-        </>
-      )}
+      {snapshot && <ExecutionResults snapshot={snapshot} busy={busy} onNextPage={load} />}
     </section>
   );
 }
