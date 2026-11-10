@@ -88,7 +88,7 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-10 · Owner-only Binance Spot execution history · Draft PR (this change).** Decision:
+- **2026-11-10 · Owner-only Binance Spot execution history · Draft PR [#148](https://github.com/blackhebrewisraeli/Popup/pull/148).** Decision:
   extend the existing read-only account function with signed `GET /api/v3/myTrades`, never a
   trading endpoint. The Account view manually reads one of 12 explicit USDT pairs over 1, 6 or 24
   hours, 100 fills per page. It preserves each fill and its recorded commission asset, deduplicates
