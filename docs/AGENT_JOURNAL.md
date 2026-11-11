@@ -67,7 +67,7 @@ whether to act, and where; Popup places no orders.
   contract with one frozen cutoff per retrieval, and shows the scan in Research beside the equity
   scans. Real scan `20261111T183825Z-dc217757`: 23 of 25 evaluated, offline `MATCH`; it is now the
   published Research view.
-- **Manual Spot scenario:** draft [#PRNUM](https://github.com/blackhebrewisraeli/Popup/pull/PRNUM)
+- **Manual Spot scenario:** draft [#151](https://github.com/blackhebrewisraeli/Popup/pull/151)
   adds the owner's own hypothetical plan to an evaluated pair's evidence in that scan: allocation,
   loss budget, entry and stop reference typed by the owner, exact decimal arithmetic, fees
   optional and unspecified by default, in component memory only. No order, balance read or
@@ -103,7 +103,7 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 ## Recent entries
 
 - **2026-11-11 · Manual Spot scenario in the TradingView crypto evidence · Draft PR
-  [#PRNUM](https://github.com/blackhebrewisraeli/Popup/pull/PRNUM).** Decision: a disclosure at the
+  [#151](https://github.com/blackhebrewisraeli/Popup/pull/151).** Decision: a disclosure at the
   end of the existing evidence view, not a new dashboard, holding only the owner's inputs in
   component state keyed by scan and asset. A new pure `spotScenario.ts` sizes with BigInt at
   1e-8 rather than reusing `recommendPositionSize`, whose ATR stop, percent-of-capital risk,
