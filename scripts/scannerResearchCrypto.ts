@@ -1,21 +1,60 @@
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DAY_MS } from '@/lib/candleValidation';
 import {
   CANONICAL_MODEL_VERSION,
   LONG_SETUP_MIN_SCORE,
   RISK_SETUP_MAX_SCORE,
 } from '@/lib/canonicalModel';
 import {
+  compareTickers,
+  evaluateScan,
+  SCAN_ASSET_STATUSES,
+  SCAN_CANDLE_REQUEST,
   SCAN_MIN_CLOSED_CANDLES,
   SCANNER_VERSION,
   TRADINGVIEW_CRYPTO_DAILY_POLICY_VERSION,
+  type MarketScan,
+  type ScanAssetResult,
+  type ScanAssetStatus,
+  type ScanInput,
 } from '@/lib/marketScanner';
-import { TRADINGVIEW_DEV_PROVIDER_ID } from '@/lib/tradingViewDevScan';
+import {
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+} from '@/lib/tradingViewDevScan';
 import { stableSerialize } from './evaluationStore';
+import type { ScanSnapshot } from './marketScanStore';
+import {
+  barsBySession,
+  concentration,
+  fraction,
+  GROUP_MEMBERSHIP,
+  groupBy,
+  mean,
+  measureOutcome,
+  studyObservations,
+  summarize,
+  writeStudy,
+  type GroupedObservation,
+  type OutcomeBar,
+  type ParityCheck,
+  type ReplayResult,
+  type ResearchOutcome,
+  type ResearchPoint,
+} from './scannerResearch';
+import { renderCryptoResearchReport } from './scannerResearchReport';
 import {
   CRYPTO_TRADINGVIEW_SYMBOLS,
   CRYPTO_UNIVERSE,
+  cryptoInputs,
+  importInputs,
+  parseExport,
   selectionRule,
   universeTickers,
+  utcDayStart,
+  type TradingViewOhlcvExport,
 } from './tradingViewImport';
 
 /**
@@ -243,3 +282,700 @@ export const CRYPTO_RESEARCH_SPECIFICATION = {
 export const CRYPTO_RESEARCH_SPECIFICATION_ID = createHash('sha256')
   .update(stableSerialize(CRYPTO_RESEARCH_SPECIFICATION))
   .digest('hex');
+
+const SPEC = CRYPTO_RESEARCH_SPECIFICATION;
+export type CryptoHorizon = (typeof CRYPTO_RESEARCH_HORIZONS)[number];
+export type CryptoGroupId = (typeof SPEC.comparisons.groupsAgainstUniverse)[number];
+export type CryptoMatchedGroupId = (typeof SPEC.comparisons.groupsAgainstVolatilityMatched)[number];
+
+/** The live scan the replay must reproduce on its own day, as the specification's parity names it. */
+export const RECORDED_SCAN = {
+  scanId: '20261111T183825Z-dc217757',
+  day: '2026-11-10',
+  sha256: '000cc5ea06d238e882c6216142e9edf00bf9f7a25065297a1f96f53fd37ad18f',
+} as const;
+
+/** The specification's minimum coverage: members EVALUATED on a date for it to be compared. */
+export const MINIMUM_EVALUATED = 15;
+/** Below either count a row is labeled too few to read, as the specification says. */
+export const TOO_FEW = { observations: 30, dates: 10 } as const;
+
+const utcDay = (time: number) => new Date(time).toISOString().slice(0, 10);
+const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+
+/** The decision cutoff for evaluation day D: D's close, 23:59:59.999 UTC. */
+export function cutoffOf(day: string): number {
+  return Date.parse(`${day}T00:00:00.000Z`) + DAY_MS - 1;
+}
+
+/** Closed by `time` under the policy's own rule (open + 86,399,999 ms), not the bar's closeTime. */
+const closedBy = (timestamp: number, time: number) => timestamp + DAY_MS - 1 <= time;
+
+/** The options the TradingView crypto import scores with (recordTradingViewScan). */
+function scanOptions(cutoff: number) {
+  return {
+    evaluationTime: cutoff,
+    universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+    equityProvider: null,
+    cryptoProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+  };
+}
+
+/** Each member's whole exported history, through the import's own mapping and identity checks. */
+export function cryptoHistory(file: TradingViewOhlcvExport): ScanInput[] {
+  return cryptoInputs(file, Date.parse(file.retrieval.startedAt), 0);
+}
+
+/**
+ * The scanner's inputs on day D: the 200 UTC days the scan requests, cut at D's close. No
+ * candle that closes after the cutoff is passed in, so none can reach a score.
+ */
+export function inputsAt(history: readonly ScanInput[], day: string): ScanInput[] {
+  const cutoff = cutoffOf(day);
+  const from = utcDayStart(cutoff) - SCAN_CANDLE_REQUEST * DAY_MS;
+  return history.map((input) =>
+    input.candles === undefined
+      ? input
+      : {
+          ...input,
+          candles: input.candles.filter(
+            (candle) => candle.timestamp >= from && closedBy(candle.timestamp, cutoff),
+          ),
+        },
+  );
+}
+
+/** One member on one day in the scanner's terms, with the model's ATR/close when it scored. */
+export interface CryptoReplayResult extends ReplayResult {
+  volatility: number | null;
+}
+
+export interface CryptoReplayDate {
+  session: string;
+  /** Members EVALUATED, and so ranked, that day. */
+  evaluated: number;
+  /** Every universe member, by ticker. */
+  results: CryptoReplayResult[];
+}
+
+/** The crypto scan as it would have read at D's close. */
+export function replayDay(
+  history: readonly ScanInput[],
+  day: string,
+): { scan: MarketScan; date: CryptoReplayDate } {
+  const scan = evaluateScan(inputsAt(history, day), scanOptions(cutoffOf(day)));
+  const results = [...scan.results]
+    .sort((a, b) => compareTickers(a.ticker, b.ticker))
+    .map((result): CryptoReplayResult => ({
+      ticker: result.ticker,
+      status: result.status,
+      detail: result.detail,
+      dataAsOf: result.dataAsOf === null ? null : utcDay(result.dataAsOf),
+      rank: result.rank,
+      score: result.model?.signal_score ?? null,
+      regime: result.model?.regime ?? null,
+      setups: result.setups,
+      volatility: result.model?.inputs.volatilityPercent ?? null,
+    }));
+  return { scan, date: { session: day, evaluated: scan.coverage.evaluated, results } };
+}
+
+type Mismatch = ParityCheck['mismatches'][number];
+
+/** Field-by-field differences between two scans' results for the same members. */
+function resultDifferences(
+  session: string,
+  replayed: readonly ScanAssetResult[],
+  actual: readonly ScanAssetResult[],
+): Mismatch[] {
+  const other = new Map(actual.map((result) => [result.ticker, result]));
+  const tickers = [...new Set([...replayed, ...actual].map((result) => result.ticker))];
+  const mine = new Map(replayed.map((result) => [result.ticker, result]));
+  return tickers.sort(compareTickers).flatMap((ticker) => {
+    const a = (mine.get(ticker) ?? {}) as Record<string, unknown>;
+    const b = (other.get(ticker) ?? {}) as Record<string, unknown>;
+    return [...new Set([...Object.keys(a), ...Object.keys(b)])]
+      .filter((field) => stableSerialize(a[field]) !== stableSerialize(b[field]))
+      .map((field) => ({ session, ticker, field, replay: a[field], scanner: b[field] }));
+  });
+}
+
+/** The replay against the actual import reading the whole export at the same cutoff. */
+export function scanDifferences(session: string, replayed: MarketScan, actual: MarketScan) {
+  if (stableSerialize(replayed) === stableSerialize(actual)) return [];
+  const differences = resultDifferences(session, replayed.results, actual.results);
+  return differences.length > 0
+    ? differences
+    : [{ session, ticker: '*', field: 'scan', replay: null, scanner: null }];
+}
+
+export interface RecordedScanParity {
+  status: 'MATCH' | 'MISMATCH';
+  scanId: string;
+  day: string;
+  members: number;
+  mismatches: Mismatch[];
+}
+
+/** The replay on the recorded scan's day against what that scan actually recorded. */
+export function recordedScanParity(
+  replayed: MarketScan | undefined,
+  recorded: Pick<ScanSnapshot, 'scanId' | 'scan'>,
+  cutoff: number,
+): RecordedScanParity {
+  const { day } = RECORDED_SCAN;
+  const mismatches = resultDifferences(day, replayed?.results ?? [], recorded.scan.results);
+  if (recorded.scanId !== RECORDED_SCAN.scanId || recorded.scan.evaluationTime !== cutoff) {
+    mismatches.push({
+      session: day,
+      ticker: '*',
+      field: 'scanId/evaluationTime',
+      replay: [RECORDED_SCAN.scanId, cutoff],
+      scanner: [recorded.scanId, recorded.scan.evaluationTime],
+    });
+  }
+  return {
+    status: mismatches.length === 0 ? 'MATCH' : 'MISMATCH',
+    scanId: recorded.scanId,
+    day,
+    members: recorded.scan.results.length,
+    mismatches,
+  };
+}
+
+/** Every UTC day from the earliest closed bar of any member through the last closed at the cutoff. */
+export function utcCalendar(history: readonly ScanInput[], cutoff: number): string[] {
+  const opens = history.flatMap((input) =>
+    (input.candles ?? []).filter((c) => closedBy(c.timestamp, cutoff)).map((c) => c.timestamp),
+  );
+  const last = utcDayStart(cutoff) - DAY_MS;
+  if (opens.length === 0) return [];
+  const days: string[] = [];
+  for (let time = utcDayStart(Math.min(...opens)); time <= last; time += DAY_MS)
+    days.push(utcDay(time));
+  return days;
+}
+
+/** The first day on which any member holds 199 candles closed by that day's close. */
+export function firstEvaluationDay(history: readonly ScanInput[], cutoff: number): string | null {
+  const days = history.flatMap((input) => {
+    const opens = (input.candles ?? [])
+      .filter((c) => closedBy(c.timestamp, cutoff))
+      .map((c) => c.timestamp)
+      .sort((a, b) => a - b);
+    const full = opens[SCAN_MIN_CLOSED_CANDLES - 1];
+    return full === undefined ? [] : [utcDay(full)];
+  });
+  return days.sort(compareTickers)[0] ?? null;
+}
+
+/** Outcome prices: each member's bars closed at the export cutoff, keyed by UTC opening day. */
+export function outcomeBars(
+  history: readonly ScanInput[],
+  cutoff: number,
+): Map<string, Map<string, OutcomeBar | null>> {
+  return new Map(
+    history.map((input) => [
+      input.ticker,
+      barsBySession(
+        (input.candles ?? [])
+          .filter((c) => closedBy(c.timestamp, cutoff))
+          .map((c): OutcomeBar => ({ session: utcDay(c.timestamp), ...c })),
+      ),
+    ]),
+  );
+}
+
+/** An EVALUATED member on one date, with its volatility tercile and what followed. */
+export interface CryptoObservation extends GroupedObservation {
+  ticker: string;
+  session: string;
+  volatility: number;
+  tercile: 1 | 2 | 3;
+  longOnsetUnknown: boolean;
+  riskOnsetUnknown: boolean;
+  outcomes: Record<CryptoHorizon, ResearchOutcome>;
+}
+
+/**
+ * The equity study's observations (ranks, quintiles, setups, transitions) plus each
+ * member's volatility tercile among that date's EVALUATED members, ties by ticker.
+ */
+export function cryptoObservations(
+  replay: readonly CryptoReplayDate[],
+  outcomeOf: (ticker: string, date: number, horizon: CryptoHorizon) => ResearchOutcome,
+): CryptoObservation[] {
+  const placed = new Map<string, { volatility: number; tercile: 1 | 2 | 3 }>();
+  for (const date of replay) {
+    const evaluated = date.results.flatMap((result) => {
+      if (result.rank === null) return [];
+      if (result.volatility === null)
+        throw new Error(`No ATR/close for ${result.ticker} on ${date.session}`);
+      return [{ ticker: result.ticker, volatility: result.volatility }];
+    });
+    evaluated
+      .sort((a, b) => a.volatility - b.volatility || compareTickers(a.ticker, b.ticker))
+      .forEach(({ ticker, volatility }, i) => {
+        const tercile = Math.ceil((3 * (i + 1)) / evaluated.length) as 1 | 2 | 3;
+        placed.set(`${date.session}|${ticker}`, { volatility, tercile });
+      });
+  }
+  // No instrument types in crypto: the equity study's `type` is dropped.
+  return studyObservations(replay, new Map(), outcomeOf).map(({ type, ...observation }) => ({
+    ...observation,
+    ...placed.get(`${observation.session}|${observation.ticker}`)!,
+  }));
+}
+
+export const CRYPTO_MEMBERSHIP: Record<CryptoGroupId, (o: CryptoObservation) => boolean> = {
+  ...GROUP_MEMBERSHIP,
+  'volatility-tercile-1': (o) => o.tercile === 1,
+  'volatility-tercile-2': (o) => o.tercile === 2,
+  'volatility-tercile-3': (o) => o.tercile === 3,
+};
+
+export interface CryptoStats {
+  observations: number;
+  distinctAssets: number;
+  distinctDates: number;
+  mean: number | null;
+  median: number | null;
+  /** Share of positive price changes; not a trade win rate. */
+  positiveFraction: number | null;
+  baselineMean: number | null;
+  meanDifferenceVsBaseline: number | null;
+  medianDifferenceVsBaseline: number | null;
+  fractionAboveBaseline: number | null;
+  dateMeanDifferenceVsBaseline: number | null;
+  fractionOfDatesAboveBaseline: number | null;
+}
+
+/** The equity study's statistics, plus a date-weighted view so busy dates do not dominate. */
+export function cryptoStats(points: readonly ResearchPoint[]): CryptoStats {
+  const stats = summarize(points);
+  const days = [...groupBy(points, (point) => point.session).values()].map(
+    (day) => mean(day.map((point) => point.change - point.baseline)) ?? Number.NaN,
+  );
+  return {
+    observations: stats.observations,
+    distinctAssets: stats.distinctAssets,
+    distinctDates: stats.distinctDates,
+    mean: stats.mean,
+    median: stats.median,
+    positiveFraction: stats.positiveFraction,
+    baselineMean: stats.sameDateUniverseMean,
+    meanDifferenceVsBaseline: stats.meanDifferenceVsUniverse,
+    medianDifferenceVsBaseline: stats.medianDifferenceVsUniverse,
+    fractionAboveBaseline: stats.fractionAboveUniverse,
+    dateMeanDifferenceVsBaseline: mean(days),
+    fractionOfDatesAboveBaseline: fraction(days.map((difference) => difference > 0)),
+  };
+}
+
+export const quarterOf = (day: string) =>
+  `${day.slice(0, 4)}-Q${Math.ceil(Number(day.slice(5, 7)) / 3)}`;
+
+export interface GroupResult {
+  stats: CryptoStats;
+  concentration: ReturnType<typeof concentration> & { largestQuarterShare: number | null };
+  byQuarter: Record<string, CryptoStats>;
+  byAsset: Record<string, CryptoStats>;
+}
+
+function groupResult(points: readonly ResearchPoint[]): GroupResult {
+  const by = (key: (point: ResearchPoint) => string) =>
+    Object.fromEntries(
+      [...groupBy(points, key)]
+        .sort(([a], [b]) => compareTickers(a, b))
+        .map(([name, group]) => [name, cryptoStats(group)]),
+    );
+  const quarters = points.map((point) => ({ ...point, ticker: quarterOf(point.session) }));
+  return {
+    stats: cryptoStats(points),
+    concentration: {
+      ...concentration(points),
+      largestQuarterShare: concentration(quarters).largestAssetShare,
+    },
+    byQuarter: by((point) => quarterOf(point.session)),
+    byAsset: by((point) => point.ticker),
+  };
+}
+
+export interface CryptoHorizonResults {
+  horizon: CryptoHorizon;
+  /** Outcome status of every EVALUATED asset-date on a date meeting minimum coverage. */
+  outcomes: Record<ResearchOutcome['status'], number>;
+  againstUniverse: Record<CryptoGroupId, GroupResult>;
+  volatilityMatched: Record<CryptoMatchedGroupId, GroupResult & { unmatched: number }>;
+}
+
+/**
+ * Every group against the same-date equal-weight universe, and the specified groups
+ * against same-date, same-tercile members outside the group. An observation without such
+ * a control is counted as unmatched, never matched elsewhere.
+ */
+export function cryptoHorizonResults(
+  observations: readonly CryptoObservation[],
+  horizon: CryptoHorizon,
+): CryptoHorizonResults {
+  const outcomes = { AVAILABLE: 0, PENDING: 0, MISSING: 0, INVALID: 0 };
+  for (const observation of observations) outcomes[observation.outcomes[horizon].status] += 1;
+  const measured = observations.filter((o) => o.outcomes[horizon].status === 'AVAILABLE');
+  const change = (o: CryptoObservation) => o.outcomes[horizon].change ?? Number.NaN;
+  const dateMeans = new Map(
+    [...groupBy(measured, (o) => o.session)].map(([session, day]) => [
+      session,
+      mean(day.map(change)) ?? Number.NaN,
+    ]),
+  );
+  const cells = groupBy(measured, (o) => `${o.session}|${o.tercile}`);
+  const point = (o: CryptoObservation, baseline: number): ResearchPoint => ({
+    ticker: o.ticker,
+    session: o.session,
+    change: change(o),
+    baseline,
+    benchmark: null,
+  });
+  const againstUniverse = Object.fromEntries(
+    SPEC.comparisons.groupsAgainstUniverse.map((id) => [
+      id,
+      groupResult(
+        measured
+          .filter(CRYPTO_MEMBERSHIP[id])
+          .map((o) => point(o, dateMeans.get(o.session) ?? Number.NaN)),
+      ),
+    ]),
+  ) as CryptoHorizonResults['againstUniverse'];
+  const volatilityMatched = Object.fromEntries(
+    SPEC.comparisons.groupsAgainstVolatilityMatched.map((id) => {
+      const inGroup = CRYPTO_MEMBERSHIP[id];
+      let unmatched = 0;
+      const points = measured.filter(inGroup).flatMap((o) => {
+        const controls = (cells.get(`${o.session}|${o.tercile}`) ?? []).filter((c) => !inGroup(c));
+        if (controls.length === 0) {
+          unmatched += 1;
+          return [];
+        }
+        return [point(o, mean(controls.map(change)) ?? Number.NaN)];
+      });
+      return [id, { ...groupResult(points), unmatched }];
+    }),
+  ) as CryptoHorizonResults['volatilityMatched'];
+  return { horizon, outcomes, againstUniverse, volatilityMatched };
+}
+
+/** For each group, the share of its observations (any outcome) in each volatility tercile. */
+export function cryptoComposition(observations: readonly CryptoObservation[]) {
+  return Object.fromEntries(
+    SPEC.comparisons.groupsAgainstUniverse.map((id) => {
+      const members = observations.filter(CRYPTO_MEMBERSHIP[id]);
+      const share = (t: 1 | 2 | 3) =>
+        members.filter((o) => o.tercile === t).length / members.length;
+      return [
+        id,
+        {
+          observations: members.length,
+          terciles: members.length === 0 ? null : ([share(1), share(2), share(3)] as const),
+        },
+      ];
+    }),
+  ) as Record<
+    CryptoGroupId,
+    { observations: number; terciles: readonly [number, number, number] | null }
+  >;
+}
+
+export interface CryptoCoverage {
+  memberCount: number;
+  assetDates: number;
+  byStatus: Record<ScanAssetStatus, number>;
+  evaluatedPerDate: { min: number | null; max: number | null };
+  datesBelowMinimum: number;
+  observationsOnExcludedDates: number;
+  /** Every member: its first EVALUATED date and its statuses across the dates. */
+  perMember: Record<string, { firstEvaluated: string | null; byStatus: Record<string, number> }>;
+  signals: Record<
+    'long' | 'risk',
+    { observations: number; transitions: number; onsetUnknown: number; standing: number }
+  >;
+}
+
+function coverageOf(
+  replay: readonly CryptoReplayDate[],
+  observations: readonly CryptoObservation[],
+  covered: ReadonlySet<string>,
+): CryptoCoverage {
+  const byStatus = Object.fromEntries(SCAN_ASSET_STATUSES.map((status) => [status, 0])) as Record<
+    ScanAssetStatus,
+    number
+  >;
+  const perMember: CryptoCoverage['perMember'] = {};
+  for (const date of replay) {
+    for (const result of date.results) {
+      byStatus[result.status] += 1;
+      const member = (perMember[result.ticker] ??= { firstEvaluated: null, byStatus: {} });
+      member.byStatus[result.status] = (member.byStatus[result.status] ?? 0) + 1;
+      if (result.status === 'EVALUATED') member.firstEvaluated ??= date.session;
+    }
+  }
+  const counts = replay.map((date) => date.evaluated);
+  const kept = observations.filter((o) => covered.has(o.session));
+  const signal = (kind: 'long' | 'risk') => {
+    const held = kept.filter((o) => o[kind]);
+    const transitions = held.filter((o) => o[`${kind}Transition`]).length;
+    const onsetUnknown = held.filter((o) => o[`${kind}OnsetUnknown`]).length;
+    return {
+      observations: held.length,
+      transitions,
+      onsetUnknown,
+      standing: held.length - transitions - onsetUnknown,
+    };
+  };
+  return {
+    memberCount: replay[0]?.results.length ?? 0,
+    assetDates: replay.reduce((sum, date) => sum + date.results.length, 0),
+    byStatus,
+    evaluatedPerDate: {
+      min: counts.length > 0 ? Math.min(...counts) : null,
+      max: counts.length > 0 ? Math.max(...counts) : null,
+    },
+    datesBelowMinimum: replay.length - covered.size,
+    observationsOnExcludedDates: observations.length - kept.length,
+    perMember,
+    signals: { long: signal('long'), risk: signal('risk') },
+  };
+}
+
+/** sha256 of each instrument entry, by ticker: the specification's input hashes. */
+export function instrumentHashes(file: TradingViewOhlcvExport): Record<string, string> {
+  return Object.fromEntries(
+    [...file.instruments]
+      .sort((a, b) => compareTickers(a.ticker, b.ticker))
+      .map((entry) => [entry.ticker, sha256(stableSerialize(entry))]),
+  );
+}
+
+export interface CryptoStudyResults {
+  schemaVersion: '1';
+  specificationId: string;
+  studyId: string;
+  evidenceType: string;
+  specification: typeof CRYPTO_RESEARCH_SPECIFICATION;
+  export: {
+    sha256: string;
+    retrieval: TradingViewOhlcvExport['retrieval'];
+    inputHashes: Record<string, string>;
+  };
+  calendar: { days: number; first: string | null; last: string | null };
+  evaluationDates: {
+    count: number;
+    first: string | null;
+    last: string | null;
+    minimumEvaluated: number;
+    compared: number;
+  };
+  parity: ParityCheck;
+  recordedScanParity: RecordedScanParity;
+  coverage: CryptoCoverage;
+  composition: ReturnType<typeof cryptoComposition>;
+  horizons: CryptoHorizonResults[];
+  replay: CryptoReplayDate[];
+}
+
+/** The whole study on one parsed export. Pure: the same inputs always give the same results. */
+export function runCryptoStudy(
+  file: TradingViewOhlcvExport,
+  exportSha256: string,
+  recorded: Pick<ScanSnapshot, 'scanId' | 'scan'>,
+): CryptoStudyResults {
+  const cutoff = Date.parse(file.retrieval.startedAt);
+  const history = cryptoHistory(file);
+  const days = utcCalendar(history, cutoff);
+  const firstDay = firstEvaluationDay(history, cutoff);
+  const start = firstDay === null ? days.length : days.indexOf(firstDay);
+  const replayed = days.slice(start).map((day) => replayDay(history, day));
+  const replay = replayed.map(({ date }) => date);
+
+  const mismatches = replayed.flatMap(({ scan, date }) => {
+    const at = cutoffOf(date.session);
+    return scanDifferences(
+      date.session,
+      scan,
+      evaluateScan(importInputs(file, at), scanOptions(at)),
+    );
+  });
+  const recordedDay = replayed.find(({ date }) => date.session === RECORDED_SCAN.day)?.scan;
+
+  const bars = outcomeBars(history, cutoff);
+  const observations = cryptoObservations(replay, (ticker, k, horizon) =>
+    measureOutcome(bars.get(ticker) ?? new Map(), days, start + k, horizon),
+  );
+  const covered = new Set(
+    replay.filter((date) => date.evaluated >= MINIMUM_EVALUATED).map((date) => date.session),
+  );
+  const compared = observations.filter((o) => covered.has(o.session));
+  return {
+    schemaVersion: '1',
+    specificationId: CRYPTO_RESEARCH_SPECIFICATION_ID,
+    studyId: SPEC.studyId,
+    evidenceType: SPEC.evidenceType,
+    specification: SPEC,
+    export: {
+      sha256: exportSha256,
+      retrieval: file.retrieval,
+      inputHashes: instrumentHashes(file),
+    },
+    calendar: { days: days.length, first: days[0] ?? null, last: days.at(-1) ?? null },
+    evaluationDates: {
+      count: replay.length,
+      first: replay[0]?.session ?? null,
+      last: replay.at(-1)?.session ?? null,
+      minimumEvaluated: MINIMUM_EVALUATED,
+      compared: covered.size,
+    },
+    parity: {
+      status:
+        replay.length === 0 ? 'NOT_COMPARABLE' : mismatches.length === 0 ? 'MATCH' : 'MISMATCH',
+      datesCompared: replay.length,
+      first: replay[0]?.session ?? null,
+      last: replay.at(-1)?.session ?? null,
+      mismatches,
+    },
+    recordedScanParity: recordedScanParity(recordedDay, recorded, cutoff),
+    coverage: coverageOf(replay, observations, covered),
+    composition: cryptoComposition(compared),
+    horizons: CRYPTO_RESEARCH_HORIZONS.map((horizon) => cryptoHorizonResults(compared, horizon)),
+    replay,
+  };
+}
+
+/** The run must rest on exactly what the specification froze, or it is not this study. */
+export function cryptoFrozenFactDifferences(
+  results: Pick<CryptoStudyResults, 'evaluationDates' | 'export' | 'parity' | 'recordedScanParity'>,
+): string[] {
+  const expected: Record<string, [unknown, unknown]> = {
+    'evaluationDates.first': [results.evaluationDates.first, SPEC.evaluationDates.first],
+    'evaluationDates.last': [results.evaluationDates.last, SPEC.evaluationDates.last],
+    'evaluationDates.count': [results.evaluationDates.count, SPEC.evaluationDates.count],
+    'data.retrieval': [
+      stableSerialize(results.export.retrieval),
+      stableSerialize(SPEC.data.retrieval),
+    ],
+    'data.exportSha256': [results.export.sha256, SPEC.data.exportSha256],
+    'parity.status': [results.parity.status, 'MATCH'],
+    'recordedScanParity.status': [results.recordedScanParity.status, 'MATCH'],
+  };
+  return Object.entries(expected).flatMap(([field, [actual, frozen]]) =>
+    actual === frozen ? [] : [`${field}: ${String(actual)} (frozen ${String(frozen)})`],
+  );
+}
+
+/**
+ * The parsed export, only if it is byte for byte the one the specification froze. A
+ * differing file names the instrument entries whose hashes changed.
+ */
+export function verifyCryptoExport(
+  raw: Buffer,
+  frozen: { exportSha256: string; inputHashes: Readonly<Record<string, string>> } = SPEC.data,
+): { file: TradingViewOhlcvExport; exportSha256: string } {
+  const exportSha256 = sha256(raw);
+  const file = parseExport(JSON.parse(raw.toString('utf8')));
+  if (file.universe !== CRYPTO_UNIVERSE) {
+    throw new Error(
+      `The study reads a ${CRYPTO_UNIVERSE} export, not ${file.universe ?? 'default'}.`,
+    );
+  }
+  if (exportSha256 !== frozen.exportSha256) {
+    const hashes = instrumentHashes(file);
+    const { rule, ...expected } = frozen.inputHashes;
+    const changed = [...new Set([...Object.keys(expected), ...Object.keys(hashes)])]
+      .filter((ticker) => expected[ticker] !== hashes[ticker])
+      .sort(compareTickers);
+    const detail =
+      changed.length > 0
+        ? `changed instrument entries: ${changed.join(', ')}`
+        : 'every instrument entry is unchanged; the file around them differs';
+    throw new Error(
+      `The study is frozen on export ${frozen.exportSha256}; this file is ${exportSha256} (${detail}).`,
+    );
+  }
+  return { file, exportSha256 };
+}
+
+/** The recorded live scan the replay is checked against, only if byte for byte the frozen one. */
+export async function loadRecordedScan(store: string): Promise<ScanSnapshot> {
+  const raw = await readFile(join(store, `${RECORDED_SCAN.scanId}.json`));
+  const actual = sha256(raw);
+  if (actual !== RECORDED_SCAN.sha256) {
+    throw new Error(
+      `Scan ${RECORDED_SCAN.scanId} is frozen as sha256 ${RECORDED_SCAN.sha256}; the stored file is ${actual}.`,
+    );
+  }
+  return JSON.parse(raw.toString('utf8')) as ScanSnapshot;
+}
+
+/** Aggregates only: no ticker, price or per-asset figure. */
+export function researchSummaryCrypto(results: CryptoStudyResults) {
+  const { perMember, ...coverage } = results.coverage;
+  const row = ({ stats, concentration: c }: GroupResult) => ({
+    ...stats,
+    tooFew: stats.observations < TOO_FEW.observations || stats.distinctDates < TOO_FEW.dates,
+    largestAssetShare: c.largestAssetShare,
+    assetsForHalf: c.assetsForHalf,
+    largestQuarterShare: c.largestQuarterShare,
+  });
+  const each = <K extends string, V extends GroupResult>(
+    groups: Record<K, V>,
+    extra = (_: V) => ({}),
+  ) =>
+    Object.fromEntries(
+      (Object.entries(groups) as [K, V][]).map(([id, group]) => [
+        id,
+        { ...row(group), ...extra(group) },
+      ]),
+    );
+  return {
+    specificationId: results.specificationId,
+    studyId: results.studyId,
+    evidenceType: results.evidenceType,
+    evaluationDates: results.evaluationDates,
+    parity: { ...results.parity, mismatches: results.parity.mismatches.length },
+    recordedScanParity: {
+      ...results.recordedScanParity,
+      mismatches: results.recordedScanParity.mismatches.length,
+    },
+    coverage: {
+      ...coverage,
+      membersEverEvaluated: Object.values(perMember).filter((m) => m.firstEvaluated !== null)
+        .length,
+    },
+    composition: results.composition,
+    horizons: results.horizons.map(({ horizon, outcomes, againstUniverse, volatilityMatched }) => ({
+      horizon,
+      outcomes,
+      againstUniverse: each(againstUniverse),
+      volatilityMatched: each(volatilityMatched, (group) => ({ unmatched: group.unmatched })),
+    })),
+  };
+}
+
+export async function runScannerResearchCrypto(options: {
+  file: string;
+  outputDir: string;
+  repositoryCommit: string;
+  scanStore: string;
+  now?: () => number;
+}) {
+  const { file, exportSha256 } = verifyCryptoExport(await readFile(options.file));
+  const results = runCryptoStudy(file, exportSha256, await loadRecordedScan(options.scanStore));
+  return {
+    ...(await writeStudy(
+      results,
+      CRYPTO_RESEARCH_SPECIFICATION_ID,
+      options,
+      renderCryptoResearchReport,
+      cryptoFrozenFactDifferences(results),
+    )),
+    results,
+  };
+}

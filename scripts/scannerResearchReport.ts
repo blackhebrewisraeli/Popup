@@ -1,6 +1,13 @@
 import { esc, pct, pp, REPORT_STYLES, share, table, wrap, type Cell } from './reportStyles';
 import type { GroupId, GroupStats, HorizonResults, StudyResults } from './scannerResearch';
 import type {
+  CryptoGroupId,
+  CryptoHorizonResults,
+  CryptoStats,
+  CryptoStudyResults,
+  GroupResult,
+} from './scannerResearchCrypto';
+import type {
   BaselineStats,
   StudyResultsV2,
   V2GroupId,
@@ -420,6 +427,224 @@ ${populations}`;
       specFile: 'docs/scanner-research.v2.json',
       body,
       limitations: V2_LIMITATIONS,
+    },
+    meta,
+  );
+}
+
+const CRYPTO_GROUP_LABELS: Record<CryptoGroupId, string> = {
+  universe: 'Every evaluated pair',
+  top5: 'Top 5 by rank',
+  top10: 'Top 10 by rank',
+  'rank-quintile-1': 'Rank quintile 1 (highest scores)',
+  'rank-quintile-2': 'Rank quintile 2',
+  'rank-quintile-3': 'Rank quintile 3',
+  'rank-quintile-4': 'Rank quintile 4',
+  'rank-quintile-5': 'Rank quintile 5 (lowest scores)',
+  'long-setup': 'Long setup, every asset-date',
+  'long-setup-transition': 'Long setup, new transitions only',
+  'risk-warning': 'Risk warning, every asset-date',
+  'risk-warning-transition': 'Risk warning, new transitions only',
+  'volatility-tercile-1': 'Volatility tercile 1 (quietest)',
+  'volatility-tercile-2': 'Volatility tercile 2',
+  'volatility-tercile-3': 'Volatility tercile 3 (most volatile)',
+};
+
+const CRYPTO_LIMITATIONS = [
+  'Retrospective historical research on the TradingView history retrieved on 2026-11-11. The scanner did not record these readings at the time; no part of this history is genuinely unseen validation data.',
+  'The universe was selected on 2026-11-11 from today’s market-capitalization ranking. Coins delisted, collapsed or no longer large are absent and coins that grew are present, so every figure, the same-date baselines included, carries survivorship and selection bias.',
+  'Committing the specification before running it improves research discipline. It does not remove survivorship bias, historical data revisions, or prior knowledge of this model, of the latest live scan and of the equity studies’ results.',
+  'No historical provider snapshots exist: every past bar is today’s version of it, after any later corrections.',
+  'One provider (TradingView’s BINANCE: spot series), one retrieval and about 26 months, one market period. Two young listings are never evaluated, two join late, so coverage changes over time.',
+  'The reference price is the open of the first bar after the cutoff, which in a 24/7 market is usually at or near the close that produced the score. It is a reference price, not a fill: no spread, slippage, fees, liquidity or position sizing is modelled. Price changes are not portfolio returns.',
+  'Volatility matching uses one reading, ATR(14) / close, in three coarse terciles of about seven or eight pairs. An observation whose tercile holds no pair outside its group is unmatched and left out, so a matched row can cover fewer observations than its unmatched row.',
+  'Observations overlap: consecutive dates share most of each horizon, standing setups repeat daily and same-date pairs share crypto-wide moves. Counts are not independent trials; no significance, p-value or confidence interval is reported.',
+  'A decline after a risk warning is not profit: no short position is assumed or measured.',
+  'Prices are quoted in USDT; any deviation of USDT from the US dollar is in every price.',
+];
+
+const CRYPTO_STAT_HEADERS = [
+  'Observations',
+  'Pairs',
+  'Dates',
+  'Mean',
+  'Median',
+  'Positive changes',
+  'Baseline mean',
+  'Mean Δ',
+  'Median Δ',
+  'Above baseline',
+  'Date-weighted Δ',
+  'Dates above',
+  'Readable',
+];
+
+function cryptoCells(stats: CryptoStats): Cell[] {
+  const tooFew = stats.observations < 30 || stats.distinctDates < 10;
+  return [
+    stats.observations,
+    stats.distinctAssets,
+    stats.distinctDates,
+    pct(stats.mean),
+    pct(stats.median),
+    share(stats.positiveFraction),
+    pct(stats.baselineMean),
+    pp(stats.meanDifferenceVsBaseline),
+    pp(stats.medianDifferenceVsBaseline),
+    share(stats.fractionAboveBaseline),
+    pp(stats.dateMeanDifferenceVsBaseline),
+    share(stats.fractionOfDatesAboveBaseline),
+    tooFew ? 'too few' : 'yes',
+  ];
+}
+
+function cryptoCoverageSection(results: CryptoStudyResults): string {
+  const { specification: spec, coverage, parity, recordedScanParity: recorded } = results;
+  const method = definitionList([
+    ['Study', `${results.studyId} · ${results.evidenceType}`],
+    ['Specification ID', results.specificationId],
+    ['Frozen', `${spec.frozenAt} · ${spec.frozenBefore}`],
+    ['Question', spec.question],
+    ['Export', `${spec.data.export} · sha256 ${results.export.sha256}`],
+    [
+      'Retrieval',
+      `${results.export.retrieval.startedAt} → ${results.export.retrieval.completedAt}; no new retrieval`,
+    ],
+    ['Universe', `${spec.universe.id}: ${coverage.memberCount} pairs. ${spec.universe.membership}`],
+    ['Survivorship and selection', spec.universe.survivorshipAndSelection],
+    [
+      'Evaluation dates',
+      `${results.evaluationDates.count} UTC days, ${results.evaluationDates.first} → ${results.evaluationDates.last}; ${results.evaluationDates.compared} with at least ${results.evaluationDates.minimumEvaluated} pairs evaluated are compared`,
+    ],
+    [
+      'Scanner',
+      `${spec.scanner.scannerVersion} · model ${spec.scanner.modelVersion} · ${spec.scanner.candlePolicyVersion} · ${spec.scanner.historyWindowCandles}-candle window · ${spec.scanner.provider}`,
+    ],
+    ['Decision cutoff', spec.decision.cutoff],
+    ['Reference price', spec.timestamps.referencePrice],
+    [
+      'Endpoint price',
+      `${spec.timestamps.endpointPrice}; horizons ${spec.horizonsUtcDays.join(', ')} UTC days`,
+    ],
+    ['Maturity', spec.timestamps.maturity],
+    ['Same-date baseline', spec.comparisons.sameDateBaseline],
+    ['Volatility-matched baseline', spec.comparisons.volatilityMatchedBaseline],
+    [
+      'Scanner parity',
+      `${parity.status}: the replay equals the import reading the whole export at each cutoff on ${parity.datesCompared} dates (${parity.first ?? '—'} → ${parity.last ?? '—'}), ${parity.mismatches.length} differences`,
+    ],
+    [
+      'Recorded scan parity',
+      `${recorded.status}: ${recorded.members} members of scan ${recorded.scanId} on ${recorded.day}, ${recorded.mismatches.length} differences`,
+    ],
+  ]);
+  const statuses = Object.entries(coverage.byStatus).filter(([, count]) => count > 0);
+  const members = Object.entries(coverage.perMember).map(([ticker, member]) => [
+    ticker,
+    member.firstEvaluated ?? 'never',
+    Object.entries(member.byStatus)
+      .map(([status, count]) => `${status} ${count}`)
+      .join(', '),
+  ]);
+  const signals = (['long', 'risk'] as const).map((kind) => {
+    const counts = coverage.signals[kind];
+    return [
+      kind === 'long' ? 'Long setup' : 'Risk warning',
+      counts.observations,
+      counts.transitions,
+      counts.onsetUnknown,
+      counts.standing,
+    ];
+  });
+  const outcomes = results.horizons.map(({ horizon, outcomes: counts }) => [
+    `${horizon} UTC day${horizon === 1 ? '' : 's'}`,
+    counts.AVAILABLE,
+    counts.PENDING,
+    counts.MISSING,
+    counts.INVALID,
+  ]);
+  const mix = Object.entries(results.composition).map(([id, { observations, terciles }]) => [
+    CRYPTO_GROUP_LABELS[id as CryptoGroupId],
+    observations,
+    share(terciles?.[0] ?? null),
+    share(terciles?.[1] ?? null),
+    share(terciles?.[2] ?? null),
+  ]);
+  return `<section class="panel"><h2>Coverage and methodology</h2>${method}</section>
+<section class="panel"><h2>Coverage</h2>
+<p class="muted">${esc(coverage.assetDates)} asset-dates. ${esc(coverage.evaluatedPerDate.min)}–${esc(coverage.evaluatedPerDate.max)} pairs evaluated per date; ${esc(coverage.datesBelowMinimum)} dates fell below the minimum and ${esc(coverage.observationsOnExcludedDates)} evaluated asset-dates on them were left out.</p>
+${table(['Scanner status', 'Asset-dates'], statuses)}
+<h3>Every member</h3>
+${table(['Pair', 'First evaluated', 'Statuses across dates'], members)}
+<h3>Setup observations versus new transitions (compared dates)</h3>
+${table(['Condition', 'Asset-date observations', 'New transitions', 'Onset unknown', 'Standing (repeated)'], signals)}
+<h3>Outcome availability for evaluated asset-dates (compared dates)</h3>
+${table(['Horizon', 'Available', 'Pending', 'Missing', 'Invalid'], outcomes)}
+<h3>Where each group sits by volatility (share of its asset-date observations)</h3>
+${table(['Group', 'Observations', 'Tercile 1 (quietest)', 'Tercile 2', 'Tercile 3 (most volatile)'], mix)}
+</section>`;
+}
+
+function cryptoGroupTables(
+  label: string,
+  groups: Record<string, GroupResult & { unmatched?: number }>,
+): string {
+  const ids = Object.keys(groups) as CryptoGroupId[];
+  const matched = ids.some((id) => groups[id]?.unmatched !== undefined);
+  const rows = table(
+    ['Group', ...CRYPTO_STAT_HEADERS, ...(matched ? ['Unmatched'] : [])],
+    ids.map((id) => [
+      CRYPTO_GROUP_LABELS[id],
+      ...cryptoCells(groups[id]!.stats),
+      ...(matched ? [groups[id]!.unmatched ?? null] : []),
+    ]),
+  );
+  const quarters = [...new Set(ids.flatMap((id) => Object.keys(groups[id]!.byQuarter)))].sort(
+    (a, b) => a.localeCompare(b),
+  );
+  const byQuarter = table(
+    ['Group', ...quarters.map((quarter) => `${quarter}: n · Δ`)],
+    ids.map((id) => [
+      CRYPTO_GROUP_LABELS[id],
+      ...quarters.map((quarter) => {
+        const stats = groups[id]!.byQuarter[quarter];
+        return stats ? `${stats.observations} · ${pp(stats.meanDifferenceVsBaseline)}` : '—';
+      }),
+    ]),
+  );
+  const perAsset = ids
+    .filter((id) => id !== 'universe')
+    .map((id) => {
+      const { concentration, byAsset } = groups[id]!;
+      const assets = Object.entries(byAsset)
+        .sort(([, a], [, b]) => b.observations - a.observations)
+        .map(([ticker, stats]) => [ticker, ...cryptoCells(stats)]);
+      return `<details><summary>${esc(CRYPTO_GROUP_LABELS[id])}: ${assets.length} pairs; the largest is ${share(concentration.largestAssetShare)} of observations, ${esc(concentration.assetsForHalf)} pairs make up half; the largest quarter is ${share(concentration.largestQuarterShare)}</summary>${table(['Pair', ...CRYPTO_STAT_HEADERS], assets)}</details>`;
+    })
+    .join('');
+  return `<h3>${esc(label)}</h3>${rows}
+<h3>${esc(label)}: by calendar quarter of the evaluation date</h3>${byQuarter}
+<h3>${esc(label)}: per pair and concentration</h3>${perAsset}`;
+}
+
+function cryptoHorizonSection(horizon: CryptoHorizonResults): string {
+  const label = `${horizon.horizon} UTC day${horizon.horizon === 1 ? '' : 's'}`;
+  return `<section class="panel"><h2>${esc(label)}: OPEN of the first bar after the cutoff → OPEN ${esc(label)} later</h2>
+<p class="muted">Price changes, not portfolio returns. Risk-warning rows show what prices did after a warning; a decline is not profit and no short position is assumed. “Too few” marks fewer than 30 observations or 10 dates.</p>
+${cryptoGroupTables('Against the same-date equal-weight mean of evaluated pairs', horizon.againstUniverse)}
+${cryptoGroupTables('Against same-date pairs of the same volatility tercile outside the group', horizon.volatilityMatched)}
+</section>`;
+}
+
+export function renderCryptoResearchReport(results: CryptoStudyResults, meta: ReportMeta): string {
+  return page(
+    results,
+    {
+      title: 'Crypto scanner study',
+      specFile: 'docs/scanner-research-crypto.v1.json',
+      body: `${cryptoCoverageSection(results)}
+${results.horizons.map(cryptoHorizonSection).join('\n')}`,
+      limitations: CRYPTO_LIMITATIONS,
     },
     meta,
   );

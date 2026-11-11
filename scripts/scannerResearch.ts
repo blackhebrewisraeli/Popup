@@ -506,14 +506,17 @@ export function replayDate(
   return replayWithVolatility(members, sessions, at, index).date;
 }
 
+/** What an outcome reads from a bar: its session (a UTC day, for crypto) and OHLC. */
+export type OutcomeBar = Pick<EquityDailyBar, 'session' | 'open' | 'high' | 'low' | 'close'>;
+
 /** Session → the member's one bar for it, or null when it has more than one. */
-export function barsBySession(bars: readonly EquityDailyBar[]): Map<string, EquityDailyBar | null> {
-  const map = new Map<string, EquityDailyBar | null>();
+export function barsBySession(bars: readonly OutcomeBar[]): Map<string, OutcomeBar | null> {
+  const map = new Map<string, OutcomeBar | null>();
   for (const bar of bars) map.set(bar.session, map.has(bar.session) ? null : bar);
   return map;
 }
 
-function validBar(bar: EquityDailyBar | null): bar is EquityDailyBar {
+function validBar(bar: OutcomeBar | null): bar is OutcomeBar {
   return bar !== null && validatePrices({ ...bar, timestamp: 0, closeTime: 0 }, 0).length === 0;
 }
 
@@ -522,7 +525,7 @@ function validBar(bar: EquityDailyBar | null): bar is EquityDailyBar {
  * The evaluation date's own close is never the reference.
  */
 export function measureOutcome(
-  bars: ReadonlyMap<string, EquityDailyBar | null>,
+  bars: ReadonlyMap<string, OutcomeBar | null>,
   sessions: readonly string[],
   at: number,
   horizon: number,
@@ -668,20 +671,27 @@ export function studyObservations(
 export type GroupId = (typeof RESEARCH_SPECIFICATION.comparisons.groups)[number];
 export type MemberGroupId = Exclude<GroupId, 'benchmark-spy'>;
 
-export const GROUP_MEMBERSHIP: Record<MemberGroupId, (observation: StudyObservation) => boolean> = {
-  universe: () => true,
-  'long-setup': (o) => o.long,
-  'long-setup-transition': (o) => o.longTransition,
-  'risk-warning': (o) => o.risk,
-  'risk-warning-transition': (o) => o.riskTransition,
-  top5: (o) => o.rank <= 5,
-  top10: (o) => o.rank <= 10,
-  'rank-quintile-1': (o) => o.quintile === 1,
-  'rank-quintile-2': (o) => o.quintile === 2,
-  'rank-quintile-3': (o) => o.quintile === 3,
-  'rank-quintile-4': (o) => o.quintile === 4,
-  'rank-quintile-5': (o) => o.quintile === 5,
-};
+/** What group membership reads; a crypto observation has no instrument type. */
+export type GroupedObservation = Pick<
+  StudyObservation,
+  'rank' | 'quintile' | 'long' | 'risk' | 'longTransition' | 'riskTransition'
+>;
+
+export const GROUP_MEMBERSHIP: Record<MemberGroupId, (observation: GroupedObservation) => boolean> =
+  {
+    universe: () => true,
+    'long-setup': (o) => o.long,
+    'long-setup-transition': (o) => o.longTransition,
+    'risk-warning': (o) => o.risk,
+    'risk-warning-transition': (o) => o.riskTransition,
+    top5: (o) => o.rank <= 5,
+    top10: (o) => o.rank <= 10,
+    'rank-quintile-1': (o) => o.quintile === 1,
+    'rank-quintile-2': (o) => o.quintile === 2,
+    'rank-quintile-3': (o) => o.quintile === 3,
+    'rank-quintile-4': (o) => o.quintile === 4,
+    'rank-quintile-5': (o) => o.quintile === 5,
+  };
 export const MEMBER_GROUPS = Object.keys(GROUP_MEMBERSHIP) as MemberGroupId[];
 
 /** One measured change with what it is compared against on the same date. */
@@ -707,7 +717,7 @@ export interface GroupStats {
   meanDifferenceVsBenchmark: number | null;
 }
 
-function mean(values: readonly number[]): number | null {
+export function mean(values: readonly number[]): number | null {
   return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
@@ -720,7 +730,7 @@ function median(values: readonly number[]): number | null {
     : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
-function fraction(flags: readonly boolean[]): number | null {
+export function fraction(flags: readonly boolean[]): number | null {
   return flags.length === 0 ? null : flags.filter(Boolean).length / flags.length;
 }
 
@@ -1110,7 +1120,13 @@ export async function runScannerResearch(options: {
   const { file, exportSha256 } = await loadFrozenExport(options.file);
   const results = runStudy(file, exportSha256);
   return {
-    ...(await writeStudy(results, RESEARCH_SPECIFICATION_ID, options, renderScannerResearchReport)),
+    ...(await writeStudy(
+      results,
+      RESEARCH_SPECIFICATION_ID,
+      options,
+      renderScannerResearchReport,
+      frozenFactDifferences(results),
+    )),
     results,
   };
 }
@@ -1128,10 +1144,11 @@ export async function loadFrozenExport(path: string) {
 }
 
 /**
- * Refuses results that depart from the frozen facts, writes them once under
- * the specification's ID, and renders the private report unless they conflict.
+ * Refuses results that depart from the frozen facts (`differences`, from the study's own
+ * check), writes them once under the specification's ID, and renders the private report
+ * unless they conflict.
  */
-export async function writeStudy<T extends Parameters<typeof frozenFactDifferences>[0]>(
+export async function writeStudy<T extends { parity: { mismatches: readonly unknown[] } }>(
   results: T,
   specificationId: string,
   options: { outputDir: string; repositoryCommit: string; now?: () => number },
@@ -1139,8 +1156,8 @@ export async function writeStudy<T extends Parameters<typeof frozenFactDifferenc
     results: T,
     meta: { generatedAt: string; repositoryCommit: string; resultHash: string },
   ) => string,
+  differences: readonly string[],
 ) {
-  const differences = frozenFactDifferences(results);
   if (differences.length > 0) {
     const sample = results.parity.mismatches.slice(0, 5).map((item) => JSON.stringify(item));
     throw new Error(

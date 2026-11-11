@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   finishRetrieval: vi.fn(),
   runScannerResearch: vi.fn(),
   runScannerResearchV2: vi.fn(),
+  runScannerResearchCrypto: vi.fn(),
 }));
 
 // Network edges are stubbed; the evaluation store and the scanner run for real.
@@ -92,6 +93,10 @@ vi.mock('./scannerResearch', () => ({
 vi.mock('./scannerResearchV2', () => ({
   runScannerResearchV2: mocks.runScannerResearchV2,
   researchSummaryV2: () => ({ specificationId: 'spec-v2' }),
+}));
+vi.mock('./scannerResearchCrypto', () => ({
+  runScannerResearchCrypto: mocks.runScannerResearchCrypto,
+  researchSummaryCrypto: () => ({ specificationId: 'spec-crypto' }),
 }));
 
 const { main } = await import('./evaluate-canonical');
@@ -170,6 +175,7 @@ describe('evaluate-canonical CLI', () => {
     'tradingview-finish',
     'scanner-research',
     'scanner-research-v2',
+    'scanner-research-crypto',
   ])('%s requires a value', async (command) => {
     await expect(cli(command)).rejects.toThrow(`${command} requires a value`);
   });
@@ -308,6 +314,29 @@ describe('evaluate-canonical CLI', () => {
       specificationId: 'spec-v2',
     });
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it('runs the frozen crypto study against the recorded scan in the scan store', async () => {
+    mocks.runScannerResearchCrypto.mockResolvedValue({
+      status: 'UNCHANGED',
+      resultHash: 'h',
+      resultsPath: 'reports/r.json',
+      reportPath: 'reports/r.html',
+      results: {},
+    });
+
+    await cli('scanner-research-crypto', 'exports/x.json', '--scan-store', 'scans');
+    expect(mocks.runScannerResearchCrypto).toHaveBeenCalledWith({
+      file: join(workspace, 'exports/x.json'),
+      outputDir: join(workspace, '.zerochart-reports'),
+      scanStore: join(workspace, 'scans'),
+      repositoryCommit: expect.stringMatching(/^[0-9a-f]{40}(-dirty)?$/),
+    });
+    expect(printed()).toMatchObject({ status: 'UNCHANGED', specificationId: 'spec-crypto' });
+    expect(process.exitCode).toBeUndefined();
+    await expect(cli('scanner-research-crypto', 'exports/x.json', '--store', 's')).rejects.toThrow(
+      'scanner-research-crypto: unknown or incomplete option --store',
+    );
   });
 
   it('refuses a store outside the workspace', async () => {

@@ -1,6 +1,7 @@
 import { compareTickers } from '@/lib/marketScanner';
 import {
   concentration,
+  frozenFactDifferences,
   GROUP_MEMBERSHIP,
   groupBy,
   loadFrozenExport,
@@ -321,6 +322,7 @@ export async function runScannerResearchV2(options: {
       RESEARCH_SPECIFICATION_V2_ID,
       options,
       renderScannerResearchV2Report,
+      frozenFactDifferences(results),
     )),
     results,
   };
