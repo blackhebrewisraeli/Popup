@@ -86,7 +86,7 @@ whether to act, and where; Popup places no orders.
   traces it to volatility: crypto's median ATR/close (6.4%) puts 85.5% of pair-days in
   HIGH_VOLATILITY, where no RSI or momentum reading can reach the Long score above 4.25%, and
   99.7% of Risk observations rest on that clause. No defect found.
-- **Risk clauses named in Research:** draft PR (this entry's PR, below) labels every Risk warning
+- **Risk clauses named in Research:** draft [#154](https://github.com/blackhebrewisraeli/Popup/pull/154) labels every Risk warning
   by the clause that holds it, **High volatility** or **Low score** or both, on row tags and
   accessible names, evidence, comparison, the Manual Spot scenario and the landing example. Wording
   only: the Risk warnings view, its counts, ranks and scan-change transitions are unchanged.
@@ -129,8 +129,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Name the Risk clause in Research · Draft PR (this branch,
-  `feat/risk-clause-labels`).** Decision: wording only, from `explainResult`'s own clauses, so no
+- **2026-11-12 · Name the Risk clause in Research · Draft PR
+  [#154](https://github.com/blackhebrewisraeli/Popup/pull/154).** Decision: wording only, from `explainResult`'s own clauses, so no
   formula is repeated. A Risk tag reads "Risk: high volatility", "Risk: low score" or both, and the
   row's accessible name uses the same words; the evidence, comparison table and Spot scenario name
   each held clause; a label with no recorded model names none ("Risk warning"). The Risk warnings
