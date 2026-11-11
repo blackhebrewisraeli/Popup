@@ -6,6 +6,7 @@ import {
   cohortFreshness,
   explainResult,
   resultAsOfLabel,
+  riskLabel,
   symbolEvidence,
   type Freshness,
 } from '@/lib/scanReview';
@@ -56,7 +57,7 @@ function standingText(
   riskWhy: string,
 ): string {
   if (setups.long && setups.risk) {
-    return `ZC LONG and ZC RISK both held on the ${day}: the Long condition comes with a Risk warning (${riskWhy}). Neither is a forecast, a target or a recommendation.`;
+    return `ZC LONG and ZC RISK both held on the ${day}: the Long condition comes with a Risk warning, ${riskWhy}. Neither is a forecast, a target or a recommendation.`;
   }
   if (setups.long) {
     return `ZC LONG held on the ${day}: a recorded technical condition, not a recommendation, target or forecast. The scenario below is yours.`;
@@ -86,6 +87,7 @@ function RecordedEvidence({
   day: string;
   freshness: Freshness | null;
 }>) {
+  const risk = riskLabel({ model, setups });
   const riskWhy = explainResult(model, setups)
     .risk.clauses.filter((clause) => clause.met)
     .map(clauseValue)
@@ -130,7 +132,7 @@ function RecordedEvidence({
         ) : (
           <span className="market-scan-tag">No Long setup</span>
         )}
-        {setups.risk && <span className="market-scan-tag is-risk">Risk warning</span>}
+        {risk && <span className="market-scan-tag is-risk">{risk}</span>}
         {freshness?.stale && <span className="market-scan-tag scan-stale">Stale</span>}
         <span>{standingText(result.ticker, model.version, setups, day, riskWhy)}</span>
       </p>

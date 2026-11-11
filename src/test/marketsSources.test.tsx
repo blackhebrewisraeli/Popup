@@ -217,7 +217,8 @@ describe('Markets source: market data or the local TradingView import', () => {
       );
       // The short reason is the clause that decides the setup state; zero long setups here.
       const reason = row.querySelector('.scan-row-reason')?.textContent;
-      if (result.setups!.risk) expect(reason).toMatch(/^(Score \d+ ≤ 28|High-volatility: ATR )/);
+      if (result.setups!.risk)
+        expect(reason).toMatch(/^(Low score: Score \d+ ≤ 28|High volatility: ATR )/);
       else expect(reason).toMatch(/^Short of ZC LONG: /);
       expect(row.querySelector('.is-long') !== null).toBe(result.setups!.long);
       expect(row.querySelector('.is-risk') !== null).toBe(result.setups!.risk);

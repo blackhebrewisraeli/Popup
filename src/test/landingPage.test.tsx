@@ -22,7 +22,7 @@ describe('LandingPage example scan', () => {
     expect(labels).toHaveLength(5);
     const scores = labels.map((label) => Number(/score (\d+)/.exec(label)?.[1]));
     expect(scores).toEqual([...scores].sort((a, b) => b - a));
-    expect(labels.some((label) => label.endsWith('Risk warning'))).toBe(true);
+    expect(labels.some((label) => label.endsWith('Risk: high volatility'))).toBe(true);
     expect(labels.some((label) => label.endsWith('No setup'))).toBe(true);
   });
 
@@ -37,14 +37,15 @@ describe('LandingPage example scan', () => {
 
   it('shows the selected row’s explanation and the condition behind it', () => {
     renderLanding();
-    const risk = screen.getByRole('button', { name: /^DEMO4,.*Risk warning$/ });
+    const risk = screen.getByRole('button', { name: /^DEMO4,.*Risk: high volatility$/ });
     fireEvent.click(risk);
     expect(risk).toHaveAttribute('aria-current', 'true');
     expect(rows().filter((row) => row.hasAttribute('aria-current'))).toHaveLength(1);
     const panel = within(detail());
     expect(panel.getByRole('heading', { name: 'DEMO4' })).toBeInTheDocument();
     expect(panel.getByText('Holds')).toBeInTheDocument();
-    expect(panel.getByText(/Regime High-volatility/)).toHaveTextContent('met');
+    expect(panel.getByText(/^High volatility — ATR ≥ 4\.00% of price/)).toHaveTextContent('met');
+    expect(panel.getAllByText('Risk: high volatility')[0]).toHaveClass('is-risk');
     expect(screen.getByText('Showing DEMO4')).toBeInTheDocument();
   });
 

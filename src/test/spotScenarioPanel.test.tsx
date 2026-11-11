@@ -274,9 +274,13 @@ describe('Manual Spot scenario in the TradingView crypto evidence', () => {
     select('BOTH-USDT');
     section = scenario();
     expect(fact(section, 'ZC LONG')).toBe('Holds');
-    expect(fact(section, 'ZC RISK')).toMatch(/^Holds: /);
-    expect(within(section).getByText('Risk warning')).toBeInTheDocument();
-    expect(section).toHaveTextContent('ZC LONG and ZC RISK both held on the 27 Oct candle (UTC)');
+    // Long stays visible beside the high-volatility clause that holds Risk.
+    expect(fact(section, 'ZC RISK')).toMatch(/^Holds: High volatility \(ATR \d\.\d\d%\)$/);
+    expect(within(section).getByText('Long setup')).toBeInTheDocument();
+    expect(within(section).getByText('Risk: high volatility')).toBeInTheDocument();
+    expect(section).toHaveTextContent(
+      /ZC LONG and ZC RISK both held on the 27 Oct candle \(UTC\): the Long condition comes with a Risk warning, High volatility \(ATR \d\.\d\d%\)\./,
+    );
   });
 
   it('starts empty when another asset is selected', () => {

@@ -219,7 +219,7 @@ describe('TradingViewDevScan', () => {
         'One scan evaluated no asset',
         'Evaluated only in the displayed scan, so there is no earlier reading: AAPL.',
         'No asset was evaluated in both scans.',
-        'Risk warnings0 appeared · 0 cleared · 0 held in both',
+        'Risk warnings, either clause0 appeared · 0 cleared · 0 held in both',
       ],
     },
     {
@@ -228,7 +228,7 @@ describe('TradingViewDevScan', () => {
       displayed: failedScan(EQUITY_NOW),
       expected: [
         'Not evaluated in the displayed scan, so their earlier setups are neither confirmed nor cleared: AAPL.',
-        'Risk warnings0 appeared · 0 cleared · 0 held in both',
+        'Risk warnings, either clause0 appeared · 0 cleared · 0 held in both',
       ],
     },
   ])('describes $name', async ({ baseline, displayed, expected }) => {

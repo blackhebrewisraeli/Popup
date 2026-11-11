@@ -174,7 +174,7 @@ nothing, and offers no order: you decide, and act in Binance yourself if you cho
 - **Evidence first.** The panel repeats what it rests on: the exact TradingView symbol, Binance
   Spot as venue, the scan ID, model and timeframe, the evaluated UTC day, the technical rank,
   whether ZC LONG and ZC RISK held (both can), freshness now and data quality. A pair without a
-  Long setup is labeled not model-backed; a Risk warning and **Stale** stay visible beside the
+  Long setup is labeled not model-backed; a Risk warning (named by its clause) and **Stale** stay visible beside the
   inputs and figures. Pairs that were not evaluated (short history, invalid data) have no evidence
   view and so no scenario.
 - **Inputs, all yours:** available allocation (USDT), maximum planned loss (USDT, at most the

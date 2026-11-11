@@ -15,6 +15,7 @@ import { SpotScenario } from '@/components/SpotScenario';
 import {
   FLAT_MOMENTUM,
   LONG_SETUP_MIN_SCORE,
+  REGIME_HIGH_VOLATILITY,
   REGIME_LABELS,
   RISK_SETUP_MAX_SCORE,
   type CanonicalScore,
@@ -41,6 +42,7 @@ import {
   QUANT_FACTORS,
   ratio,
   resultAsOfLabel,
+  riskLabel,
   rowReason,
   symbolEvidence,
   UTC_TIME,
@@ -60,7 +62,7 @@ const MAX_COMPARE = 3;
 
 const VIEW_RULE: Record<ScanView, string> = {
   long: `ZC LONG: score ≥ ${LONG_SETUP_MIN_SCORE} and MACD momentum ≥ ${percent(FLAT_MOMENTUM)} of price`,
-  risk: `ZC RISK: score ≤ ${RISK_SETUP_MAX_SCORE}, or a high-volatility regime`,
+  risk: `ZC RISK: high volatility (ATR ≥ ${ratio(REGIME_HIGH_VOLATILITY)} of price), a low score (≤ ${RISK_SETUP_MAX_SCORE}), or both`,
   all: 'Every evaluated asset by score; most meet no setup',
 };
 const VIEW_NOUN: Record<ScanView, string> = {
@@ -96,10 +98,11 @@ export function FactorBars({ model }: Readonly<{ model: Pick<CanonicalScore, 'co
 }
 
 function SetupTags({ result }: Readonly<{ result: ScanAssetResult }>) {
+  const risk = riskLabel(result);
   return (
     <>
       {result.setups?.long && <span className="market-scan-tag is-long">Long setup</span>}
-      {result.setups?.risk && <span className="market-scan-tag is-risk">Risk warning</span>}
+      {risk && <span className="market-scan-tag is-risk">{risk}</span>}
     </>
   );
 }
@@ -151,7 +154,13 @@ function ReadingGuide({
           <dt>Setup</dt>
           <dd>
             ZC LONG or ZC RISK holding on the last closed bar: a standing condition that may have
-            held for days. Not an order.
+            held for days. Not an order. A Risk warning names the clause that holds it: high
+            volatility (ATR ≥ {ratio(REGIME_HIGH_VOLATILITY)} of price), a low score (≤{' '}
+            {RISK_SETUP_MAX_SCORE}), or both. It describes the readings; it is not a sell signal or
+            a forecast.
+            {source &&
+              scan.cohorts.some((cohort) => cohort.assetClass === 'crypto') &&
+              ' In the frozen crypto study’s history (25 pairs, Sep 2024 to Nov 2026), high volatility held on 85.5% of evaluated pair-days. It measures ATR relative to price, not a coming decline, and that share is not a rule for other periods (docs/MODEL_DIAGNOSTIC.md).'}
           </dd>
         </div>
         <div>
@@ -163,9 +172,10 @@ function ReadingGuide({
   );
 }
 
+/** The row's setup labels for its accessible name: the same words its tags show. */
 function setupWords(result: ScanAssetResult): string {
-  const words = [result.setups?.long && 'Long setup', result.setups?.risk && 'Risk warning'];
-  return words.filter(Boolean).join(' and ') || 'No setup';
+  const words = [result.setups?.long && 'Long setup', riskLabel(result)];
+  return words.filter(Boolean).join(', ') || 'No setup';
 }
 
 /** Up and Down move between the rows of one list, so a review needs no Tab per row. */
@@ -576,6 +586,7 @@ export function ClauseList({ check }: Readonly<{ check: SetupCheck }>) {
               <Minus size={13} aria-hidden="true" />
             )}
             <span>
+              {clause.name && `${clause.name} — `}
               {clause.label} {clause.rule}: <strong className="font-mono">{clause.actual}</strong>{' '}
               <span className="market-scan-rule">{clause.met ? 'met' : 'not met'}</span>
             </span>
