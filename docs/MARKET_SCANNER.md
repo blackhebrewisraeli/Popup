@@ -198,7 +198,9 @@ to count incomplete scans. The snapshots keep that whole population.
 A local demonstration: US equities and ETFs scored by this scanner on daily bars that the owner's
 agent session retrieved through TradingView's MCP server. By default a retrieval requests the fixed
 50-member universe; `tradingview-start --universe all` opts in to all 90 configured US equities and
-ETFs ([Two universes](#two-universes)). Under `vite dev` only, the Scan
+ETFs ([Two universes](#two-universes)), and `--universe crypto-usdt-v1` to 25 Binance Spot USDT pairs,
+ranked only among themselves under their own candle contract
+([TradingView crypto scan](TRADINGVIEW_CRYPTO_SCAN.md)). Under `vite dev` only, the Scan
 place has a source selector: **Market data** (the Market scan) or **TradingView import**, which
 replaces it with the **TradingView development scan**. The Markets directory always shows market
 data. The selector sits above the market-data loading and error states, so the import shows even
@@ -318,10 +320,11 @@ sources discards the other's view, filters, comparison and open explanation.
 
 ### Two universes
 
-| Universe           | Command                            | Members                                                        | Selection rule shown in Research           |
-| ------------------ | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
-| `default` (50)     | `tradingview-start`                | The 50 configured tickers with the lowest `sha256(ticker)`     | "The 50 configured US equities and ETFs …" |
-| `all` (90, opt-in) | `tradingview-start --universe all` | Every ticker in `US_EQUITY_INSTRUMENTS`: 71 stocks and 19 ETFs | "All 90 configured US equities and ETFs …" |
+| Universe                      | Command                                       | Members                                                        | Selection rule shown in Research           |
+| ----------------------------- | --------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------ |
+| `default` (50)                | `tradingview-start`                           | The 50 configured tickers with the lowest `sha256(ticker)`     | "The 50 configured US equities and ETFs …" |
+| `all` (90, opt-in)            | `tradingview-start --universe all`            | Every ticker in `US_EQUITY_INSTRUMENTS`: 71 stocks and 19 ETFs | "All 90 configured US equities and ETFs …" |
+| `crypto-usdt-v1` (25, opt-in) | `tradingview-start --universe crypto-usdt-v1` | 25 Binance Spot USDT pairs, frozen 2026-11-11                  | "crypto-usdt-v1: the first 25 coins …"     |
 
 Neither universe depends on a score or an outcome. Both use the same exact symbols for the 50 they
 share, so the default retrieval requests exactly what it did before. Each import records its
@@ -403,8 +406,9 @@ stay byte-identical. The source selector's count stays the published import's.
 Above the ranked list, the TradingView review compares the displayed import with one earlier import
 from `.zerochart-scans/`. `tradingview-finish` chooses it, after the displayed scan reproduces:
 
-1. Candidates are the other TradingView imports in the scan store. A Market data snapshot is never
-   one and is not listed.
+1. Candidates are the other TradingView imports of the same asset class in the scan store. A
+   Market data snapshot is never one and is not listed, and neither is an import of the other
+   asset class (crypto against equities).
 2. They are ranked by evaluated session, latest first, then by evaluation time (the later revision
    of a session first), then by scan ID.
 3. The first one that comes from a strictly earlier session, is comparable (below) and reproduces
