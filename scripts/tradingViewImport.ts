@@ -727,6 +727,43 @@ function passedOver(candidate: Candidate, displayed: string): string | null {
   return incomparable;
 }
 
+/** The asset classes a scan covers: crypto and equity imports never compare. */
+const assetClasses = (scan: TradingViewDevScan['scan']) =>
+  (scan.cohorts ?? []).map((cohort) => cohort.assetClass).join(' · ');
+
+type Loaded = { scanId: string; snapshot: ScanSnapshot } | { scanId: string; error: string };
+
+/** Splits the store's snapshots into same-class TradingView candidates, unreadable files and a count of other-class imports. */
+function sortSnapshots(view: TradingViewDevScan, loaded: readonly Loaded[]) {
+  const unreadable: SkippedBaseline[] = [];
+  const candidates: Candidate[] = [];
+  let otherClass = 0;
+  for (const item of loaded) {
+    if ('error' in item)
+      unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
+    else if (item.snapshot.scan?.universe?.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) continue;
+    else if (assetClasses(item.snapshot.scan) !== assetClasses(view.scan)) otherClass += 1;
+    else {
+      const { snapshot } = item;
+      const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
+      candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
+    }
+  }
+  return { unreadable, candidates, otherClass };
+}
+
+/** Why no baseline was chosen, worded for the displayed scan's asset class. */
+function noBaselineReason(view: TradingViewDevScan, searched: ReturnType<typeof sortSnapshots>) {
+  const crypto = assetClasses(view.scan) === 'crypto';
+  if (searched.candidates.length === 0 && searched.unreadable.length === 0) {
+    if (searched.otherClass === 0) return 'the scan store holds no other TradingView import';
+    return `the scan store holds no other TradingView ${crypto ? 'crypto' : 'equity'} import; imports of another asset class are never compared`;
+  }
+  return crypto
+    ? 'no TradingView crypto import of an earlier UTC day is comparable and reproduces'
+    : 'no TradingView import of an earlier session is comparable and reproduces';
+}
+
 /**
  * The most recent TradingView import from a strictly earlier evaluated session
  * that is comparable with the displayed scan and reproduces offline. A
@@ -750,7 +787,7 @@ async function automaticBaseline(
     .flatMap((name) => SNAPSHOT_FILE.exec(name)?.[1] ?? [])
     .filter((scanId) => scanId !== view.scanId);
   // ponytail: reads every snapshot in the store; keep an index by session once it holds hundreds.
-  const loaded = await Promise.all(
+  const loaded: Loaded[] = await Promise.all(
     ids.map((scanId) =>
       loadScan(scanId, store).then(
         (snapshot) => ({ scanId, snapshot }),
@@ -758,23 +795,8 @@ async function automaticBaseline(
       ),
     ),
   );
-  const unreadable: SkippedBaseline[] = [];
-  const candidates: Candidate[] = [];
-  // Crypto and equity imports never compare, so neither is a candidate for the other.
-  const classes = (scan: TradingViewDevScan['scan']) =>
-    (scan.cohorts ?? []).map((cohort) => cohort.assetClass).join(' · ');
-  let otherClass = 0;
-  for (const item of loaded) {
-    if ('error' in item)
-      unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
-    else if (item.snapshot.scan?.universe?.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) continue;
-    else if (classes(item.snapshot.scan) !== classes(view.scan)) otherClass += 1;
-    else {
-      const { snapshot } = item;
-      const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
-      candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
-    }
-  }
+  const searched = sortSnapshots(view, loaded);
+  const { unreadable, candidates } = searched;
   const check = (scanId: string) =>
     reproduce(scanId, store).catch((error: unknown) => ({
       status: 'MISMATCH' as const,
@@ -797,18 +819,7 @@ async function automaticBaseline(
     skipped.push({ scanId, reason: `does not reproduce (${reproduced.reason})` });
   }
   skipped.push(...unreadable);
-  const crypto = classes(view.scan) === 'crypto';
-  if (candidates.length === 0 && unreadable.length === 0) {
-    if (otherClass === 0) return none('the scan store holds no other TradingView import');
-    return none(
-      `the scan store holds no other TradingView ${crypto ? 'crypto' : 'equity'} import; imports of another asset class are never compared`,
-    );
-  }
-  return none(
-    crypto
-      ? 'no TradingView crypto import of an earlier UTC day is comparable and reproduces'
-      : 'no TradingView import of an earlier session is comparable and reproduces',
-  );
+  return none(noBaselineReason(view, searched));
 }
 
 /**

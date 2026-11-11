@@ -105,7 +105,11 @@ export function latestSession(scan: MarketScan): string | null {
   const days = scan.cohorts.flatMap(({ assetClass, dataAsOf }) =>
     dataAsOf.newest === null ? [] : [sessionOf(dataAsOf.newest, assetClass)!],
   );
-  return days.length > 0 ? days.sort().at(-1)! : null;
+  // YYYY-MM-DD strings order as dates; the latest one wins.
+  return days.reduce<string | null>(
+    (latest, day) => (latest === null || day > latest ? day : latest),
+    null,
+  );
 }
 
 /** Every crypto scan rests on UTC days; anything else on New York sessions. */
