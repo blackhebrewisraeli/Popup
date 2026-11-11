@@ -113,6 +113,21 @@ export const TRADINGVIEW_SYMBOLS: Readonly<Record<string, string>> = Object.from
     .map((symbol) => [symbol.slice(symbol.indexOf(':') + 1), symbol]),
 );
 
+/**
+ * `crypto-usdt-v1`, frozen 2026-11-11 before any candle was retrieved, listed in the order
+ * it was walked: the first 25 coins in TradingView's coin ranking by market capitalization
+ * (screener market `coin`, about 18:29 UTC) that are not stablecoins, tokenized commodities,
+ * wrapped or staked receipts of another coin, or leveraged tokens, and whose `<BASE>USDT`
+ * search returned exactly `BINANCE:<BASE>USDT` as a Binance spot listing. Every candidate
+ * passed over, and why, is in docs/TRADINGVIEW_CRYPTO_SCAN.md. A changed membership is a new
+ * universe ID, never an edit here.
+ */
+export const CRYPTO_TRADINGVIEW_SYMBOLS: Readonly<Record<string, string>> = Object.fromEntries(
+  'BTC ETH BNB XRP SOL TRX HYPE ZEC DOGE LINK ADA XLM NEAR BCH UNI LTC AVAX SUI GRAM HBAR SHIB TAO QNT ENA PEPE'
+    .split(' ')
+    .map((base) => [`${base}-USDT`, `BINANCE:${base}USDT`]),
+);
+
 /** A universe's exact symbols; a member without a resolved symbol stops the retrieval, never drops out. */
 export function universeSymbols(universe: DevScanUniverse = 'default'): string[] {
   return universeTickers(universe).map((ticker) => {
