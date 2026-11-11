@@ -61,6 +61,20 @@ function universeLabel(source: string): string {
   return source === 'assets_status' ? 'in the Markets universe' : 'in the sample preview universe';
 }
 
+/**
+ * Where the scanned crypto pairs trade, from the instruments the scan recorded: "Binance
+ * Spot" for `BINANCE:` pairs. A venue, never the data source. Null without crypto results.
+ */
+function venueLabel(scan: MarketScan): string | null {
+  const venues = new Set(
+    scan.results.flatMap((result) =>
+      result.assetClass === 'crypto' && result.instrument ? [result.instrument.split(':')[0]] : [],
+    ),
+  );
+  if (venues.size === 0) return null;
+  return [...venues].map((venue) => (venue === 'BINANCE' ? 'Binance Spot' : venue)).join(' + ');
+}
+
 /** How a timeframe's days are cut, per scanned class. */
 const DAY_BASIS: Record<ScanCohort['assetClass'], string> = {
   crypto: 'UTC days',
@@ -90,6 +104,8 @@ function DevSourceNotes({
 }: Readonly<{ scan: MarketScan; source: TradingViewDevSource }>) {
   const requested = new Set(Object.values(source.symbols));
   const asOfLabel = scan.cohorts[0] ? dataAsOfLabel(scan.cohorts[0]) : null;
+  const crypto = scan.cohorts[0]?.assetClass === 'crypto';
+  const venue = venueLabel(scan);
   const alerted = source.pineAlerts?.symbols.filter((symbol) => requested.has(symbol)) ?? [];
   const { retrieval } = source;
   let alerts = 'TradingView alerts were not checked.';
@@ -129,16 +145,37 @@ function DevSourceNotes({
         {source.notice !== null && (
           <li>TradingView&rsquo;s notice: &ldquo;{source.notice}&rdquo;</li>
         )}
-        <li>
-          Split-adjusted only: dividends are not adjusted, and TradingView reports no split events,
-          so an unadjusted split could not be cross-checked.
-        </li>
-        <li>
-          {source.notice === null ? 'A' : 'The notice’s'} &ldquo;still forming&rdquo; bar is never
-          scored: a session counts only once final (9h after its close), and each score rests on the
-          last {scan.cohorts[0]?.minClosedCandles} final sessions ({asOfLabel ?? 'none evaluated'}).
-          Data may be delayed under the owner&rsquo;s plan.
-        </li>
+        {crypto ? (
+          <>
+            <li>
+              Instruments: {venue ?? 'crypto'} USDT pairs, requested by their exact TradingView
+              symbols. {venue ?? 'The exchange'} is where these pairs trade, not where the candles
+              came from: they are TradingView&rsquo;s, no Binance candle was read, and Popup places
+              no orders.
+            </li>
+            <li>
+              One cutoff for every pair, the retrieval start ({UTC_TIME.format(scan.evaluationTime)}{' '}
+              UTC): a daily candle counts only once its UTC day closed before it, so{' '}
+              {source.notice === null ? 'a' : 'the notice’s'} &ldquo;still forming&rdquo; bar, and
+              any day that closed during retrieval, is never scored. Each score rests on the last{' '}
+              {scan.cohorts[0]?.minClosedCandles} closed UTC days ({asOfLabel ?? 'none evaluated'}).
+              Data may be delayed under the owner&rsquo;s plan.
+            </li>
+          </>
+        ) : (
+          <>
+            <li>
+              Split-adjusted only: dividends are not adjusted, and TradingView reports no split
+              events, so an unadjusted split could not be cross-checked.
+            </li>
+            <li>
+              {source.notice === null ? 'A' : 'The notice’s'} &ldquo;still forming&rdquo; bar is
+              never scored: a session counts only once final (9h after its close), and each score
+              rests on the last {scan.cohorts[0]?.minClosedCandles} final sessions (
+              {asOfLabel ?? 'none evaluated'}). Data may be delayed under the owner&rsquo;s plan.
+            </li>
+          </>
+        )}
         <li>{alerts}</li>
         <li>
           Universe:{' '}
@@ -341,6 +378,13 @@ export function MarketScanSummary({
             detail={coverageDetail}
           />
           {source && <RetrievedFact retrieval={source.retrieval} />}
+          {source && venueLabel(scan) && (
+            <Fact
+              label="Venue"
+              value={venueLabel(scan)}
+              detail="USDT pairs; where they trade, not the data source"
+            />
+          )}
         </dl>
       </header>
       {scanned.length > 0 && (

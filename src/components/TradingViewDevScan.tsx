@@ -167,10 +167,12 @@ function ReloadLocalScan({
 
 function savedLabel(entry: SavedScanEntry, published: boolean): string {
   const count = (value: number | null) => value ?? '?';
+  const crypto = entry.assetClasses?.length === 1 && entry.assetClasses[0] === 'crypto';
+  const day = crypto ? 'UTC day' : 'session';
   return [
     entry.scanId,
-    entry.session ? `${entry.session} session` : 'no evaluated session',
-    `${count(entry.members)} members`,
+    entry.session ? `${entry.session} ${day}` : 'no evaluated session',
+    `${count(entry.members)} ${crypto ? 'crypto pairs' : 'members'}`,
     `${count(entry.evaluated)} of ${count(entry.supported)} evaluated`,
     entry.legacy && 'legacy',
     published && 'published',

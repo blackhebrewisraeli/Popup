@@ -20,7 +20,12 @@ import {
   type MarketRegime,
   type ModelSetups,
 } from '@/lib/canonicalModel';
-import { SCAN_MAX_DATA_AGE_MS, type ScanAssetResult, type ScanCohort } from '@/lib/marketScanner';
+import {
+  cryptoMaxDataAgeMs,
+  SCAN_MAX_DATA_AGE_MS,
+  type ScanAssetResult,
+  type ScanCohort,
+} from '@/lib/marketScanner';
 import type { RiskProfile } from '@/lib/portfolioBuilder';
 import { exactSymbol } from '@/lib/scanChanges';
 import { TRADINGVIEW_DEV_PROVIDER_ID, type TradingViewDevSource } from '@/lib/tradingViewDevScan';
@@ -399,11 +404,13 @@ export interface Freshness {
 
 /**
  * Whether a cohort's data would still pass the scan's own freshness rule at
- * `now`: crypto's latest close within 48h, equities' latest final session or
- * the one before. Null when there is nothing to judge or the calendar ends.
+ * `now`: crypto's latest close within 48h (24h, the last completed UTC day, for a
+ * TradingView import), equities' latest final session or the one before. Null when
+ * there is nothing to judge or the calendar ends.
  */
 export function cohortFreshness(
-  cohort: Pick<ScanCohort, 'assetClass' | 'dataAsOf'>,
+  cohort: Pick<ScanCohort, 'assetClass' | 'dataAsOf'> &
+    Partial<Pick<ScanCohort, 'candlePolicyVersion'>>,
   now: number,
 ): Freshness | null {
   const newest = cohort.dataAsOf.newest;
@@ -422,9 +429,21 @@ export function cohortFreshness(
     };
   }
   const age = now - newest;
-  return age <= SCAN_MAX_DATA_AGE_MS
-    ? { stale: false, detail: `Latest candle closed ${ageLabel(age)} ago, within 48h` }
-    : { stale: true, detail: `Stale: latest candle closed ${ageLabel(age)} ago, past 48h` };
+  if (cryptoMaxDataAgeMs(cohort.candlePolicyVersion ?? null) === SCAN_MAX_DATA_AGE_MS) {
+    return age <= SCAN_MAX_DATA_AGE_MS
+      ? { stale: false, detail: `Latest candle closed ${ageLabel(age)} ago, within 48h` }
+      : { stale: true, detail: `Stale: latest candle closed ${ageLabel(age)} ago, past 48h` };
+  }
+  // A frozen TradingView cutoff rests on one UTC day; it is stale once a newer day has closed.
+  return age <= cryptoMaxDataAgeMs(cohort.candlePolicyVersion ?? null)
+    ? {
+        stale: false,
+        detail: `Latest candle closed ${ageLabel(age)} ago; no newer UTC day has closed`,
+      }
+    : {
+        stale: true,
+        detail: `Stale: latest candle closed ${ageLabel(age)} ago; a newer UTC day has closed, and this scan does not refresh`,
+      };
 }
 
 /**

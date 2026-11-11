@@ -19,27 +19,29 @@ function day(session: string): string {
 }
 
 function sideLabel(side: ScanSide): string {
-  const session = side.session ? `${day(side.session)} session (New York)` : 'No evaluated session';
+  const unit = side.utcDays ? 'UTC day' : 'session (New York)';
+  const session = side.session ? `${day(side.session)} ${unit}` : 'No evaluated session';
   const incomplete = side.status === 'COMPLETE' ? '' : ', incomplete';
   return `${session} · ${side.evaluated} of ${side.supported} evaluated${incomplete}`;
 }
 
 function gapNote(gap: SessionGap, before: ScanSide): string {
+  const one = before.utcDays ? 'UTC day' : 'session';
   if (gap.kind === 'NONE') {
     return 'One scan evaluated no asset, so there is no pair of readings to compare.';
   }
   if (gap.kind === 'SAME') {
-    return 'Both rest on the same session: the later import retrieved it again, so any difference is a revision of that session’s data, not a new session.';
+    return `Both rest on the same ${one}: the later import retrieved it again, so any difference is a revision of that ${one}’s data, not a new ${one}.`;
   }
   if (gap.kind === 'NEXT') {
-    return 'Consecutive sessions. Each setup is a standing condition on its own session; a change here is not an alert that fired.';
+    return `Consecutive ${one}s. Each setup is a standing condition on its own ${one}; a change here is not an alert that fired.`;
   }
   const count = gap.skipped.length;
   const first = day(gap.skipped[0]!);
   const span = count === 1 ? first : `${first}–${day(gap.skipped.at(-1)!)}`;
-  const sessions = count === 1 ? '1 session' : `${count} sessions`;
+  const sessions = count === 1 ? `1 ${one}` : `${count} ${one}s`;
   const were = count === 1 ? 'was' : 'were';
-  return `${sessions} between them (${span}) ${were} never evaluated, so a change could have happened on any session after ${day(before.session!)}. These are two readings, not when anything changed, and not an alert.`;
+  return `${sessions} between them (${span}) ${were} never evaluated, so a change could have happened on any ${one} after ${day(before.session!)}. These are two readings, not when anything changed, and not an alert.`;
 }
 
 const SETUP_NAME = { long: 'Long setup', risk: 'Risk warning' } as const;

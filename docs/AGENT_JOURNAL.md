@@ -4,11 +4,13 @@ Read this before starting a task. Use the linked PRs and technical docs for deta
 
 ## Current direction
 
-Popup helps the owner scan a broad universe of stocks and ETFs, see which technical conditions
-changed, and understand the evidence behind each result. The user decides whether to act.
+Popup helps the owner scan bounded universes of stocks and ETFs and of crypto pairs, see which
+technical conditions changed, and understand the evidence behind each result. The user decides
+whether to act, and where; Popup places no orders.
 
-- TradingView is the selected source for the equity scanner. The current equity flow is local
-  and owner-initiated through an authenticated agent. It does not establish unattended or
+- TradingView is the selected source for the equity scanner and for the crypto scan of Binance
+  Spot USDT pairs (`crypto-usdt-v1`). Binance is the crypto venue, never the data source of that
+  scan. Both flows are local and owner-initiated through an authenticated agent. It does not establish unattended or
   production TradingView access. The existing Binance market-data paths are separate, and so is
   the owner-only, read-only [Binance Spot balance view](BINANCE_SPOT_ACCOUNT.md): balances only,
   never orders, transfers or analysis.
@@ -59,17 +61,24 @@ changed, and understand the evidence behind each result. The user decides whethe
   records a local runtime check with throwaway users and a synthetic provider. No credential is
   configured and no read against Binance has run
   ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
+- **TradingView crypto scan:** draft [#150](https://github.com/blackhebrewisraeli/Popup/pull/150)
+  freezes `crypto-usdt-v1` (25 Binance Spot USDT pairs, rule and resolution in
+  [TRADINGVIEW_CRYPTO_SCAN.md](TRADINGVIEW_CRYPTO_SCAN.md)), adds the `tradingview-crypto-daily-v1`
+  contract with one frozen cutoff per retrieval, and shows the scan in Research beside the equity
+  scans. Real scan `20261111T183825Z-dc217757`: 23 of 25 evaluated, offline `MATCH`; it is now the
+  published Research view.
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
   research](SCANNER_RESEARCH.md) did not establish a predictive advantage.
 
-**Next:** Still pending: the first real new-session comparison. Once the 9 Nov session is final
-(2026-11-10 06:00 UTC), run one fresh default (50-member) scan with the runbook prompt.
-`tradingview-finish` should list the full-universe import `20261107T223109Z-aca6476d` under
-`skipped` as not comparable (Universe), choose `20261107T170244Z-76cde900` as the baseline, and
-report the 90-member view under `preservedView`. Research should show the same counts after
-**Reload local scan**, without a page refresh, and both scans under **Scan shown**.
+**Next:** Still pending: the first real new-session equity comparison. Run one fresh default
+(50-member) scan with the runbook prompt. `tradingview-finish` should list the full-universe import
+`20261107T223109Z-aca6476d` under `skipped` as not comparable (Universe), choose
+`20261107T170244Z-76cde900` as the baseline, and report the published crypto view under
+`preservedView`; crypto imports are no longer candidates and are not listed. Research should show
+the same counts after **Reload local scan**, and every scan under **Scan shown**. The first crypto
+comparison needs a second `crypto-usdt-v1` retrieval on a later UTC day.
 
 See the [scanner runbook](MARKET_SCANNER.md) for retrieval, import, reproduction, and review.
 The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is for engineering handoffs.
@@ -87,6 +96,25 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-11 · TradingView crypto scan of Binance Spot USDT pairs · Draft PR
+  [#150](https://github.com/blackhebrewisraeli/Popup/pull/150).** Decision: extend the existing
+  start → capture → finish workflow, not a new scanner. `crypto-usdt-v1` was frozen (commit
+  `f076326`) before any candle was retrieved: the first 25 coins of TradingView's market-cap ranking
+  that are not stablecoins, tokenized commodities or wrapped/staked receipts and resolve exactly
+  to `BINANCE:<BASE>USDT` spot; 10 candidates were unresolved and are listed, none replaced. The
+  `tradingview-crypto-daily-v1` contract reads `t` as UTC-midnight opening seconds, refuses another
+  symbol, interval or quote, freezes one cutoff at the retrieval start (a day that closes during
+  retrieval never enters), scores the last 199 closed UTC days and requires the last completed
+  day. Equity imports and the live Binance scan are unchanged; crypto and equities rank and compare
+  separately ("Asset class"). Research names TradingView as source and Binance Spot as venue.
+  Evidence: labeled fixtures (identity refusal, units, UTC boundary and crossing, gaps, duplicates,
+  alignment, stale, short history, accounting, ranking, idempotency, conflicts, cross-class
+  refusal, no network during reproduction); 1,390 tests, typecheck, lint, build. Local real-data
+  run: 25 requested, 23 evaluated, 2 short histories, 0 Long, 20 Risk, offline `MATCH`, every
+  Research row matched the snapshot; desktop, 375 px and keyboard checked. Two short responses were
+  shown inline by the agent client and were copied byte for byte from its session transcript, not
+  retyped. Next: a second crypto retrieval on a later UTC day, for the first crypto comparison.
 
 - **2026-11-10 · Owner-only Binance Spot execution history · Draft PR [#148](https://github.com/blackhebrewisraeli/Popup/pull/148).** Decision:
   extend the existing read-only account function with signed `GET /api/v3/myTrades`, never a

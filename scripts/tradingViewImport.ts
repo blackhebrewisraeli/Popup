@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { CandleProviderDataError } from '@/lib/binance';
+import { CandleProviderDataError, type Candle } from '@/lib/binance';
+import { DAY_MS } from '@/lib/candleValidation';
 import {
   compareTickers,
   EQUITY_CALENDAR_ERROR,
   equityRequestRange,
+  SCAN_CANDLE_REQUEST,
+  scanInstrument,
   type ScanFetchError,
   type ScanInput,
 } from '@/lib/marketScanner';
@@ -69,15 +72,23 @@ export function selectDevScanUniverse(
 }
 
 /**
- * Which configured tickers a retrieval requests. `default` is the 50 above and
- * stays the default; `all` (opt-in) is every configured US equity and ETF.
- * Neither depends on a score or an outcome, and a retrieval freezes its universe
- * and members when it starts.
+ * Which tickers a retrieval requests. `default` is the 50 above and stays the default;
+ * `all` (opt-in) is every configured US equity and ETF; `crypto-usdt-v1` (opt-in) is the
+ * frozen Binance Spot USDT universe below. None depends on a score or an outcome, and a
+ * retrieval freezes its universe and members when it starts. Equities and crypto are never
+ * one universe, so they are never ranked together.
  */
-export type DevScanUniverse = 'default' | 'all';
-export const DEV_SCAN_UNIVERSES: readonly DevScanUniverse[] = ['default', 'all'];
+export const CRYPTO_UNIVERSE = 'crypto-usdt-v1';
+export type DevScanUniverse = 'default' | 'all' | typeof CRYPTO_UNIVERSE;
+export const DEV_SCAN_UNIVERSES: readonly DevScanUniverse[] = ['default', 'all', CRYPTO_UNIVERSE];
+
+export const isCryptoUniverse = (universe: DevScanUniverse | undefined) =>
+  universe === CRYPTO_UNIVERSE;
 
 export function universeTickers(universe: DevScanUniverse = 'default'): string[] {
+  if (isCryptoUniverse(universe)) {
+    return Object.keys(CRYPTO_TRADINGVIEW_SYMBOLS).sort(compareTickers);
+  }
   return universe === 'all'
     ? Object.keys(US_EQUITY_INSTRUMENTS).sort(compareTickers)
     : selectDevScanUniverse();
@@ -85,6 +96,9 @@ export function universeTickers(universe: DevScanUniverse = 'default'): string[]
 
 export function selectionRule(universe: DevScanUniverse = 'default'): string {
   if (universe === 'default') return SELECTION_RULE;
+  if (isCryptoUniverse(universe)) {
+    return `crypto-usdt-v1: the first ${Object.keys(CRYPTO_TRADINGVIEW_SYMBOLS).length} coins in TradingView's market-capitalization ranking on 2026-11-11 that are not stablecoins, tokenized commodities, wrapped or staked receipts or leveraged tokens and resolve to an exact Binance Spot USDT pair, frozen before any data was fetched or scored (docs/TRADINGVIEW_CRYPTO_SCAN.md). Ranked only among themselves, never with equities.`;
+  }
   const count = Object.keys(US_EQUITY_INSTRUMENTS).length;
   return `All ${count} configured US equities and ETFs (US_EQUITY_INSTRUMENTS, the equity rows of assets_status), requested in full by opt-in, fixed before any data was fetched or scored. Ranks are among these ${count}, so this scan is never compared with a 50-member one.`;
 }
@@ -113,10 +127,30 @@ export const TRADINGVIEW_SYMBOLS: Readonly<Record<string, string>> = Object.from
     .map((symbol) => [symbol.slice(symbol.indexOf(':') + 1), symbol]),
 );
 
+/**
+ * `crypto-usdt-v1`, frozen 2026-11-11 before any candle was retrieved, listed in the order
+ * it was walked: the first 25 coins in TradingView's coin ranking by market capitalization
+ * (screener market `coin`, about 18:29 UTC) that are not stablecoins, tokenized commodities,
+ * wrapped or staked receipts of another coin, or leveraged tokens, and whose `<BASE>USDT`
+ * search returned exactly `BINANCE:<BASE>USDT` as a Binance spot listing. Every candidate
+ * passed over, and why, is in docs/TRADINGVIEW_CRYPTO_SCAN.md. A changed membership is a new
+ * universe ID, never an edit here.
+ */
+export const CRYPTO_TRADINGVIEW_SYMBOLS: Readonly<Record<string, string>> = Object.fromEntries(
+  'BTC ETH BNB XRP SOL TRX HYPE ZEC DOGE LINK ADA XLM NEAR BCH UNI LTC AVAX SUI GRAM HBAR SHIB TAO QNT ENA PEPE'
+    .split(' ')
+    .map((base) => [`${base}-USDT`, `BINANCE:${base}USDT`]),
+);
+
+/** The exact TradingView symbol committed for a ticker of either asset class. */
+export function symbolOf(ticker: string): string | undefined {
+  return TRADINGVIEW_SYMBOLS[ticker] ?? CRYPTO_TRADINGVIEW_SYMBOLS[ticker];
+}
+
 /** A universe's exact symbols; a member without a resolved symbol stops the retrieval, never drops out. */
 export function universeSymbols(universe: DevScanUniverse = 'default'): string[] {
   return universeTickers(universe).map((ticker) => {
-    const symbol = TRADINGVIEW_SYMBOLS[ticker];
+    const symbol = symbolOf(ticker);
     if (symbol === undefined) {
       throw new Error(
         `${ticker} has no resolved TradingView symbol; resolve it with search_symbols before scanning the ${universe} universe`,
@@ -160,6 +194,7 @@ interface OhlcvResponse {
   success?: unknown;
   symbol?: unknown;
   interval?: unknown;
+  currency?: unknown;
   notice?: unknown;
   bars?: unknown;
 }
@@ -217,6 +252,66 @@ export function tradingViewSeries(
   }
   // TradingView's OHLCV reports no split events, so UNADJUSTED_SPLIT cannot be checked.
   return { adjustment: 'SPLIT', bars, splits: [] };
+}
+
+/** 00:00:00.000 UTC of the day `time` falls in. */
+export function utcDayStart(time: number): number {
+  return Math.floor(time / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Maps one `get_ohlcv` 1D response for a Binance Spot USDT pair into daily candles under
+ * tradingview-crypto-daily-v1. The response must name exactly the requested symbol, the 1D
+ * interval and USDT as its currency, so a perpetual, another venue or another quote is
+ * refused before any bar is read. `t` is the bar's opening time in Unix seconds (observed on
+ * 2026-11-11: 00:00 UTC); it becomes epoch milliseconds, and the close is the end of that UTC
+ * day (open + 86,399,999 ms), as Binance defines a 1d kline. TradingView reports no close
+ * time, so none is taken from it. Bars opening before `from` are dropped; later ones are kept
+ * for the validator to exclude and count. Nothing is sorted, deduplicated, filled or re-dated
+ * here: the validator rejects what is wrong.
+ */
+export function tradingViewCryptoCandles(
+  response: unknown,
+  expected: { symbol: string; from: number },
+): Candle[] {
+  const body = (response ?? {}) as OhlcvResponse;
+  if (body.success !== true) throw new Error(`get_ohlcv did not succeed for ${expected.symbol}`);
+  if (body.symbol !== expected.symbol) {
+    throw new CandleProviderDataError(
+      `the response is for ${String(body.symbol)}, not ${expected.symbol}`,
+    );
+  }
+  if (body.interval !== '1D') {
+    throw new CandleProviderDataError(`interval ${String(body.interval)}, not 1D`);
+  }
+  if (body.currency !== 'USDT') {
+    throw new CandleProviderDataError(`quoted in ${String(body.currency)}, not USDT`);
+  }
+  if (!Array.isArray(body.bars)) throw new CandleProviderDataError('no bars array');
+  const candles: Candle[] = [];
+  for (const row of body.bars as Array<Record<string, unknown> | null>) {
+    const values = [row?.['t'], row?.['o'], row?.['h'], row?.['l'], row?.['c']];
+    if (!values.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+      throw new CandleProviderDataError(`non-numeric bar ${JSON.stringify(row)}`);
+    }
+    const [t, open, high, low, close] = values as number[];
+    // Seconds, not milliseconds: a millisecond stamp would read as a far-future bar and be
+    // excluded as forming instead of refused.
+    if (!Number.isInteger(t) || t! <= 0 || t! >= 100_000_000_000) {
+      throw new CandleProviderDataError(`bar t=${t} is not a Unix time in seconds`);
+    }
+    const timestamp = t! * 1000;
+    if (timestamp < expected.from) continue;
+    candles.push({
+      timestamp,
+      closeTime: timestamp + DAY_MS - 1,
+      open: open!,
+      high: high!,
+      low: low!,
+      close: close!,
+    });
+  }
+  return candles;
 }
 
 function invalid(message: string): never {
@@ -293,7 +388,7 @@ export function exportedSeries(
   ticker: string,
   from: string,
 ): { series: EquityDailySeries; receivedAt: number } | { error: ScanFetchError } {
-  const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+  const symbol = symbolOf(ticker)!;
   if (!entry) return { error: { code: 'FETCH_FAILED', detail: `${symbol} was never retrieved.` } };
   if (entry.symbol !== symbol) {
     const detail = `${entry.symbol} was retrieved; the instrument map names ${symbol}.`;
@@ -311,8 +406,59 @@ export function exportedSeries(
   }
 }
 
+/** A crypto entry's candles from `from` on, or why the export has none. */
+function exportedCandles(
+  entry: TradingViewOhlcvExport['instruments'][number] | undefined,
+  ticker: string,
+  from: number,
+): { candles: Candle[] } | { error: ScanFetchError } {
+  const symbol = symbolOf(ticker)!;
+  if (!entry) return { error: { code: 'FETCH_FAILED', detail: `${symbol} was never retrieved.` } };
+  if (entry.symbol !== symbol) {
+    const detail = `${entry.symbol} was retrieved; the universe names ${symbol}.`;
+    return { error: { code: 'DATA_INVALID', detail } };
+  }
+  if (entry.response === undefined) {
+    const detail = `TradingView get_ohlcv (${symbol}): ${entry.error ?? 'no response recorded'}`;
+    return { error: { code: 'FETCH_FAILED', detail } };
+  }
+  try {
+    return { candles: tradingViewCryptoCandles(entry.response, { symbol, from }) };
+  } catch (error) {
+    return { error: failure(error) };
+  }
+}
+
+/**
+ * Crypto inputs at the frozen cutoff: the 200 UTC days before the cutoff's day (the
+ * request every score in the app makes) and anything later, which the validator excludes.
+ */
+function cryptoInputs(file: TradingViewOhlcvExport, cutoff: number): ScanInput[] {
+  const from = utcDayStart(cutoff) - SCAN_CANDLE_REQUEST * DAY_MS;
+  const entries = new Map(file.instruments.map((entry) => [entry.ticker, entry]));
+  return universeTickers(file.universe).map((ticker): ScanInput => {
+    const entry = entries.get(ticker);
+    const exported = exportedCandles(entry, ticker, from);
+    const input: ScanInput = {
+      ticker,
+      instrument: scanInstrument(ticker),
+      // Validated only when the response named exactly the requested symbol, 1D and USDT.
+      ...(entry && {
+        providerSymbol: {
+          requested: entry.symbol,
+          validated: 'candles' in exported ? entry.symbol : null,
+        },
+      }),
+    };
+    return 'candles' in exported
+      ? { ...input, candles: exported.candles }
+      : { ...input, error: exported.error };
+  });
+}
+
 /** One scan input per selected ticker: a series, or the reason there is none. Never drops one. */
 export function importInputs(file: TradingViewOhlcvExport, evaluationTime: number): ScanInput[] {
+  if (isCryptoUniverse(file.universe)) return cryptoInputs(file, evaluationTime);
   const range = equityRequestRange(evaluationTime);
   const entries = new Map(file.instruments.map((entry) => [entry.ticker, entry]));
   return universeTickers(file.universe).map((ticker): ScanInput => {
@@ -374,8 +520,11 @@ async function recordTradingViewScan(options: {
 }) {
   const file = parseExport(JSON.parse(await readFile(options.file, 'utf8')));
   const startedAt = Date.parse(file.retrieval.startedAt);
-  const evaluationTime = Date.parse(file.retrieval.completedAt);
-  if (latestFinalSession(startedAt) !== latestFinalSession(evaluationTime)) {
+  const crypto = isCryptoUniverse(file.universe);
+  // Crypto: the retrieval start is the one frozen cutoff, so a day that closes during
+  // retrieval is excluded for every pair. Equities: the end, refused if a session became final.
+  const evaluationTime = crypto ? startedAt : Date.parse(file.retrieval.completedAt);
+  if (!crypto && latestFinalSession(startedAt) !== latestFinalSession(evaluationTime)) {
     throw new Error(
       `A session became final during retrieval (${file.retrieval.startedAt} → ${file.retrieval.completedAt}); retrieve again.`,
     );
@@ -385,7 +534,8 @@ async function recordTradingViewScan(options: {
     inputs,
     evaluationTime,
     universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
-    equityProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    equityProvider: crypto ? null : TRADINGVIEW_DEV_PROVIDER_ID,
+    ...(crypto && { cryptoProvider: TRADINGVIEW_DEV_PROVIDER_ID }),
     repositoryCommit: options.repositoryCommit,
     store: options.store,
     completedAt: (options.now ?? Date.now)(),
@@ -577,6 +727,43 @@ function passedOver(candidate: Candidate, displayed: string): string | null {
   return incomparable;
 }
 
+/** The asset classes a scan covers: crypto and equity imports never compare. */
+const assetClasses = (scan: TradingViewDevScan['scan']) =>
+  (scan.cohorts ?? []).map((cohort) => cohort.assetClass).join(' · ');
+
+type Loaded = { scanId: string; snapshot: ScanSnapshot } | { scanId: string; error: string };
+
+/** Splits the store's snapshots into same-class TradingView candidates, unreadable files and a count of other-class imports. */
+function sortSnapshots(view: TradingViewDevScan, loaded: readonly Loaded[]) {
+  const unreadable: SkippedBaseline[] = [];
+  const candidates: Candidate[] = [];
+  let otherClass = 0;
+  for (const item of loaded) {
+    if ('error' in item)
+      unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
+    else if (item.snapshot.scan?.universe?.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) continue;
+    else if (assetClasses(item.snapshot.scan) !== assetClasses(view.scan)) otherClass += 1;
+    else {
+      const { snapshot } = item;
+      const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
+      candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
+    }
+  }
+  return { unreadable, candidates, otherClass };
+}
+
+/** Why no baseline was chosen, worded for the displayed scan's asset class. */
+function noBaselineReason(view: TradingViewDevScan, searched: ReturnType<typeof sortSnapshots>) {
+  const crypto = assetClasses(view.scan) === 'crypto';
+  if (searched.candidates.length === 0 && searched.unreadable.length === 0) {
+    if (searched.otherClass === 0) return 'the scan store holds no other TradingView import';
+    return `the scan store holds no other TradingView ${crypto ? 'crypto' : 'equity'} import; imports of another asset class are never compared`;
+  }
+  return crypto
+    ? 'no TradingView crypto import of an earlier UTC day is comparable and reproduces'
+    : 'no TradingView import of an earlier session is comparable and reproduces';
+}
+
 /**
  * The most recent TradingView import from a strictly earlier evaluated session
  * that is comparable with the displayed scan and reproduces offline. A
@@ -600,7 +787,7 @@ async function automaticBaseline(
     .flatMap((name) => SNAPSHOT_FILE.exec(name)?.[1] ?? [])
     .filter((scanId) => scanId !== view.scanId);
   // ponytail: reads every snapshot in the store; keep an index by session once it holds hundreds.
-  const loaded = await Promise.all(
+  const loaded: Loaded[] = await Promise.all(
     ids.map((scanId) =>
       loadScan(scanId, store).then(
         (snapshot) => ({ scanId, snapshot }),
@@ -608,17 +795,8 @@ async function automaticBaseline(
       ),
     ),
   );
-  const unreadable: SkippedBaseline[] = [];
-  const candidates: Candidate[] = [];
-  for (const item of loaded) {
-    if ('error' in item)
-      unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
-    else if (item.snapshot.scan?.universe?.source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) {
-      const { snapshot } = item;
-      const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
-      candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
-    }
-  }
+  const searched = sortSnapshots(view, loaded);
+  const { unreadable, candidates } = searched;
   const check = (scanId: string) =>
     reproduce(scanId, store).catch((error: unknown) => ({
       status: 'MISMATCH' as const,
@@ -641,11 +819,7 @@ async function automaticBaseline(
     skipped.push({ scanId, reason: `does not reproduce (${reproduced.reason})` });
   }
   skipped.push(...unreadable);
-  return none(
-    candidates.length === 0 && unreadable.length === 0
-      ? 'the scan store holds no other TradingView import'
-      : 'no TradingView import of an earlier session is comparable and reproduces',
-  );
+  return none(noBaselineReason(view, searched));
 }
 
 /**
@@ -735,7 +909,9 @@ const RETRIEVAL_ID = /^\d{8}T\d{6}Z$/;
 const MANIFEST = 'retrieval.json';
 const ALERTS = 'alerts.json';
 const TICKER_BY_SYMBOL = new Map(
-  Object.entries(TRADINGVIEW_SYMBOLS).map(([ticker, symbol]) => [symbol, ticker]),
+  Object.entries({ ...TRADINGVIEW_SYMBOLS, ...CRYPTO_TRADINGVIEW_SYMBOLS }).map(
+    ([ticker, symbol]) => [symbol, ticker],
+  ),
 );
 
 interface CapturedResponse {
@@ -894,6 +1070,26 @@ function windowCloses(required: string): number | null {
   return next === undefined ? null : sessionFinalAt(next);
 }
 
+const UTC_DATE = (time: number) => iso(time).slice(0, 10);
+
+/**
+ * The day every member must rest on, and when the retrieval window closes. Equities: the
+ * latest final New York session, until the next one becomes final. Crypto: the last UTC day
+ * completed before the start (the frozen cutoff), until the next UTC midnight. Bars
+ * retrieved after that still score at the start's cutoff; the window only bounds retries.
+ */
+function retrievalWindow(universe: DevScanUniverse, startedAt: number) {
+  if (isCryptoUniverse(universe)) {
+    const day = utcDayStart(startedAt);
+    return { requiredSession: UTC_DATE(day - DAY_MS), closes: day + DAY_MS };
+  }
+  const requiredSession = latestFinalSession(startedAt);
+  return {
+    requiredSession,
+    closes: requiredSession === null ? null : windowCloses(requiredSession),
+  };
+}
+
 export async function retrievalStatus(options: {
   store: string;
   retrievalId: string;
@@ -903,8 +1099,7 @@ export async function retrievalStatus(options: {
     options.store,
     options.retrievalId,
   );
-  const requiredSession = latestFinalSession(startedAt);
-  const closes = requiredSession === null ? null : windowCloses(requiredSession);
+  const { requiredSession, closes } = retrievalWindow(universe, startedAt);
   const received = [...records.values()].flatMap((record) =>
     'receivedAt' in record ? [Date.parse(record.receivedAt)] : [],
   );
@@ -915,7 +1110,7 @@ export async function retrievalStatus(options: {
   const conflicting: string[] = [];
   let captured = 0;
   for (const ticker of tickers) {
-    const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+    const symbol = symbolOf(ticker)!;
     const record = records.get(ticker);
     if (conflicts.has(ticker)) conflicting.push(symbol);
     else if (isCaptured(record)) captured += 1;
@@ -952,10 +1147,10 @@ export async function startRetrieval(options: {
   now?: () => number;
 }): Promise<RetrievalStatus> {
   const startedAt = (options.now ?? Date.now)();
-  if (latestFinalSession(startedAt) === null) {
+  const universe = options.universe ?? 'default';
+  if (!isCryptoUniverse(universe) && latestFinalSession(startedAt) === null) {
     throw new Error('The time is outside the published US equity calendar; nothing can be scored.');
   }
-  const universe = options.universe ?? 'default';
   const symbols = universeSymbols(universe);
   const retrievalId = new Date(startedAt).toISOString().replace(/[-:]|\.\d{3}/g, '');
   const dir = retrievalDir(options.store, retrievalId);
@@ -1103,7 +1298,7 @@ export async function finishRetrieval(options: {
   let completedAt = startedAt;
   const instruments: TradingViewOhlcvExport['instruments'] = [];
   for (const ticker of tickers) {
-    const symbol = TRADINGVIEW_SYMBOLS[ticker]!;
+    const symbol = symbolOf(ticker)!;
     const record = records.get(ticker);
     const digests = conflicts.get(ticker);
     if (digests) {
@@ -1170,7 +1365,11 @@ export async function finishRetrieval(options: {
     report.baseline = await publishWithBaseline(imported.view, options.scanStore, reproduce);
     report.viewStatus = 'PUBLISHED';
   }
-  const newest = scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.dataAsOf.newest;
+  const crypto = isCryptoUniverse(universe);
+  const newest = scan.cohorts.find((cohort) => cohort.assetClass === (crypto ? 'crypto' : 'equity'))
+    ?.dataAsOf.newest;
+  let evaluatedSession: string | null = null;
+  if (newest != null) evaluatedSession = crypto ? UTC_DATE(newest) : NEW_YORK_DATE.format(newest);
   return {
     ...report,
     outcome: matched ? scan.status : 'NOT_REPRODUCED',
@@ -1180,11 +1379,11 @@ export async function finishRetrieval(options: {
       .filter((result) => result.status !== 'EVALUATED')
       .map((result) => ({
         ticker: result.ticker,
-        symbol: TRADINGVIEW_SYMBOLS[result.ticker]!,
+        symbol: symbolOf(result.ticker)!,
         status: result.status,
         detail: result.detail ?? null,
       })),
-    evaluatedSession: newest == null ? null : NEW_YORK_DATE.format(newest),
+    evaluatedSession,
     scanId,
     importStatus: imported.status,
     reproduction: matched ? 'MATCH' : `MISMATCH (${reproduced.reason})`,

@@ -29,9 +29,11 @@ import {
 } from '@/lib/canonicalModel';
 import {
   BINANCE_DAILY_CANDLE_POLICY_VERSION,
+  DAY_MS,
   formatCandleIssues,
   validateBinanceDailyCandles,
 } from '@/lib/candleValidation';
+import { TRADINGVIEW_DEV_PROVIDER_ID } from '@/lib/tradingViewDevScan';
 import {
   qualifiesForRiskProfile,
   RISK_PROFILE_POLICIES,
@@ -70,6 +72,52 @@ export const SCAN_CONCURRENCY = 4;
  * provider one session behind (still fresh) leaves a full window.
  */
 export const SCAN_EQUITY_REQUEST_SESSIONS = SCAN_MIN_CLOSED_CANDLES + 1;
+
+export const BINANCE_CRYPTO_PROVIDER = 'binance-spot-klines';
+export const TRADINGVIEW_CRYPTO_DAILY_POLICY_VERSION = 'tradingview-crypto-daily-v1';
+
+/**
+ * How a crypto cohort's daily candles are judged, by where they came from. Both close a UTC
+ * day at open + 86,399,999 ms and score the last 199 closed candles. Binance klines are
+ * fetched with one open candle, so a 200-candle window holds 199 closed; TradingView returns
+ * up to 1000, so its window is cut to 199 explicitly. A TradingView retrieval freezes one
+ * cutoff, so every pair must rest on the last UTC day completed before it (24h); the live
+ * Binance scan keeps its 48h bound.
+ */
+const CRYPTO_POLICIES: Readonly<
+  Record<
+    string,
+    { version: string; window: number; maxAgeMs: number; freshness: string; stale: string }
+  >
+> = {
+  [BINANCE_CRYPTO_PROVIDER]: {
+    version: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+    window: SCAN_MODEL_WINDOW,
+    maxAgeMs: SCAN_MAX_DATA_AGE_MS,
+    freshness: 'Latest closed candle at most 48h old',
+    stale: 'more than 48h before the scan',
+  },
+  [TRADINGVIEW_DEV_PROVIDER_ID]: {
+    version: TRADINGVIEW_CRYPTO_DAILY_POLICY_VERSION,
+    window: SCAN_MIN_CLOSED_CANDLES,
+    maxAgeMs: DAY_MS,
+    freshness: 'Latest closed candle is the last UTC day completed before the cutoff',
+    stale: 'not on the last UTC day completed before the cutoff',
+  },
+};
+
+function cryptoPolicy(provider: string | null | undefined) {
+  const policy = CRYPTO_POLICIES[provider ?? BINANCE_CRYPTO_PROVIDER];
+  if (!policy) throw new Error(`Unknown crypto candle provider ${String(provider)}`);
+  return policy;
+}
+
+/** The freshness bound a crypto cohort was scored under, by its recorded candle policy. */
+export function cryptoMaxDataAgeMs(candlePolicyVersion: string | null): number {
+  return candlePolicyVersion === TRADINGVIEW_CRYPTO_DAILY_POLICY_VERSION
+    ? DAY_MS
+    : SCAN_MAX_DATA_AGE_MS;
+}
 
 export type ScanAssetStatus =
   | 'EVALUATED'
@@ -129,7 +177,10 @@ export interface ScanInput {
   instrument: string | null;
   /** Part of the input, so its hash covers it. */
   providerSymbol?: ProviderSymbol;
-  /** Crypto: Binance klines, fetched during this scan. */
+  /**
+   * Crypto: Binance klines fetched during this scan, or TradingView bars of a Binance Spot pair
+   * (tradingview-crypto-daily-v1); the cohort's provider says which.
+   */
   candles?: readonly Candle[];
   /** Equities: the provider series for `range`, and when it was fetched (earlier, if cached). */
   equity?: {
@@ -412,11 +463,12 @@ function assessCrypto(
   input: ScanInput,
   base: ScanAssetResult,
   evaluationTime: number,
+  policy: ReturnType<typeof cryptoPolicy>,
 ): ScanAssetResult {
   const validation = validateBinanceDailyCandles(input.candles ?? [], {
     evaluationTime,
-    maxDataAgeMs: SCAN_MAX_DATA_AGE_MS,
-    modelWindow: SCAN_MODEL_WINDOW,
+    maxDataAgeMs: policy.maxAgeMs,
+    modelWindow: policy.window,
   });
   const observed = {
     ...base,
@@ -427,14 +479,14 @@ function assessCrypto(
     return {
       ...observed,
       status: 'DATA_INVALID',
-      detail: `${validation.policyVersion}: ${formatCandleIssues(validation.issues)}`,
+      detail: `${policy.version}: ${formatCandleIssues(validation.issues)}`,
     };
   }
   if (validation.fresh === false && validation.latestCloseTime !== null) {
     return {
       ...observed,
       status: 'STALE_DATA',
-      detail: `Latest closed candle closed ${iso(validation.latestCloseTime)}, more than 48h before the scan.`,
+      detail: `Latest closed candle closed ${iso(validation.latestCloseTime)}, ${policy.stale}.`,
     };
   }
   if (validation.closed.length < SCAN_MIN_CLOSED_CANDLES) {
@@ -492,6 +544,7 @@ function assess(
   input: ScanInput,
   evaluationTime: number,
   equityProvider: string | null,
+  crypto: ReturnType<typeof cryptoPolicy>,
 ): ScanAssetResult {
   const assetClass = classifyTicker(input.ticker);
   const base: ScanAssetResult = {
@@ -518,7 +571,7 @@ function assess(
   if (input.error) return { ...base, status: input.error.code, detail: input.error.detail };
   return input.equity
     ? assessEquity(input.equity, base, evaluationTime)
-    : assessCrypto(input, base, evaluationTime);
+    : assessCrypto(input, base, evaluationTime, crypto);
 }
 
 function scanStatus(supported: number, evaluated: number): ScanStatus {
@@ -561,15 +614,17 @@ function cohortOf(
   ranked: readonly ScanAssetResult[],
   all: readonly ScanAssetResult[],
   equityProvider: string | null,
+  cryptoProvider: string,
 ): ScanCohort {
   const coverage = coverageOf(all);
   const asOf = ranked.flatMap((result) => (result.dataAsOf === null ? [] : [result.dataAsOf]));
+  const crypto = cryptoPolicy(cryptoProvider);
   const source = {
     crypto: {
-      provider: 'binance-spot-klines',
-      candlePolicyVersion: BINANCE_DAILY_CANDLE_POLICY_VERSION,
+      provider: cryptoProvider,
+      candlePolicyVersion: crypto.version,
       calendar: 'UTC days, 24/7',
-      freshness: 'Latest closed candle at most 48h old',
+      freshness: crypto.freshness,
     },
     equity: {
       provider: equityProvider,
@@ -594,15 +649,26 @@ function cohortOf(
   };
 }
 
-/** Scores and ranks collected inputs, each cohort within itself. Pure: no clock, no network. */
+/**
+ * Scores and ranks collected inputs, each cohort within itself. Pure: no clock, no network.
+ * `cryptoProvider` names where crypto candles came from and so the policy they are judged
+ * under: Binance klines unless a TradingView import says otherwise.
+ */
 export function evaluateScan(
   inputs: readonly ScanInput[],
-  options: { evaluationTime: number; universeSource: string; equityProvider?: string | null },
+  options: {
+    evaluationTime: number;
+    universeSource: string;
+    equityProvider?: string | null;
+    cryptoProvider?: string | null;
+  },
 ): MarketScan {
   const equityProvider = options.equityProvider ?? null;
+  const cryptoProvider = options.cryptoProvider ?? BINANCE_CRYPTO_PROVIDER;
+  const crypto = cryptoPolicy(cryptoProvider);
   const assessed = [...inputs]
     .sort((a, b) => compareTickers(a.ticker, b.ticker))
-    .map((input) => assess(input, options.evaluationTime, equityProvider));
+    .map((input) => assess(input, options.evaluationTime, equityProvider, crypto));
   const cohorts: ScanCohort[] = [];
   const ranked: ScanAssetResult[] = [];
   for (const assetClass of COHORT_ORDER) {
@@ -610,7 +676,7 @@ export function evaluateScan(
     if (members.length === 0) continue;
     const cohortRanked = rankWithin(members);
     ranked.push(...cohortRanked);
-    cohorts.push(cohortOf(assetClass, cohortRanked, members, equityProvider));
+    cohorts.push(cohortOf(assetClass, cohortRanked, members, equityProvider, cryptoProvider));
   }
   const coverage = coverageOf(assessed);
   return {
