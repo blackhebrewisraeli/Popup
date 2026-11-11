@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   runScannerResearch: vi.fn(),
   runScannerResearchV2: vi.fn(),
   runScannerResearchCrypto: vi.fn(),
+  runModelDiagnosticCrypto: vi.fn(),
 }));
 
 // Network edges are stubbed; the evaluation store and the scanner run for real.
@@ -97,6 +98,10 @@ vi.mock('./scannerResearchV2', () => ({
 vi.mock('./scannerResearchCrypto', () => ({
   runScannerResearchCrypto: mocks.runScannerResearchCrypto,
   researchSummaryCrypto: () => ({ specificationId: 'spec-crypto' }),
+}));
+vi.mock('./modelDiagnostic', () => ({
+  runModelDiagnosticCrypto: mocks.runModelDiagnosticCrypto,
+  diagnosticSummary: () => ({ definitionId: 'diagnostic' }),
 }));
 
 const { main } = await import('./evaluate-canonical');
@@ -337,6 +342,37 @@ describe('evaluate-canonical CLI', () => {
     await expect(cli('scanner-research-crypto', 'exports/x.json', '--store', 's')).rejects.toThrow(
       'scanner-research-crypto: unknown or incomplete option --store',
     );
+  });
+
+  it('runs the model diagnostic on the frozen crypto replay and fails on a changed results file', async () => {
+    mocks.runModelDiagnosticCrypto.mockResolvedValue({
+      status: 'UNCHANGED',
+      resultHash: 'h',
+      resultsPath: 'reports/d.json',
+      reportPath: 'reports/d.html',
+      results: {},
+    });
+
+    await cli('model-diagnostic-crypto', 'exports/x.json', '--scan-store', 'scans');
+    expect(mocks.runModelDiagnosticCrypto).toHaveBeenCalledWith({
+      file: join(workspace, 'exports/x.json'),
+      outputDir: join(workspace, '.zerochart-reports'),
+      scanStore: join(workspace, 'scans'),
+      repositoryCommit: expect.stringMatching(/^[0-9a-f]{40}(-dirty)?$/),
+    });
+    expect(printed()).toMatchObject({ status: 'UNCHANGED', definitionId: 'diagnostic' });
+    expect(process.exitCode).toBeUndefined();
+
+    mocks.runModelDiagnosticCrypto.mockResolvedValue({
+      status: 'CONFLICT',
+      resultHash: 'h',
+      resultsPath: 'reports/d.json',
+      reportPath: 'reports/d.html',
+      results: {},
+    });
+    await cli('model-diagnostic-crypto', 'exports/x.json');
+    expect(printed()).toMatchObject({ status: 'CONFLICT', reportPath: null });
+    expect(process.exitCode).toBe(1);
   });
 
   it('refuses a store outside the workspace', async () => {

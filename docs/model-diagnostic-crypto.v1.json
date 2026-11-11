@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1",
+  "diagnosticId": "popup-model-diagnostic-crypto-usdt-v1",
+  "evidenceType": "explanatory-diagnostic",
+  "question": "Why does the canonical model, on the frozen crypto replay, meet the Long setup on almost no pair-day and the Risk warning on most? Mechanism only: which clause, factor and regime decide each label.",
+  "interpretation": "Describes the model’s own readings on historical candles. No forward price change, outcome or return is read or computed, no threshold or weight is varied, and nothing here proposes or validates a model.",
+  "reads": {
+    "export": "8d251bbfed6089d0a10abf336a53ae895298639fa651888966c672c6227cbba4",
+    "recordedScan": {
+      "scanId": "20261111T183825Z-dc217757",
+      "sha256": "000cc5ea06d238e882c6216142e9edf00bf9f7a25065297a1f96f53fd37ad18f"
+    },
+    "study": {
+      "specificationId": "6d005fee9ffdfb561e3ea8412800d0d5f116fc816482cf66c5dc46959389dcbc",
+      "resultsSha256": "a14c0d191bc4d2878bd043985ec696f0419c6b08bac03fddcb7a4ed2918ffe71",
+      "fieldsRead": ["evaluationDates", "parity", "recordedScanParity", "coverage", "replay"],
+      "neverRead": ["horizons", "composition"]
+    }
+  },
+  "replay": "replayDay (scripts/scannerResearchCrypto.ts), unchanged, on every evaluation date of the frozen study; each EVALUATED result keeps the full CanonicalScore the scanner computed",
+  "model": {
+    "modelVersion": "1.0.0",
+    "scannerVersion": "market-scan-v2",
+    "candlePolicyVersion": "tradingview-crypto-daily-v1",
+    "windowCandles": 199,
+    "longSetup": "score >= 78 and momentumPercent >= 0.0005",
+    "riskWarning": "score <= 28 or regime HIGH_VOLATILITY (volatilityPercent >= 0.04)",
+    "regimePrecedence": ["HIGH_VOLATILITY", "TRENDING", "MEAN_REVERTING", "NEUTRAL"],
+    "trendingMomentum": 0.005,
+    "rsiExtremes": [30, 70],
+    "weights": {
+      "NEUTRAL": {
+        "rsi": 0.4,
+        "momentum": 0.4,
+        "volatility": 0.2
+      },
+      "TRENDING": {
+        "rsi": 0.3,
+        "momentum": 0.5,
+        "volatility": 0.2
+      },
+      "MEAN_REVERTING": {
+        "rsi": 0.5,
+        "momentum": 0.3,
+        "volatility": 0.2
+      },
+      "HIGH_VOLATILITY": {
+        "rsi": 0.35,
+        "momentum": 0.35,
+        "volatility": 0.3
+      }
+    }
+  },
+  "reconciliation": [
+    "Every replayed date equals the frozen results’ replay entry (stableSerialize), date for date",
+    "Status counts equal coverage.byStatus; Long and Risk observations, transitions, unknown onsets and standing counts equal coverage.signals",
+    "The 2026-11-10 replay equals recorded scan 20261111T183825Z-dc217757 (recordedScanParity)",
+    "On every row, Math.round(raw) equals the recorded score and the gates reproduce the recorded setups",
+    "Otherwise nothing is written"
+  ],
+  "definitions": {
+    "rows": "EVALUATED members on dates the study compared (at least 15 EVALUATED); other statuses are counted apart and never enter a row denominator",
+    "raw": "The unrounded composite in scoreFactors’ operation order: weight × factor summed over RSI, momentum, volatility. Every weight row sums to exactly 1 in binary64, so its division is exact",
+    "contribution": "weight × factor score; the three sum to raw",
+    "shortfall": "weight × (100 − factor score); the three sum to 100 − raw",
+    "gates": {
+      "score": "score >= 78 (raw >= 77.5)",
+      "momentum": "momentumPercent >= 0.0005",
+      "lowScore": "score <= 28 (raw < 28.5)",
+      "highVolatility": "regime HIGH_VOLATILITY"
+    },
+    "veto": "A factor whose shortfall alone exceeds 22.5: no value of the other two factors meets the score gate in that regime",
+    "roundingDecided": "Score gate met only through rounding (raw in [77.5, 78)); low-score clause met only through rounding (raw in (28, 28.5))",
+    "transition": "The condition holds and the member was EVALUATED the previous date without it; otherwise an unknown onset (not EVALUATED the day before) or standing, as the study counts",
+    "clauseOnset": "One Risk clause begins (previous date EVALUATED without it). It produces a Risk transition only if Risk did not already hold through the other clause",
+    "saturation": "momentum factor at 100 (>= +1%) or 0 (<= −1%); volatility factor at 100 (<= 0.5%) or 0 (>= 5.5%); RSI tails <= 30 and >= 70, where the RSI curve flattens",
+    "histogramAtrBound": "sup |MACD histogram| / ATR over any candles with low <= close <= high, for the window: max over j of |hist step response at j| / ATR weight of j",
+    "riskProfileFit": "The scanner’s own riskProfiles (qualifiesForRiskProfile), counted on all rows and on rows that also carry a Risk warning"
+  },
+  "quantiles": [0, 0.05, 0.25, 0.5, 0.75, 0.95, 1],
+  "quantileMethod": "linear interpolation between order statistics (type 7)",
+  "breakdowns": ["regime", "calendar quarter of D (UTC)", "pair (private output only)"],
+  "notComputed": [
+    "forward price changes and outcomes",
+    "alternative thresholds, weights, windows or regimes",
+    "any model selection or optimisation"
+  ],
+  "privacy": "Per-row readings, pair tables and Long observations stay in the git-ignored output. The printed summary names no pair and no date."
+}

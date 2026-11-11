@@ -89,6 +89,7 @@ import { telegramTransportFromEnv } from './telegramTransport';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
 import { researchSummaryCrypto, runScannerResearchCrypto } from './scannerResearchCrypto';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
+import { diagnosticSummary, runModelDiagnosticCrypto } from './modelDiagnostic';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -121,7 +122,8 @@ const USAGE = `Usage:
   npm run evaluate -- tradingview-baseline SCAN_ID [--store DIR]
   npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]
-  npm run evaluate -- scanner-research-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]`;
+  npm run evaluate -- scanner-research-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]
+  npm run evaluate -- model-diagnostic-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -591,6 +593,18 @@ const commandHandlers: Record<string, CommandHandler> = {
       args,
       (options) => runScannerResearchCrypto({ ...options, scanStore }),
       researchSummaryCrypto,
+    );
+  },
+  // Explains the model's Long/Risk behaviour on the frozen crypto replay; reads no outcome.
+  'model-diagnostic-crypto': (value, args) => {
+    assertOptions('model-diagnostic-crypto', args, ['--scan-store', '--output-dir']);
+    const scanStore = safeCliPath(option(args, '--scan-store') ?? SCAN_STORE, '--scan-store');
+    return research(
+      'model-diagnostic-crypto',
+      value,
+      args,
+      (options) => runModelDiagnosticCrypto({ ...options, scanStore }),
+      diagnosticSummary,
     );
   },
   replay: (value, args) => replay(requiredValue('replay', value), args),
