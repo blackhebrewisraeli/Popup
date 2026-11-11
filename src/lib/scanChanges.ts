@@ -43,6 +43,8 @@ export interface ScanSide {
   status: ScanStatus;
   evaluated: number;
   supported: number;
+  /** Set for a crypto scan: its `session` is a UTC day. */
+  utcDays?: true;
 }
 
 export type SessionGap =
@@ -118,6 +120,7 @@ function side({ scanId, scan }: NamedScan): ScanSide {
     status: scan.status,
     evaluated: scan.coverage.evaluated,
     supported: scan.coverage.supported,
+    ...(onUtcDays(scan) && { utcDays: true as const }),
   };
 }
 

@@ -337,6 +337,86 @@ describe('MarketScanSummary as the TradingView development scan', () => {
   });
 });
 
+describe('MarketScanSummary as the TradingView crypto scan', () => {
+  const source: TradingViewDevSource = {
+    tool: 'get_ohlcv',
+    interval: '1D',
+    retrieval: { startedAt: '2026-10-28T17:00:00.000Z', completedAt: '2026-10-28T17:02:00.000Z' },
+    symbols: { 'BTC-USDT': 'BINANCE:BTCUSDT', 'ETH-USDT': 'BINANCE:ETHUSDT' },
+    notice: 'the last bar is still forming and may change.',
+    selectionRule: 'Labeled fixture universe of Binance Spot USDT pairs.',
+    pineAlerts: { checkedAt: '2026-10-28T17:03:00.000Z', symbols: [] },
+  };
+  const pair = (ticker: string, rows: Candle[]): ScanInput => {
+    const symbol = `BINANCE:${ticker.replace('-', '')}`;
+    return {
+      ticker,
+      instrument: symbol,
+      providerSymbol: { requested: symbol, validated: symbol },
+      candles: rows,
+    };
+  };
+
+  function renderCrypto() {
+    const scan = evaluateScan(
+      [pair('BTC-USDT', candles()), pair('ETH-USDT', candles().slice(-120))],
+      {
+        evaluationTime: NOW,
+        universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+        cryptoProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+      },
+    );
+    render(
+      <MarketScanSummary
+        scan={scan}
+        completedAt={NOW}
+        scanning={false}
+        failed={false}
+        source={source}
+      />,
+    );
+    return screen.getByRole('region', { name: 'TradingView development scan' });
+  }
+
+  it('names TradingView as the source and Binance Spot as the venue, on UTC days', () => {
+    const panel = renderCrypto();
+    expect(fact(panel, 'Source')).toEqual({
+      value: 'TradingView MCP get_ohlcv',
+      detail: 'model 1.0.0 · tradingview-crypto-daily-v1',
+    });
+    expect(fact(panel, 'Venue')).toEqual({
+      value: 'Binance Spot',
+      detail: 'USDT pairs; where they trade, not the data source',
+    });
+    expect(fact(panel, 'Timeframe')).toEqual({ value: '1D', detail: 'UTC days' });
+    expect(fact(panel, 'Data as of').value).toBe('candles to 27 Oct close (UTC)');
+    expect(fact(panel, 'Data as of').detail).toMatch(/; no newer UTC day has closed$/);
+    expect(fact(panel, 'Coverage')).toEqual({
+      value: '1 of 2 evaluated',
+      detail: '2 requested · 1 failed',
+    });
+    const failures = within(panel).getByRole('region', { name: 'Not evaluated this scan' });
+    expect(failures).toHaveTextContent('ETH-USDTShort history120 closed daily candles');
+    const notes = within(panel).getByRole('region', { name: 'Source and limitations' });
+    expect(notes).toHaveTextContent('Instruments: Binance Spot USDT pairs');
+    expect(notes).toHaveTextContent('no Binance candle was read, and Popup places no orders');
+    expect(notes).toHaveTextContent('Each score rests on the last 199 closed UTC days');
+    expect(notes).not.toHaveTextContent(/dividends|9h after its close|final sessions/);
+    // The equity-only research note is not attached to crypto ranks.
+    expect(panel).not.toHaveTextContent('retrospective study of this universe');
+    expect(within(panel).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('turns stale once a newer UTC day has closed, since the cutoff was frozen', () => {
+    vi.setSystemTime(NOW + DAY);
+    const panel = renderCrypto();
+    expect(within(panel).getByText('Stale')).toBeInTheDocument();
+    expect(fact(panel, 'Data as of').detail).toMatch(
+      /Stale: latest candle closed \d+h \d\dm ago; a newer UTC day has closed/,
+    );
+  });
+});
+
 describe('Scan review: views, explanation and comparison', () => {
   const choppy = (i: number) => (i % 2 === 0 ? 100 : 106);
   const equity = (ticker: string, path: (i: number) => number): ScanInput => ({

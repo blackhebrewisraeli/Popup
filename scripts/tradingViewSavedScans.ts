@@ -76,6 +76,11 @@ function entry(scanId: string, raw: RawSnapshot): SavedScanEntry {
   } catch {
     // Malformed cohorts: listed without a session; reading it names the problem.
   }
+  const classes = Array.isArray(scan?.cohorts)
+    ? scan.cohorts.flatMap((cohort) =>
+        typeof cohort?.assetClass === 'string' ? [cohort.assetClass] : [],
+      )
+    : [];
   return {
     scanId,
     session,
@@ -83,6 +88,7 @@ function entry(scanId: string, raw: RawSnapshot): SavedScanEntry {
     evaluated: count(scan?.coverage?.evaluated),
     supported: count(scan?.coverage?.supported),
     legacy: isLegacy(raw),
+    ...(classes.length > 0 && { assetClasses: [...new Set(classes)] }),
   };
 }
 

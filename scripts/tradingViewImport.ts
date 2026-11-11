@@ -760,10 +760,16 @@ async function automaticBaseline(
   );
   const unreadable: SkippedBaseline[] = [];
   const candidates: Candidate[] = [];
+  // Crypto and equity imports never compare, so neither is a candidate for the other.
+  const classes = (scan: TradingViewDevScan['scan']) =>
+    (scan.cohorts ?? []).map((cohort) => cohort.assetClass).join(' · ');
+  let otherClass = 0;
   for (const item of loaded) {
     if ('error' in item)
       unreadable.push({ scanId: item.scanId, reason: `unreadable: ${item.error}` });
-    else if (item.snapshot.scan?.universe?.source === TRADINGVIEW_DEV_UNIVERSE_SOURCE) {
+    else if (item.snapshot.scan?.universe?.source !== TRADINGVIEW_DEV_UNIVERSE_SOURCE) continue;
+    else if (classes(item.snapshot.scan) !== classes(view.scan)) otherClass += 1;
+    else {
       const { snapshot } = item;
       const comparison = compareScans(view, { scanId: snapshot.scanId, scan: snapshot.scan });
       candidates.push({ snapshot, session: latestSession(snapshot.scan), comparison });
@@ -791,9 +797,16 @@ async function automaticBaseline(
     skipped.push({ scanId, reason: `does not reproduce (${reproduced.reason})` });
   }
   skipped.push(...unreadable);
+  const crypto = classes(view.scan) === 'crypto';
+  if (candidates.length === 0 && unreadable.length === 0) {
+    if (otherClass === 0) return none('the scan store holds no other TradingView import');
+    return none(
+      `the scan store holds no other TradingView ${crypto ? 'crypto' : 'equity'} import; imports of another asset class are never compared`,
+    );
+  }
   return none(
-    candidates.length === 0 && unreadable.length === 0
-      ? 'the scan store holds no other TradingView import'
+    crypto
+      ? 'no TradingView crypto import of an earlier UTC day is comparable and reproduces'
       : 'no TradingView import of an earlier session is comparable and reproduces',
   );
 }

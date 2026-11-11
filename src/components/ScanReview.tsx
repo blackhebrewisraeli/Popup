@@ -133,6 +133,7 @@ function ReadingGuide({
             Order by score within one asset class in this scan. Relative only: #1 is not a buy, and
             ranks never cross classes.
             {source &&
+              scan.cohorts.some((cohort) => cohort.assetClass === 'equity') &&
               ' A retrospective study of this universe found higher ranks followed by smaller price changes than the same-date average, not larger ones (docs/SCANNER_RESEARCH.md).'}
           </dd>
         </div>
@@ -642,7 +643,9 @@ function limitations(
       : `(the saved snapshot does not record when), scored as of ${UTC_TIME.format(scan.evaluationTime)} UTC`;
     items.push(
       `Imported historical development data: bars the owner's agent session retrieved from TradingView ${when}, scored locally. Not a licensed feed, and it does not refresh.`,
-      'Split-adjusted only: dividends are not adjusted, and no split events were reported to cross-check.',
+      cohort.assetClass === 'crypto'
+        ? `TradingView's daily candles for ${result.instrument ?? 'this pair'}, not Binance's own; the pair trades on Binance Spot, and Popup places no orders. Only UTC days closed before the cutoff (${UTC_TIME.format(scan.evaluationTime)} UTC) are scored.`
+        : 'Split-adjusted only: dividends are not adjusted, and no split events were reported to cross-check.',
     );
   }
   if (equity) {

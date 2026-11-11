@@ -475,8 +475,8 @@ describe('comparing crypto scans', () => {
     );
     expect(comparison).toMatchObject({
       status: 'COMPARED',
-      before: { session: '2026-11-06' },
-      after: { session: '2026-11-10' },
+      before: { session: '2026-11-06', utcDays: true },
+      after: { session: '2026-11-10', utcDays: true },
       gap: { kind: 'GAP', skipped: ['2026-11-07', '2026-11-08', '2026-11-09'] },
     });
   });

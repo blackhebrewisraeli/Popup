@@ -105,6 +105,8 @@ export interface SavedScanEntry {
   evaluated: number | null;
   supported: number | null;
   legacy: boolean;
+  /** The asset classes its cohorts scanned; absent where the file does not say. */
+  assetClasses?: readonly string[];
 }
 
 export interface SavedScanList {
@@ -200,7 +202,10 @@ export function parseSavedScanList(raw: unknown): SavedScanList {
         isCount(entry.members) &&
         isCount(entry.evaluated) &&
         isCount(entry.supported) &&
-        typeof entry.legacy === 'boolean',
+        typeof entry.legacy === 'boolean' &&
+        (entry.assetClasses === undefined ||
+          (Array.isArray(entry.assetClasses) &&
+            entry.assetClasses.every((item) => typeof item === 'string'))),
     );
   if (!valid) throw new Error('Not a saved TradingView scan list.');
   return value as SavedScanList;

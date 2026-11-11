@@ -150,6 +150,7 @@ describe('listSavedScans', () => {
         evaluated: 2,
         supported: 2,
         legacy: false,
+        assetClasses: ['equity'],
       },
       {
         scanId: small.scanId,
@@ -158,6 +159,7 @@ describe('listSavedScans', () => {
         evaluated: 1,
         supported: 1,
         legacy: false,
+        assetClasses: ['equity'],
       },
       {
         scanId: legacy.scanId,
@@ -166,6 +168,7 @@ describe('listSavedScans', () => {
         evaluated: 1,
         supported: 1,
         legacy: true,
+        assetClasses: ['equity'],
       },
     ]);
   });
