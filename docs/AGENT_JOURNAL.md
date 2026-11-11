@@ -76,9 +76,10 @@ whether to act, and where; Popup places no orders.
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
   research](SCANNER_RESEARCH.md) did not establish a predictive advantage. The frozen crypto study
-  (draft PR, below) is **mixed**: no 1- or 5-day information, a 20-day mean advantage for the top
+  is **mixed**: no 1- or 5-day information, a 20-day mean advantage for the top
   ranks that the median observation does not share and one pair dominates, and too few Long
-  setups (3) to judge ([findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
+  setups (3) to judge (draft [#152](https://github.com/blackhebrewisraeli/Popup/pull/152),
+  [findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
 
 **Next:** Still pending: the first real new-session equity comparison. Run one fresh default
 (50-member) scan with the runbook prompt. `tradingview-finish` should list the full-universe import
@@ -106,7 +107,7 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 ## Recent entries
 
 - **2026-11-11 · Frozen retrospective study of the TradingView crypto ranking · Draft PR
-  (`feat/crypto-scanner-research`).** Decision: reuse the equity study's observations, outcomes,
+  [#152](https://github.com/blackhebrewisraeli/Popup/pull/152).** Decision: reuse the equity study's observations, outcomes,
   statistics and write-once reproduction, and replay with the scanner itself (`evaluateScan`,
   TradingView crypto policy unchanged) at each UTC day's close on candles closed by then. The
   specification (`scanner-research-crypto.v1.json`, ID `6d005fee9ffd…`) was committed (`ac05b1f`)
