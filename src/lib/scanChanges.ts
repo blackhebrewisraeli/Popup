@@ -17,6 +17,7 @@ import {
   type ScanAssetResult,
   type ScanStatus,
 } from '@/lib/marketScanner';
+import type { TickerKind } from '@/lib/ticker';
 import { tradingSessions } from '@/lib/usEquityDaily';
 
 /** One setup across the two readings. */
@@ -34,7 +35,10 @@ export interface AssetChange {
 
 export interface ScanSide {
   scanId: string;
-  /** The latest New York session any asset was evaluated on; null when none was. */
+  /**
+   * The latest session any asset was evaluated on: a New York session for equities, a UTC
+   * day for crypto. Null when none was.
+   */
   session: string | null;
   status: ScanStatus;
   evaluated: number;
@@ -86,14 +90,25 @@ export interface NamedScan {
 
 const NEW_YORK_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' });
 
-function sessionOf(time: number | null): string | null {
-  return time === null ? null : NEW_YORK_DATE.format(time);
+/** The day a close belongs to: its New York session for equities, its UTC day for crypto. */
+function sessionOf(time: number | null, assetClass: TickerKind = 'equity'): string | null {
+  if (time === null) return null;
+  return assetClass === 'crypto'
+    ? new Date(time).toISOString().slice(0, 10)
+    : NEW_YORK_DATE.format(time);
 }
 
-/** The latest New York session any asset was evaluated on; null when none was. */
+/** The latest session (UTC day, for crypto) any asset was evaluated on; null when none was. */
 export function latestSession(scan: MarketScan): string | null {
-  const newest = scan.cohorts.flatMap(({ dataAsOf }) => dataAsOf.newest ?? []);
-  return sessionOf(newest.length > 0 ? Math.max(...newest) : null);
+  const days = scan.cohorts.flatMap(({ assetClass, dataAsOf }) =>
+    dataAsOf.newest === null ? [] : [sessionOf(dataAsOf.newest, assetClass)!],
+  );
+  return days.length > 0 ? days.sort().at(-1)! : null;
+}
+
+/** Every crypto scan rests on UTC days; anything else on New York sessions. */
+function onUtcDays(scan: MarketScan): boolean {
+  return scan.cohorts.length > 0 && scan.cohorts.every(({ assetClass }) => assetClass === 'crypto');
 }
 
 function side({ scanId, scan }: NamedScan): ScanSide {
@@ -108,6 +123,7 @@ function side({ scanId, scan }: NamedScan): ScanSide {
 
 /** What makes two readings of one ticker the same measurement; any difference makes them incomparable. */
 const ATTRIBUTION: ReadonlyArray<[string, (scan: MarketScan) => string]> = [
+  ['Asset class', (scan) => scan.cohorts.map((cohort) => cohort.assetClass).join(' · ')],
   [
     'Source',
     (scan) =>
@@ -221,10 +237,23 @@ function differences(before: MarketScan, after: MarketScan): Difference[] {
   return found;
 }
 
-function gapBetween(before: string | null, after: string | null): SessionGap {
+/** Every UTC day from `from` to `to`, both included. */
+function utcDays(from: string, to: string): string[] {
+  const days: string[] = [];
+  for (
+    let day = Date.parse(`${from}T00:00:00Z`);
+    day <= Date.parse(`${to}T00:00:00Z`);
+    day += 86_400_000
+  ) {
+    days.push(new Date(day).toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+function gapBetween(before: string | null, after: string | null, utc: boolean): SessionGap {
   if (before === null || after === null) return { kind: 'NONE' };
   if (before === after) return { kind: 'SAME' };
-  const skipped = tradingSessions(before, after).slice(1, -1);
+  const skipped = (utc ? utcDays(before, after) : tradingSessions(before, after)).slice(1, -1);
   return skipped.length === 0 ? { kind: 'NEXT' } : { kind: 'GAP', skipped };
 }
 
@@ -271,7 +300,10 @@ export function compareScans(after: NamedScan, before: NamedScan | undefined): S
         long: setupChange(then.setups.long, now.setups.long),
         risk: setupChange(then.setups.risk, now.setups.risk),
         score: { before: then.model.signal_score, after: now.model.signal_score },
-        sessions: { before: sessionOf(then.dataAsOf) ?? '', after: sessionOf(now.dataAsOf) ?? '' },
+        sessions: {
+          before: sessionOf(then.dataAsOf, then.assetClass) ?? '',
+          after: sessionOf(now.dataAsOf, now.assetClass) ?? '',
+        },
       });
     } else if (evaluated(now)) onlyAfter.push(now.ticker);
     else if (evaluated(then)) onlyBefore.push(now.ticker);
@@ -280,7 +312,7 @@ export function compareScans(after: NamedScan, before: NamedScan | undefined): S
   return {
     status: 'COMPARED',
     ...sides,
-    gap: gapBetween(sides.before.session, sides.after.session),
+    gap: gapBetween(sides.before.session, sides.after.session, onUtcDays(after.scan)),
     changes,
     onlyAfter,
     onlyBefore,

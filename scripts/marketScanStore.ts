@@ -158,6 +158,8 @@ export async function saveScan(options: {
   evaluationTime: number;
   universeSource: string;
   equityProvider: string | null;
+  /** Where crypto candles came from; Binance klines when absent. */
+  cryptoProvider?: string | null;
   repositoryCommit: string;
   store: string;
   completedAt: number;
@@ -173,6 +175,7 @@ export async function saveScan(options: {
     evaluationTime,
     universeSource: options.universeSource,
     equityProvider: options.equityProvider,
+    cryptoProvider: options.cryptoProvider ?? null,
   });
   const version = universeVersion(scan.universe.source, scan.universe.members);
   const snapshot: ScanSnapshot = {
@@ -278,11 +281,13 @@ export function snapshotMismatchReason(snapshot: ScanSnapshot): ScanMismatchReas
   if (stableSerialize(hashInputs(snapshot.inputs)) !== stableSerialize(snapshot.inputHashes)) {
     return 'INPUT_HASH_MISMATCH';
   }
+  const provider = (assetClass: string) =>
+    snapshot.scan.cohorts.find((cohort) => cohort.assetClass === assetClass)?.provider ?? null;
   const recomputed = evaluateScan(snapshot.inputs, {
     evaluationTime,
     universeSource: source,
-    equityProvider:
-      snapshot.scan.cohorts.find((cohort) => cohort.assetClass === 'equity')?.provider ?? null,
+    equityProvider: provider('equity'),
+    cryptoProvider: provider('crypto'),
   });
   return stableSerialize(recomputed) === stableSerialize(snapshot.scan) ? null : 'OUTPUT_MISMATCH';
 }

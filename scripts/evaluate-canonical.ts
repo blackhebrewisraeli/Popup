@@ -113,7 +113,7 @@ const USAGE = `Usage:
   npx tsx --env-file=.env scripts/evaluate-canonical.ts scan [--store DIR]
   npm run evaluate -- scan-reproduce SCAN_ID [--store DIR]
   npm run evaluate -- tradingview-import EXPORT.json [--store DIR]
-  npm run evaluate -- tradingview-start [--universe default|all] [--store DIR]
+  npm run evaluate -- tradingview-start [--universe default|all|crypto-usdt-v1] [--store DIR]
   npm run evaluate -- tradingview-capture RETRIEVAL_ID [SYMBOL=FILE ...] [--alerts SYMBOL,...|none] [--store DIR]
   npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "ERROR" [--store DIR]
   npm run evaluate -- tradingview-finish RETRIEVAL_ID [--store DIR] [--scan-store DIR]
