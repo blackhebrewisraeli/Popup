@@ -80,10 +80,11 @@ whether to act, and where; Popup places no orders.
   ranks that the median observation does not share and one pair dominates, and too few Long
   setups (3) to judge (draft [#152](https://github.com/blackhebrewisraeli/Popup/pull/152),
   [findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
-- **Why Long is rare and Risk common:** the [model diagnostic](MODEL_DIAGNOSTIC.md) (draft PR,
-  no model change, no outcome read) traces it to volatility: crypto's median ATR/close (6.4%)
-  puts 85.5% of pair-days in HIGH_VOLATILITY, where no RSI or momentum reading can reach the Long
-  score above 4.25%, and 99.7% of Risk observations rest on that clause. No defect found.
+- **Why Long is rare and Risk common:** the [model diagnostic](MODEL_DIAGNOSTIC.md) (draft
+  [#153](https://github.com/blackhebrewisraeli/Popup/pull/153), no model change, no outcome read)
+  traces it to volatility: crypto's median ATR/close (6.4%) puts 85.5% of pair-days in
+  HIGH_VOLATILITY, where no RSI or momentum reading can reach the Long score above 4.25%, and
+  99.7% of Risk observations rest on that clause. No defect found.
   Recommended next: name the Risk clause (High volatility / Low score) in Research, wording only.
 - **Prospective crypto check:** frozen in `fab48a3` (2026-11-11 20:37Z, same PR): top 5 against
   the same-date universe at 20 days, a hypothesis selected after the retrospective results, for
@@ -118,7 +119,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Diagnose the canonical model's Long and Risk behaviour · Draft PR.**
+- **2026-11-12 · Diagnose the canonical model's Long and Risk behaviour · Draft PR
+  [#153](https://github.com/blackhebrewisraeli/Popup/pull/153).**
   Decision: explain before proposing changes. A new `model-diagnostic-crypto` command replays
   the frozen crypto study's 801 dates with its own `replayDay`, takes every score apart into
   factor contributions and gate clauses, and refuses to write unless every replayed date and
