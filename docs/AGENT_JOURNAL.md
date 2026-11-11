@@ -61,12 +61,17 @@ whether to act, and where; Popup places no orders.
   records a local runtime check with throwaway users and a synthetic provider. No credential is
   configured and no read against Binance has run
   ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
-- **TradingView crypto scan:** draft [#150](https://github.com/blackhebrewisraeli/Popup/pull/150)
-  freezes `crypto-usdt-v1` (25 Binance Spot USDT pairs, rule and resolution in
+- **TradingView crypto scan:** [#150](https://github.com/blackhebrewisraeli/Popup/pull/150)
+  (merged `7f0f40c`) freezes `crypto-usdt-v1` (25 Binance Spot USDT pairs, rule and resolution in
   [TRADINGVIEW_CRYPTO_SCAN.md](TRADINGVIEW_CRYPTO_SCAN.md)), adds the `tradingview-crypto-daily-v1`
   contract with one frozen cutoff per retrieval, and shows the scan in Research beside the equity
   scans. Real scan `20261111T183825Z-dc217757`: 23 of 25 evaluated, offline `MATCH`; it is now the
   published Research view.
+- **Manual Spot scenario:** draft [#PRNUM](https://github.com/blackhebrewisraeli/Popup/pull/PRNUM)
+  adds the owner's own hypothetical plan to an evaluated pair's evidence in that scan: allocation,
+  loss budget, entry and stop reference typed by the owner, exact decimal arithmetic, fees
+  optional and unspecified by default, in component memory only. No order, balance read or
+  storage ([usage and limits](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)).
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
@@ -96,6 +101,24 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-11 · Manual Spot scenario in the TradingView crypto evidence · Draft PR
+  [#PRNUM](https://github.com/blackhebrewisraeli/Popup/pull/PRNUM).** Decision: a disclosure at the
+  end of the existing evidence view, not a new dashboard, holding only the owner's inputs in
+  component state keyed by scan and asset. A new pure `spotScenario.ts` sizes with BigInt at
+  1e-8 rather than reusing `recommendPositionSize`, whose ATR stop, percent-of-capital risk,
+  4-decimal rounding and zero-on-invalid do not fit an owner-typed plan; doubles also lose the
+  last digit of PEPE-sized quantities. Quantity is floored so notional plus any assumed entry fee
+  stays within the allocation and the loss at the stop within the budget. Evidence: labeled
+  synthetic fixtures (allocation-, loss- and equally-limited sizing; stop at or above entry;
+  zero, negative, non-finite, comma, exponent, over-precise and excessive inputs; a small-price
+  pair; sub-cent amounts; a budget too small for one unit; unspecified, 0% and 0.1% fees; no-Long,
+  Long+Risk and stale states; selection, scan and sheet changes clearing; no fetch or storage
+  write; no order control), 1,428 tests, typecheck, lint, build. Real-scan inspection on the
+  published `20261111T183825Z-dc217757` view: a no-setup pair's panel named its symbol, scan, day,
+  rank and freshness; planning sent no request; another row and another scan started empty;
+  equity scans show no panel; desktop, 375 px (no horizontal overflow), light and dark and
+  keyboard (disclosure, inputs, recorded-close button) checked. No real figure is recorded here.
 
 - **2026-11-11 · TradingView crypto scan of Binance Spot USDT pairs · Draft PR
   [#150](https://github.com/blackhebrewisraeli/Popup/pull/150).** Decision: extend the existing

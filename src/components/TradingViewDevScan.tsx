@@ -262,6 +262,7 @@ function DevScanContent({ query }: Readonly<{ query: DevScanQuery }>) {
         scanning={false}
         failed={false}
         source={source}
+        scanId={scanId}
         changes={compareScans(view, baseline)}
         choice={view}
       />
@@ -331,6 +332,7 @@ function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: S
           scanning={false}
           failed={false}
           source={view.source}
+          scanId={view.scanId}
           changes={compareScans(view, view.baseline)}
           choice={view}
         />

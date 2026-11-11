@@ -152,3 +152,35 @@ stay in git-ignored local storage.
   list), at 375 px (no horizontal overflow; the evidence sheet closes back to its row), with Up and
   Down focus and Enter selection, and switching **Scan shown** to the 90-member equity scan and
   back.
+
+## Manual Spot scenario
+
+The evidence of an evaluated pair in a TradingView crypto scan (beside the list, or in the sheet
+at phone width) ends with **Manual Spot scenario**. **Plan a hypothetical scenario** opens your own
+arithmetic for that pair. Popup reads no balance, quote or exchange filter, sends and saves
+nothing, and offers no order: you decide, and act in Binance yourself if you choose to.
+
+- **Evidence first.** The panel repeats what it rests on: the exact TradingView symbol, Binance
+  Spot as venue, the scan ID, model and timeframe, the evaluated UTC day, the technical rank,
+  whether ZC LONG and ZC RISK held (both can), freshness now and data quality. A pair without a
+  Long setup is labeled not model-backed; a Risk warning and **Stale** stay visible beside the
+  inputs and figures. Pairs that were not evaluated (short history, invalid data) have no evidence
+  view and so no scenario.
+- **Inputs, all yours:** available allocation (USDT), maximum planned loss (USDT, at most the
+  allocation), a hypothetical entry (USDT per unit) and a stop reference below it. The recorded
+  daily close can fill the entry, labeled as a historical reference, never a current or
+  executable quote. Popup suggests no entry, stop, target, confidence or expected return.
+- **Figures.** With f the optional fee assumption per fill (0 while unspecified):
+  quantity = min(allocation ÷ (entry × (1 + f)), max loss ÷ (entry − stop + f × (entry + stop))),
+  floored to 0.00000001; which budget limited it; position notional; unallocated budget; the
+  entry-to-stop distance; the loss at the stop reference. Inputs are exact decimals (up to 8
+  places, fee 4) computed without floating point, so small-price pairs keep every digit; USDT
+  amounts show to the cent. Missing or invalid input shows validation, never a figure.
+- **Costs and limits.** Fees are unspecified by default, and then every figure excludes them. An
+  assumed fee is charged once at entry and once at the stop as a share of the fill; Binance may
+  charge it in the bought asset or BNB, which this does not model. Slippage is never included.
+  A stop reference is a planning input, not a placed stop or a guaranteed maximum: a gap or
+  execution costs can lose more. The quantity is illustrative until Binance's lot size, minimum
+  notional and price filters are checked.
+- **Memory only.** Choosing another asset or scan, or closing the sheet, clears it. Nothing is
+  journaled or stored, and no background process runs.

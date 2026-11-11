@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
 import { ScanChanges, type BaselineChoice } from '@/components/ScanChanges';
 import { Segmented } from '@/components/Segmented';
+import { SpotScenario } from '@/components/SpotScenario';
 import {
   FLAT_MOMENTUM,
   LONG_SETUP_MIN_SCORE,
@@ -49,6 +50,7 @@ import {
   type ScanView,
   type SetupCheck,
 } from '@/lib/scanReview';
+import { plansSpot } from '@/lib/spotScenario';
 import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
 import { closeOnBackdrop, cn } from '@/lib/utils';
 import { containDialogTab } from '@/lib/dialogFocus';
@@ -700,11 +702,13 @@ function EvidenceTitle({
 function Evidence({
   selection: { result, model, setups, cohort },
   scan,
+  scanId,
   source,
   scanFacts,
 }: Readonly<{
   selection: Selection;
   scan: MarketScan;
+  scanId: string | undefined;
   source: TradingViewDevSource | undefined;
   scanFacts: boolean;
 }>) {
@@ -830,6 +834,20 @@ function Evidence({
           ))}
         </ul>
       </section>
+
+      {plansSpot(result, source) && (
+        // Keyed by scan and asset: another selection starts from empty inputs, never these.
+        <SpotScenario
+          key={`${scanId ?? ''}|${scan.evaluationTime}|${result.ticker}`}
+          result={result}
+          model={model}
+          setups={setups}
+          cohort={cohort}
+          scan={scan}
+          scanId={scanId}
+          source={source}
+        />
+      )}
     </div>
   );
 }
@@ -838,12 +856,14 @@ function Evidence({
 function ExplanationSheet({
   selection,
   scan,
+  scanId,
   source,
   onClose,
   returnFocus,
 }: Readonly<{
   selection: Selection;
   scan: MarketScan;
+  scanId: string | undefined;
   source: TradingViewDevSource | undefined;
   onClose: () => void;
   /** Called once the sheet is gone; the review puts focus back on the selected row. */
@@ -893,7 +913,7 @@ function ExplanationSheet({
             <X size={18} />
           </button>
         </header>
-        <Evidence selection={selection} scan={scan} source={source} scanFacts />
+        <Evidence selection={selection} scan={scan} scanId={scanId} source={source} scanFacts />
       </dialog>
     </div>,
     document.body,
@@ -909,6 +929,7 @@ function EvidencePanel({
   selection,
   filteredOut,
   scan,
+  scanId,
   source,
 }: Readonly<{
   id: string;
@@ -916,6 +937,7 @@ function EvidencePanel({
   /** The selected asset is outside the current view or filters. */
   filteredOut: boolean;
   scan: MarketScan;
+  scanId: string | undefined;
   source: TradingViewDevSource | undefined;
 }>) {
   const ref = useRef<HTMLElement>(null);
@@ -942,7 +964,13 @@ function EvidencePanel({
               </p>
             )}
           </header>
-          <Evidence selection={selection} scan={scan} source={source} scanFacts={false} />
+          <Evidence
+            selection={selection}
+            scan={scan}
+            scanId={scanId}
+            source={source}
+            scanFacts={false}
+          />
         </>
       ) : (
         <p className="scan-evidence-empty">
@@ -978,15 +1006,19 @@ function useWide(): boolean {
 /**
  * The scan's results for review: long setups, risk warnings or every ranked
  * asset, narrowed by recorded fields, each explainable and comparable within
- * its own cohort. Read-only: no order, size or broker link.
+ * its own cohort. No order or broker link: a TradingView Binance Spot pair adds only the
+ * owner's own hypothetical scenario, held in memory.
  */
 export function ScanReview({
   scan,
+  scanId,
   source,
   changes,
   choice,
 }: Readonly<{
   scan: MarketScan;
+  /** TradingView imports only: the scan's own ID, which a Spot scenario names. */
+  scanId?: string | undefined;
   source: TradingViewDevSource | undefined;
   /** TradingView imports only: the displayed scan against its baseline. */
   changes?: ScanComparison | undefined;
@@ -1169,6 +1201,7 @@ export function ScanReview({
             selection={selection}
             filteredOut={filteredOut}
             scan={scan}
+            scanId={scanId}
             source={source}
           />
         )}
@@ -1177,6 +1210,7 @@ export function ScanReview({
         <ExplanationSheet
           selection={selection}
           scan={scan}
+          scanId={scanId}
           source={source}
           onClose={closeSheet}
           returnFocus={focusSelectedRow}

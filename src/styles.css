@@ -1443,6 +1443,75 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* Manual Spot scenario: the owner's hypothetical arithmetic under one pair's evidence. */
+.spot-scenario .scan-guide-details {
+  margin-top: 8px;
+  padding-top: 10px;
+}
+.spot-standing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.spot-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px 16px;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+.spot-inputs > legend {
+  margin-bottom: 8px;
+  padding: 0;
+}
+/* The narrow sheet is portaled out of .scan-review, so the review's button rules are repeated. */
+.spot-inputs > .portfolio-cash-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  height: 30px;
+  font:
+    500 12.5px 'DM Sans',
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.spot-inputs > .portfolio-cash-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.spot-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.spot-field .portfolio-cash-input {
+  width: 100%;
+}
+.spot-field .portfolio-cash-input[aria-invalid='true'] {
+  border-color: var(--signal-red);
+}
+.spot-field-error {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--signal-red);
+}
+.spot-result {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 560px) {
+  .spot-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 760px) {
   .scan-guide,
   .scan-effects {
