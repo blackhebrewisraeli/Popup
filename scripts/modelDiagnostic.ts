@@ -376,7 +376,7 @@ function signalsOf(
     lowScore: { total: 0, withRiskTransition: 0 },
     highVolatility: { total: 0, withRiskTransition: 0 },
   };
-  const highConviction = { observations: 0, transitions: 0 };
+  const highConviction = tally();
   const add = (
     counts: SignalCounts,
     holds: boolean,
@@ -390,6 +390,20 @@ function signalsOf(
     else if (before !== undefined && !held(before)) counts.transitions += 1;
     else counts.standing += 1;
   };
+  // Which Risk clauses began, changed or carried a transition, against the previous date's row.
+  const clauseChanges = (row: DiagnosticRow, before: DiagnosticRow) => {
+    const clauses = riskClauses(row.gates);
+    if (row.risk && !before.risk && clauses !== 'neither') riskTransitionsByClauses[clauses] += 1;
+    if (row.risk && before.risk && clauses !== riskClauses(before.gates)) {
+      const key = `${riskClauses(before.gates)}>${clauses}`;
+      clauseChangesWhileStanding[key] = (clauseChangesWhileStanding[key] ?? 0) + 1;
+    }
+    for (const clause of ['lowScore', 'highVolatility'] as const) {
+      if (!row.gates[clause] || before.gates[clause]) continue;
+      onsets[clause].total += 1;
+      if (!before.risk) onsets[clause].withRiskTransition += 1;
+    }
+  };
   dates.forEach((date, k) => {
     if (!covered.has(date.session)) return;
     const previous = dates[k - 1];
@@ -398,23 +412,8 @@ function signalsOf(
       const before = previous?.rows.get(row.ticker);
       add(long, row.long, before, known, (r) => r.long);
       add(risk, row.risk, before, known, (r) => r.risk);
-      if (row.score >= 80) {
-        highConviction.observations += 1;
-        if (known && before !== undefined && before.score < 80) highConviction.transitions += 1;
-      }
-      if (!known || before === undefined) continue;
-      const clauses = riskClauses(row.gates);
-      if (row.risk && !before.risk && clauses !== 'neither') riskTransitionsByClauses[clauses] += 1;
-      if (row.risk && before.risk && clauses !== riskClauses(before.gates)) {
-        const key = `${riskClauses(before.gates)}>${clauses}`;
-        clauseChangesWhileStanding[key] = (clauseChangesWhileStanding[key] ?? 0) + 1;
-      }
-      for (const clause of ['lowScore', 'highVolatility'] as const) {
-        if (row.gates[clause] && !before.gates[clause]) {
-          onsets[clause].total += 1;
-          if (!before.risk) onsets[clause].withRiskTransition += 1;
-        }
-      }
+      add(highConviction, row.score >= 80, before, known, (r) => r.score >= 80);
+      if (known && before !== undefined) clauseChanges(row, before);
     }
   });
   const sorted = Object.fromEntries(
@@ -428,8 +427,18 @@ function signalsOf(
       clauseChangesWhileStanding: sorted,
     },
     clauseOnsets: onsets,
-    highConvictionScore80: highConviction,
+    highConvictionScore80: {
+      observations: highConviction.observations,
+      transitions: highConviction.transitions,
+    },
   };
+}
+
+/** The RSI band a reading falls in, split at 30, 50 and 70. */
+function rsiZone(rsi: number): 'oversold' | 'below50' | 'above50' | 'overbought' {
+  if (rsi <= RSI_OVERSOLD) return 'oversold';
+  if (rsi < 50) return 'below50';
+  return rsi < RSI_OVERBOUGHT ? 'above50' : 'overbought';
 }
 
 type StudyFacts = Pick<
@@ -509,14 +518,6 @@ export function modelDiagnostic(
     .filter((d) => covered.has(d.session))
     .flatMap((d) => [...d.rows.values()].sort((a, b) => compareTickers(a.ticker, b.ticker)));
   const column = (value: (row: DiagnosticRow) => number, subset = rows) => subset.map(value);
-  const rsiZone = (rsi: number) =>
-    rsi <= RSI_OVERSOLD
-      ? 'oversold'
-      : rsi < 50
-        ? 'below50'
-        : rsi < RSI_OVERBOUGHT
-          ? 'above50'
-          : 'overbought';
   const byRegime = <T>(make: (subset: DiagnosticRow[]) => T) =>
     Object.fromEntries(
       REGIMES.map((r) => [r, make(rows.filter((row) => row.regime === r))]),
