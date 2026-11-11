@@ -106,6 +106,7 @@ Tooling config (`vite.config.ts`, `vitest.config.ts`, `tsconfig.json`,
 | Supabase client            | `src/lib/supabaseClient.ts` (the only browser client), `supabaseConfig.ts` (env resolution)                                                                                                      |
 | Release gate               | `src/lib/dbContract.ts` + `scripts/check-db-contract.ts`                                                                                                                                         |
 | Scanner signal research    | `scripts/scannerResearch.ts`, `scannerResearchV2.ts`, `scannerResearchReport.ts`: historical replay of the scan with same-date baselines (`docs/SCANNER_RESEARCH.md`)                            |
+| Model diagnostic           | `scripts/modelDiagnostic.ts`: the crypto replay's scores taken apart into factors and gate clauses, reconciled with the frozen study, no outcomes (`docs/MODEL_DIAGNOSTIC.md`)                   |
 | Strategy evaluation        | `src/lib/evaluationLab.ts` (pure) + `scripts/` CLIs (`docs/STRATEGY_VALIDATION.md`)                                                                                                              |
 | SSR error handling         | `src/server.ts`, `src/lib/error-capture.ts`, `error-page.ts`                                                                                                                                     |
 
