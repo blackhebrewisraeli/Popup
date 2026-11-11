@@ -15,7 +15,7 @@ import {
   type FactorInputs,
   type ModelSetups,
 } from '@/lib/canonicalModel';
-import { explainResult, percent, ratio, rowReason } from '@/lib/scanReview';
+import { explainResult, percent, ratio, riskLabel, rowReason } from '@/lib/scanReview';
 import { cn } from '@/lib/utils';
 
 /**
@@ -53,17 +53,20 @@ const FIRST_SELECTED = 'DEMO5';
 /** Below this width the explanation sits under the list. Matches `.landing-demo-desk` in styles.css. */
 const STACKED = '(max-width: 1023px)';
 
-function setupWords(setups: ModelSetups): string {
-  const words = [setups.long && 'Long setup', setups.risk && 'Risk warning'];
-  return words.filter(Boolean).join(' and ') || 'No setup';
+type Demo = Readonly<{ model: CanonicalScore; setups: ModelSetups }>;
+
+function setupWords(asset: Demo): string {
+  const words = [asset.setups.long && 'Long setup', riskLabel(asset)];
+  return words.filter(Boolean).join(', ') || 'No setup';
 }
 
-function SetupTag({ setups }: Readonly<{ setups: ModelSetups }>) {
-  if (!setups.long && !setups.risk) return <span className="market-scan-tag">No setup</span>;
+function SetupTag({ asset }: Readonly<{ asset: Demo }>) {
+  const risk = riskLabel(asset);
+  if (!asset.setups.long && !risk) return <span className="market-scan-tag">No setup</span>;
   return (
     <>
-      {setups.long && <span className="market-scan-tag is-long">Long setup</span>}
-      {setups.risk && <span className="market-scan-tag is-risk">Risk warning</span>}
+      {asset.setups.long && <span className="market-scan-tag is-long">Long setup</span>}
+      {risk && <span className="market-scan-tag is-risk">{risk}</span>}
     </>
   );
 }
@@ -117,7 +120,7 @@ function ScanDemo() {
                 <button
                   type="button"
                   className="scan-row-main"
-                  aria-label={`${item.ticker}, rank ${item.rank}, score ${item.model.signal_score}, ${setupWords(item.setups)}`}
+                  aria-label={`${item.ticker}, rank ${item.rank}, score ${item.model.signal_score}, ${setupWords(item)}`}
                   aria-describedby={`${id}-${item.ticker}`}
                   aria-current={item.ticker === selected ? 'true' : undefined}
                   aria-controls={`${id}-detail`}
@@ -132,7 +135,7 @@ function ScanDemo() {
                     {item.model.signal_score}
                   </span>
                   <span className="scan-row-setup">
-                    <SetupTag setups={item.setups} />
+                    <SetupTag asset={item} />
                   </span>
                   <span id={`${id}-${item.ticker}`} className="scan-row-reason">
                     {rowReason(item.explanation)}
@@ -165,7 +168,7 @@ function ScanDemo() {
                 <span className="regime-badge" data-regime={asset.model.regime}>
                   {REGIME_LABELS[asset.model.regime]}
                 </span>
-                <SetupTag setups={asset.setups} />
+                <SetupTag asset={asset} />
               </div>
               <p className="quant-rationale">{asset.model.rationale}</p>
               <section aria-labelledby={`${id}-conditions`}>
@@ -244,7 +247,8 @@ export function LandingPage({
           <div>
             <dt>Risk warning</dt>
             <dd>
-              Score ≤ {RISK_SETUP_MAX_SCORE}, or ATR ≥ {ratio(REGIME_HIGH_VOLATILITY)} of price.
+              High volatility (ATR ≥ {ratio(REGIME_HIGH_VOLATILITY)} of price), a low score (≤{' '}
+              {RISK_SETUP_MAX_SCORE}), or both. Each warning names its clause.
             </dd>
           </div>
         </dl>

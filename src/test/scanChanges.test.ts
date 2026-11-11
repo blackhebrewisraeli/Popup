@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ModelSetups } from '@/lib/canonicalModel';
+import type { MarketRegime, ModelSetups } from '@/lib/canonicalModel';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
 import {
   compareScans,
@@ -8,6 +8,7 @@ import {
   setupCounts,
   type NamedScan,
 } from '@/lib/scanChanges';
+import { explainResult, riskClauses } from '@/lib/scanReview';
 import {
   TRADINGVIEW_DEV_PROVIDER_ID,
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
@@ -71,19 +72,23 @@ function scanOn(
   return { scanId: `scan-${last}-${evaluationTime}`, scan };
 }
 
-/** Sets one ticker's recorded setups or score by hand. */
+/** Sets one ticker's recorded setups, score or regime by hand. */
 function recorded(
   named: NamedScan,
   ticker: string,
-  reading: Partial<ModelSetups> & { score?: number },
+  reading: Partial<ModelSetups> & { score?: number; regime?: MarketRegime },
 ): NamedScan {
-  const { score, ...setups } = reading;
+  const { score, regime, ...setups } = reading;
   const results = named.scan.results.map((result) =>
     result.ticker === ticker && result.model && result.setups
       ? {
           ...result,
           setups: { ...result.setups, ...setups },
-          model: { ...result.model, signal_score: score ?? result.model.signal_score },
+          model: {
+            ...result.model,
+            signal_score: score ?? result.model.signal_score,
+            regime: regime ?? result.model.regime,
+          },
         }
       : result,
   );
@@ -144,6 +149,40 @@ describe('compareScans', () => {
       NONE: 1,
     });
     expect(scoreCounts(comparison.changes)).toEqual({ higher: 2, lower: 0, same: 1 });
+  });
+
+  it('keeps a Risk warning held when the clause holding it changes', () => {
+    const before = recorded(scanOn('2026-10-26'), 'KO', {
+      risk: true,
+      score: 50,
+      regime: 'HIGH_VOLATILITY',
+    });
+    const after = recorded(scanOn('2026-10-27'), 'KO', {
+      risk: true,
+      score: 20,
+      regime: 'NEUTRAL',
+    });
+    const clauses = (named: NamedScan) => {
+      const ko = named.scan.results.find((result) => result.ticker === 'KO')!;
+      return riskClauses(explainResult(ko.model!, ko.setups!));
+    };
+    expect(clauses(before)).toEqual(['High volatility']);
+    expect(clauses(after)).toEqual(['Low score']);
+
+    const comparison = compareScans(after, before);
+    if (comparison.status !== 'COMPARED') throw new Error('not compared');
+    expect(comparison.changes.find((change) => change.ticker === 'KO')).toMatchObject({
+      risk: 'HELD',
+      score: { before: 50, after: 20 },
+    });
+    // The comparison records no clause, so none can be shown as a transition.
+    expect(Object.keys(comparison.changes[0]!).sort()).toEqual([
+      'long',
+      'risk',
+      'score',
+      'sessions',
+      'ticker',
+    ]);
   });
 
   it('never reads an asset missing from one scan as a cleared or a new condition', () => {

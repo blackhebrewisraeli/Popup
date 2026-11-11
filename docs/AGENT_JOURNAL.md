@@ -57,7 +57,7 @@ whether to act, and where; Popup places no orders.
   ([Saved scans](MARKET_SCANNER.md#saved-scans)).
 - **Binance Spot balances:** [#145](https://github.com/blackhebrewisraeli/Popup/pull/145) (merged
   `c054ffd`) adds an owner-only, read-only balance card to Account, served by a new
-  `binance-spot-account` edge function. Draft [#146](https://github.com/blackhebrewisraeli/Popup/pull/146) fixes the duplicate first read and
+  `binance-spot-account` edge function. [#146](https://github.com/blackhebrewisraeli/Popup/pull/146) (merged `1f9c65e`) fixes the duplicate first read and
   records a local runtime check with throwaway users and a synthetic provider. No credential is
   configured and no read against Binance has run
   ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
@@ -67,8 +67,8 @@ whether to act, and where; Popup places no orders.
   contract with one frozen cutoff per retrieval, and shows the scan in Research beside the equity
   scans. Real scan `20261111T183825Z-dc217757`: 23 of 25 evaluated, offline `MATCH`; it is now the
   published Research view.
-- **Manual Spot scenario:** draft [#151](https://github.com/blackhebrewisraeli/Popup/pull/151)
-  adds the owner's own hypothetical plan to an evaluated pair's evidence in that scan: allocation,
+- **Manual Spot scenario:** [#151](https://github.com/blackhebrewisraeli/Popup/pull/151)
+  (merged `cc8bc1f`) adds the owner's own hypothetical plan to an evaluated pair's evidence in that scan: allocation,
   loss budget, entry and stop reference typed by the owner, exact decimal arithmetic, fees
   optional and unspecified by default, in component memory only. No order, balance read or
   storage ([usage and limits](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)).
@@ -78,14 +78,24 @@ whether to act, and where; Popup places no orders.
   research](SCANNER_RESEARCH.md) did not establish a predictive advantage. The frozen crypto study
   is **mixed**: no 1- or 5-day information, a 20-day mean advantage for the top
   ranks that the median observation does not share and one pair dominates, and too few Long
-  setups (3) to judge (draft [#152](https://github.com/blackhebrewisraeli/Popup/pull/152),
+  setups (3) to judge ([#152](https://github.com/blackhebrewisraeli/Popup/pull/152), merged `354c233`,
   [findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
-- **Why Long is rare and Risk common:** the [model diagnostic](MODEL_DIAGNOSTIC.md) (draft
-  [#153](https://github.com/blackhebrewisraeli/Popup/pull/153), no model change, no outcome read)
+- **Why Long is rare and Risk common:** the [model diagnostic](MODEL_DIAGNOSTIC.md)
+  ([#153](https://github.com/blackhebrewisraeli/Popup/pull/153), merged `8bf3db8`, no model
+  change, no outcome read)
   traces it to volatility: crypto's median ATR/close (6.4%) puts 85.5% of pair-days in
   HIGH_VOLATILITY, where no RSI or momentum reading can reach the Long score above 4.25%, and
   99.7% of Risk observations rest on that clause. No defect found.
-  Recommended next: name the Risk clause (High volatility / Low score) in Research, wording only.
+- **Risk clauses named in Research:** draft PR (this entry's PR, below) labels every Risk warning
+  by the clause that holds it, **High volatility** or **Low score** or both, on row tags and
+  accessible names, evidence, comparison, the Manual Spot scenario and the landing example. Wording
+  only: the Risk warnings view, its counts, ranks and scan-change transitions are unchanged.
+- **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
+  Nothing has validated its predictive value, and nothing here authorizes a change. The annual
+  prospective study is not a prerequisite for ongoing development. Any future model change needs
+  its own justified, versioned proposal (new `MODEL_VERSION`, Pine, migration and in-Pine
+  self-check per CONTRIBUTING) that keeps every earlier version reproducible and leaves the frozen
+  studies on `1.0.0`.
 - **Prospective crypto check:** frozen in `fab48a3` (2026-11-11 20:37Z, same PR): top 5 against
   the same-date universe at 20 days, a hypothesis selected after the retrospective results, for
   scored days 2026-11-12 to 2027-11-11, analysed once on or after 2027-12-04. It collects
@@ -119,8 +129,24 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Diagnose the canonical model's Long and Risk behaviour · Draft PR
-  [#153](https://github.com/blackhebrewisraeli/Popup/pull/153).**
+- **2026-11-12 · Name the Risk clause in Research · Draft PR (this branch,
+  `feat/risk-clause-labels`).** Decision: wording only, from `explainResult`'s own clauses, so no
+  formula is repeated. A Risk tag reads "Risk: high volatility", "Risk: low score" or both, and the
+  row's accessible name uses the same words; the evidence, comparison table and Spot scenario name
+  each held clause; a label with no recorded model names none ("Risk warning"). The Risk warnings
+  view stays the union of both clauses with the same members and counts, and Long stays visible
+  beside high-volatility Risk. The ranked list's Setup column now takes a share of spare width (never under its old 100 px), so the common label fits on one line on wider screens. The changes list keeps "held in both" for a warning whose clause
+  changed and shows no clause history, because the comparison records none. The TradingView
+  crypto reading guide adds one scoped line: high volatility held on 85.5% of the frozen study's
+  evaluated pair-days and describes ATR relative to price, not a decline. No model, threshold,
+  Pine, scanner version, snapshot or study change. Evidence: synthetic readings through
+  `scoreFactors`/`modelSetups` and scans through `evaluateScan` (each clause alone, both, neither,
+  Long with high volatility, both canonical boundaries, missing model, union and comparison
+  unchanged); browser check at desktop and 375 px, light and dark, keyboard. Next: none required;
+  the model decision above stands.
+
+- **2026-11-12 · Diagnose the canonical model's Long and Risk behaviour · PR
+  [#153](https://github.com/blackhebrewisraeli/Popup/pull/153), merged `8bf3db8`.**
   Decision: explain before proposing changes. A new `model-diagnostic-crypto` command replays
   the frozen crypto study's 801 dates with its own `replayDay`, takes every score apart into
   factor contributions and gate clauses, and refuses to write unless every replayed date and

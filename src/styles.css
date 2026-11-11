@@ -1060,7 +1060,8 @@ body {
 .scan-list-cols,
 .scan-row-main {
   display: grid;
-  grid-template-columns: 30px minmax(84px, 128px) 36px 100px minmax(0, 1fr);
+  /* Setup takes a share of spare width, so "Risk: high volatility" fits once the list has room. */
+  grid-template-columns: 30px minmax(84px, 128px) 36px minmax(100px, 0.5fr) minmax(0, 1fr);
   gap: 4px 14px;
   align-items: baseline;
 }

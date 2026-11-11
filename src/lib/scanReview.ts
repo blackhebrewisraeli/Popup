@@ -10,7 +10,6 @@ import {
   LONG_SETUP_MIN_SCORE,
   momentumBias,
   REGIME_HIGH_VOLATILITY,
-  REGIME_LABELS,
   REGIME_TRENDING_MOMENTUM,
   RISK_SETUP_MAX_SCORE,
   RSI_OVERBOUGHT,
@@ -192,7 +191,12 @@ export const QUANT_FACTORS = [
   },
 ] as const;
 
+/** ZC RISK's two clauses by name. Either one holds the warning; both can. */
+export type RiskClause = 'High volatility' | 'Low score';
+
 export interface SetupClause {
+  /** A ZC RISK clause's name, which every Risk label shows. ZC LONG's clauses have none. */
+  name?: RiskClause;
   label: string;
   rule: string;
   actual: string;
@@ -281,7 +285,6 @@ function weighFactors(
  */
 export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanExplanation {
   const { signal_score: score, regime, inputs, components } = model;
-  const regimeLabel = REGIME_LABELS[regime];
   const long: SetupCheck = {
     name: 'ZC LONG',
     holds: setups.long,
@@ -308,16 +311,19 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
     join: 'any',
     clauses: [
       {
+        // The recorded regime decides it: HIGH_VOLATILITY is first-match ATR/price ≥ 4%.
+        name: 'High volatility',
+        label: 'ATR',
+        rule: `≥ ${ratio(REGIME_HIGH_VOLATILITY)} of price`,
+        actual: ratio(inputs.volatilityPercent),
+        met: highVolatility,
+      },
+      {
+        name: 'Low score',
         label: 'Score',
         rule: `≤ ${RISK_SETUP_MAX_SCORE}`,
         actual: String(score),
         met: score <= RISK_SETUP_MAX_SCORE,
-      },
-      {
-        label: 'Regime',
-        rule: `High-volatility (ATR ≥ ${ratio(REGIME_HIGH_VOLATILITY)} of price)`,
-        actual: `${regimeLabel} (ATR ${ratio(inputs.volatilityPercent)})`,
-        met: highVolatility,
       },
     ],
   };
@@ -351,7 +357,9 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
       `ATR ${ratio(inputs.volatilityPercent)} of price ≥ ${ratio(REGIME_HIGH_VOLATILITY)} sets the High-volatility regime, which holds ZC RISK on its own`,
     );
     if (!scoreDecides) {
-      weakens.push(`Score ${score} is above ${RISK_SETUP_MAX_SCORE}: only the regime clause holds`);
+      weakens.push(
+        `Score ${score} is above ${RISK_SETUP_MAX_SCORE}: only the high-volatility clause holds`,
+      );
     }
   }
 
@@ -369,8 +377,10 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
   };
 }
 
+/** "Score 61", or a named Risk clause: "High volatility (ATR 6.40%)". */
 export function clauseValue(clause: SetupClause): string {
-  return `${clause.label} ${clause.actual}`;
+  const value = `${clause.label} ${clause.actual}`;
+  return clause.name ? `${clause.name} (${value})` : value;
 }
 
 export function clauseShortfall(clause: SetupClause): string {
@@ -378,21 +388,45 @@ export function clauseShortfall(clause: SetupClause): string {
 }
 
 /**
+ * The ZC RISK clauses a recorded result meets, High volatility first. None unless
+ * the recorded setups hold the warning.
+ */
+export function riskClauses({ risk }: Pick<ScanExplanation, 'risk'>): RiskClause[] {
+  if (!risk.holds) return [];
+  return risk.clauses.flatMap((clause) => (clause.met && clause.name ? [clause.name] : []));
+}
+
+/**
+ * A result's Risk label, the same on its tag and in its accessible name: "Risk: high
+ * volatility", "Risk: low score" or "Risk: high volatility and low score". Null when no
+ * warning is recorded. A clause comes only from the recorded score and regime; without
+ * them the label stays "Risk warning" and names none.
+ */
+export function riskLabel({
+  model,
+  setups,
+}: Pick<ScanAssetResult, 'model' | 'setups'>): string | null {
+  if (!setups?.risk) return null;
+  const clauses = model ? riskClauses(explainResult(model, setups)) : [];
+  return clauses.length > 0 ? `Risk: ${clauses.join(' and ').toLowerCase()}` : 'Risk warning';
+}
+
+/**
  * A row's short reason: the recorded clauses that decide its setup state, worded
  * from the same explanation the evidence shows. Long holds on every clause, risk
- * on any; otherwise it names what ZC LONG is short of.
+ * on any, each named; otherwise it names what ZC LONG is short of.
  */
-export function rowReason({ long, risk, regimeRule }: ScanExplanation): string {
-  const met = (clause: SetupClause) =>
-    clause.label === 'Regime'
-      ? `High-volatility: ${regimeRule}`
-      : `${clauseValue(clause)} ${clause.rule}`;
+export function rowReason({ long, risk }: ScanExplanation): string {
+  const met = (clause: SetupClause) => {
+    const value = `${clause.label} ${clause.actual} ${clause.rule}`;
+    return clause.name ? `${clause.name}: ${value}` : value;
+  };
   if (long.holds) return long.clauses.map(met).join(', ');
   if (risk.holds)
     return risk.clauses
       .filter((clause) => clause.met)
       .map(met)
-      .join(', ');
+      .join('; ');
   const unmet = long.clauses.filter((clause) => !clause.met);
   return `Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`;
 }

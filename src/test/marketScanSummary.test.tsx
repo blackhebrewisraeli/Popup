@@ -319,9 +319,14 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     // Labeled fixture: closes alternating 6% apart, so ATR/close sits far above the 4% band.
     const { panel } = renderDev([equity('AAPL', (i) => (i % 2 === 0 ? 100 : 106))]);
     fireEvent.click(within(panel).getByRole('tab', { name: /Risk warnings/ }));
+    expect(panel).toHaveTextContent(
+      'ZC RISK: high volatility (ATR ≥ 4.00% of price), a low score (≤ 28), or both',
+    );
+    // The crypto study's share is never shown beside equities.
+    expect(panel).not.toHaveTextContent('frozen crypto study');
     const [item] = panel.querySelectorAll('.scan-row');
     expect(item).toHaveTextContent('AAPL');
-    expect(item).toHaveTextContent(/High-volatility: ATR \d+\.\d\d% of price ≥ 4\.00%/);
+    expect(item).toHaveTextContent(/High volatility: ATR \d+\.\d\d% ≥ 4\.00% of price/);
     fireEvent.click(within(panel).getByRole('button', { name: /^AAPL,/ }));
     expect(screen.getByRole('dialog')).toHaveTextContent(/Volatility Regime \(ATR\)\d+30%/);
   });
@@ -402,8 +407,11 @@ describe('MarketScanSummary as the TradingView crypto scan', () => {
     expect(notes).toHaveTextContent('no Binance candle was read, and Popup places no orders');
     expect(notes).toHaveTextContent('Each score rests on the last 199 closed UTC days');
     expect(notes).not.toHaveTextContent(/dividends|9h after its close|final sessions/);
-    // The equity-only research note is not attached to crypto ranks.
+    // The equity-only research note is not attached to crypto ranks; the crypto one is, scoped.
     expect(panel).not.toHaveTextContent('retrospective study of this universe');
+    expect(panel).toHaveTextContent(
+      'In the frozen crypto study’s history (25 pairs, Sep 2024 to Nov 2026), high volatility held on 85.5% of evaluated pair-days. It measures ATR relative to price, not a coming decline',
+    );
     expect(within(panel).queryByRole('link')).not.toBeInTheDocument();
   });
 
@@ -481,7 +489,9 @@ describe('Scan review: views, explanation and comparison', () => {
     expect(rows().map((row) => row.querySelector('.market-scan-ticker')?.textContent)).toEqual(
       risky.map((result) => result.ticker),
     );
-    expect(rows().every((row) => row.textContent?.includes('Risk warning'))).toBe(true);
+    expect(
+      rows().every((row) => /Risk: (high volatility|low score)/.test(row.textContent ?? '')),
+    ).toBe(true);
 
     view('All ranked');
     expect(rows().map((row) => row.querySelector('.market-scan-rank')?.textContent)).toEqual([
@@ -513,7 +523,7 @@ describe('Scan review: views, explanation and comparison', () => {
     expect(rows().map((row) => row.querySelector('.market-scan-ticker')?.textContent)).toContain(
       'SPY',
     );
-    expect(rows().every((row) => row.textContent?.includes('High-volatility'))).toBe(true);
+    expect(rows().every((row) => row.textContent?.includes('Risk: high volatility'))).toBe(true);
   });
 
   it('gives every form field a name, which Chrome reports as an issue otherwise', () => {
@@ -725,6 +735,6 @@ describe('Scan review: views, explanation and comparison', () => {
     expect(setups('BTC-USD')).toEqual({ long: false, risk: false });
     expect(reason('BTC-USD')).toMatch(/^Short of ZC LONG: Score \d+, needs ≥ 78/);
     expect(setups('SPY').risk).toBe(true);
-    expect(reason('SPY')).toMatch(/High-volatility: ATR \d+\.\d\d% of price ≥ 4\.00%$/);
+    expect(reason('SPY')).toMatch(/High volatility: ATR \d+\.\d\d% ≥ 4\.00% of price$/);
   });
 });

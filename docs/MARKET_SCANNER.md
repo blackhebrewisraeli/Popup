@@ -138,7 +138,9 @@ timeframe, data as of (with freshness and any cache age) and coverage, stated on
 cohort repeats its own status and data time only when a scan has more than one; the coverage
 breakdown by class appears only then too. The results come in three views: **Long setups** (ZC LONG
 holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every evaluated asset by rank; most meet
-no setup). Both open on **All ranked**, so zero long setups is a normal result, not an empty screen.
+no setup). A Risk warning names the clause that holds it, the same on its tag and in the row's
+accessible name: **Risk: high volatility** (the high-volatility regime, ATR ≥ 4% of price),
+**Risk: low score** (score ≤ 28) or both. The Risk warnings view is every asset where either holds. Both open on **All ranked**, so zero long setups is a normal result, not an empty screen.
 Each row shows rank, asset, score, setup and a short reason: the recorded clauses that decide its
 setup state ("Score 61, needs ≥ 78" for an asset short of ZC LONG), from the same `explainResult`
 the evidence uses. A search box (ticker, instrument or requested symbol) and filters on recorded

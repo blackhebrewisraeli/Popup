@@ -3,6 +3,8 @@ import {
   CANONICAL_MODEL_VERSION,
   FLAT_MOMENTUM,
   modelSetups,
+  REGIME_HIGH_VOLATILITY,
+  RISK_SETUP_MAX_SCORE,
   scoreFactors,
   type CanonicalScore,
   type FactorInputs,
@@ -16,6 +18,9 @@ import {
   pineAlertNote,
   regimeRule,
   resultAsOfLabel,
+  riskClauses,
+  riskLabel,
+  rowReason,
   symbolEvidence,
   viewResults,
 } from '@/lib/scanReview';
@@ -73,14 +78,16 @@ describe('explainResult boundaries', () => {
 
     const regimeOnly = explain(model({ ...calm, volatilityPercent: 0.04 }, 60));
     expect(regimeOnly.risk.holds).toBe(true);
-    expect(regimeOnly.risk.clauses.map((clause) => clause.met)).toEqual([false, true]);
+    expect(regimeOnly.risk.clauses.map((clause) => clause.met)).toEqual([true, false]);
     expect(regimeOnly.focus).toBe('risk');
     // The score decides nothing here, so no factor points are offered as reasons.
     expect(regimeOnly.weighed).toBe(false);
     expect(regimeOnly.supports).toEqual([
       'ATR 4.00% of price ≥ 4.00% sets the High-volatility regime, which holds ZC RISK on its own',
     ]);
-    expect(regimeOnly.weakens).toEqual(['Score 60 is above 28: only the regime clause holds']);
+    expect(regimeOnly.weakens).toEqual([
+      'Score 60 is above 28: only the high-volatility clause holds',
+    ]);
   });
 
   it('agrees with the recorded setups and splits the score margin exactly across factors', () => {
@@ -153,6 +160,89 @@ describe('explainResult boundaries', () => {
   });
 });
 
+/** Synthetic readings through the canonical blend; each comment is the recorded score and regime. */
+const READINGS = {
+  // 43, HIGH_VOLATILITY
+  highVolatilityOnly: { rsi: 50, momentumPercent: 0.002, volatilityPercent: 0.05 },
+  // 19, TRENDING: an overbought rally losing momentum (MODEL_DIAGNOSTIC.md's synthetic cell)
+  lowScoreOnly: { rsi: 97, momentumPercent: -0.0052, volatilityPercent: 0.038 },
+  // 4, HIGH_VOLATILITY
+  both: { rsi: 80, momentumPercent: -0.01, volatilityPercent: 0.06 },
+  // 64, NEUTRAL
+  neither: calm,
+  // 78, HIGH_VOLATILITY with ZC LONG: a decelerating decline (MODEL_DIAGNOSTIC.md finding 6)
+  longAndHighVolatility: { rsi: 5.5, momentumPercent: 0.044, volatilityPercent: 0.0403 },
+} satisfies Record<string, FactorInputs>;
+
+function recorded(inputs: FactorInputs, score?: number) {
+  const m = model(inputs, score);
+  return { model: m, setups: modelSetups(m) };
+}
+
+describe('Risk clauses by name', () => {
+  it.each([
+    ['highVolatilityOnly', 43, ['High volatility'], 'Risk: high volatility'],
+    ['lowScoreOnly', 19, ['Low score'], 'Risk: low score'],
+    ['both', 4, ['High volatility', 'Low score'], 'Risk: high volatility and low score'],
+    ['neither', 64, [], null],
+  ] as const)('names %s from the recorded score and regime', (key, score, clauses, label) => {
+    const result = recorded(READINGS[key]);
+    expect(result.model.signal_score).toBe(score);
+    expect(riskClauses(explainResult(result.model, result.setups))).toEqual(clauses);
+    expect(riskLabel(result)).toBe(label);
+    // The label never disagrees with the recorded combined condition.
+    expect(label !== null).toBe(result.setups.risk);
+  });
+
+  it('keeps Long beside a high-volatility Risk warning', () => {
+    const result = recorded(READINGS.longAndHighVolatility);
+    expect(result.model.regime).toBe('HIGH_VOLATILITY');
+    expect(result.setups).toEqual({ long: true, risk: true });
+    const explanation = explainResult(result.model, result.setups);
+    expect(explanation.focus).toBe('long');
+    expect(riskLabel(result)).toBe('Risk: high volatility');
+    // The row reason stays the Long clauses; the Risk tag names its own.
+    expect(rowReason(explanation)).toMatch(/^Score 78 ≥ 78, MACD momentum/);
+  });
+
+  it('meets each clause exactly at its canonical boundary', () => {
+    expect(riskClauses(explain(model(calm, RISK_SETUP_MAX_SCORE)))).toEqual(['Low score']);
+    expect(riskClauses(explain(model(calm, RISK_SETUP_MAX_SCORE + 1)))).toEqual([]);
+
+    const atBand = recorded({ ...calm, volatilityPercent: REGIME_HIGH_VOLATILITY });
+    expect(atBand.model.regime).toBe('HIGH_VOLATILITY');
+    expect(riskLabel(atBand)).toBe('Risk: high volatility');
+    const belowBand = recorded({
+      ...calm,
+      volatilityPercent: REGIME_HIGH_VOLATILITY - Number.EPSILON,
+    });
+    expect(belowBand.model.regime).not.toBe('HIGH_VOLATILITY');
+    expect(riskLabel(belowBand)).toBeNull();
+  });
+
+  it('infers no clause without a recorded model, and follows the recorded setups', () => {
+    expect(riskLabel({ model: null, setups: { long: false, risk: true } })).toBe('Risk warning');
+    expect(riskLabel({ model: null, setups: null })).toBeNull();
+    // A reading that would meet a clause names none when no warning was recorded.
+    const { model: m } = recorded(READINGS.both);
+    expect(riskLabel({ model: m, setups: { long: false, risk: false } })).toBeNull();
+  });
+
+  it('words each held clause the same in the row reason and the evidence', () => {
+    const explanation = explainResult(
+      recorded(READINGS.both).model,
+      recorded(READINGS.both).setups,
+    );
+    expect(rowReason(explanation)).toBe(
+      'High volatility: ATR 6.00% ≥ 4.00% of price; Low score: Score 4 ≤ 28',
+    );
+    expect(explanation.risk.clauses.map((clause) => clause.name)).toEqual([
+      'High volatility',
+      'Low score',
+    ]);
+  });
+});
+
 /** Labeled fixture scan: synthetic equities and a crypto asset, nothing fetched. */
 function fixtureScan(): ScanAssetResult[] {
   const equity = (ticker: string, path: (i: number) => number): ScanInput => ({
@@ -222,6 +312,17 @@ describe('views and filters', () => {
       matchesFilters(r, { ...NO_FILTERS, momentum: 'Bullish' }),
     );
     expect(bullish.every((r) => r.model!.inputs.momentumPercent >= FLAT_MOMENTUM)).toBe(true);
+  });
+
+  it('keeps the Risk view the union of both clauses, every member named', () => {
+    const evaluated = results.filter((result) => result.status === 'EVALUATED');
+    const risk = viewResults(results, 'equity', 'risk');
+    const named = evaluated.filter(
+      (result) => riskClauses(explainResult(result.model!, result.setups!)).length > 0,
+    );
+    expect(risk).toEqual(named);
+    expect(risk).toEqual(evaluated.filter((result) => result.setups?.risk));
+    expect(risk.every((result) => riskLabel(result)?.startsWith('Risk: '))).toBe(true);
   });
 
   it('never lets an unevaluated result through a filter', () => {

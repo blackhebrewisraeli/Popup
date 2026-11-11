@@ -296,7 +296,8 @@ export function ScanChanges({
             <dd>{counts(setupCounts(changes, 'long'), setupNames)}</dd>
           </div>
           <div>
-            <dt>Risk warnings</dt>
+            {/* A warning held in both may rest on a different clause in each reading. */}
+            <dt>Risk warnings, either clause</dt>
             <dd>{counts(setupCounts(changes, 'risk'), setupNames)}</dd>
           </div>
           <div>
