@@ -280,6 +280,7 @@ export function MarketScanSummary({
   scanning,
   failed,
   source,
+  scanId,
   changes,
   choice,
 }: Readonly<{
@@ -289,6 +290,8 @@ export function MarketScanSummary({
   failed: boolean;
   /** Set for the local TradingView development scan, which adds its provenance and full ranking. */
   source?: TradingViewDevSource;
+  /** The TradingView import's scan ID, named by a Spot scenario's evidence. */
+  scanId?: string;
   /** The TradingView import against its baseline, and how that baseline was chosen. */
   changes?: ScanComparison;
   choice?: BaselineChoice;
@@ -388,7 +391,7 @@ export function MarketScanSummary({
         </dl>
       </header>
       {scanned.length > 0 && (
-        <ScanReview scan={scan} source={source} changes={changes} choice={choice} />
+        <ScanReview scan={scan} scanId={scanId} source={source} changes={changes} choice={choice} />
       )}
       {failures.length > 0 && (
         <section className="market-scan-failures" aria-label="Not evaluated this scan">
@@ -403,6 +406,12 @@ export function MarketScanSummary({
               </li>
             ))}
           </ul>
+          {source && failures.some((result) => result.assetClass === 'crypto') && (
+            <p className="market-scan-fit">
+              No score or setup was recorded for these, so none has evidence or a scenario panel:
+              the evidence is missing, which is not a negative reading.
+            </p>
+          )}
         </section>
       )}
       {scan.cohorts.length > 1 && (
