@@ -432,9 +432,13 @@ function exportedCandles(
 /**
  * Crypto inputs at the frozen cutoff: the 200 UTC days before the cutoff's day (the
  * request every score in the app makes) and anything later, which the validator excludes.
+ * A retrospective study passes an earlier `from` to read a member's whole exported history.
  */
-function cryptoInputs(file: TradingViewOhlcvExport, cutoff: number): ScanInput[] {
-  const from = utcDayStart(cutoff) - SCAN_CANDLE_REQUEST * DAY_MS;
+export function cryptoInputs(
+  file: TradingViewOhlcvExport,
+  cutoff: number,
+  from = utcDayStart(cutoff) - SCAN_CANDLE_REQUEST * DAY_MS,
+): ScanInput[] {
   const entries = new Map(file.instruments.map((entry) => [entry.ticker, entry]));
   return universeTickers(file.universe).map((ticker): ScanInput => {
     const entry = entries.get(ticker);

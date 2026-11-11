@@ -87,6 +87,7 @@ import {
 import { deliverOpportunityNotifications, SYNTHETIC_NOTIFICATION } from './opportunityNotification';
 import { telegramTransportFromEnv } from './telegramTransport';
 import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scannerResearch';
+import { researchSummaryCrypto, runScannerResearchCrypto } from './scannerResearchCrypto';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 
 const STORE_DIR = '.zerochart-evaluations';
@@ -119,7 +120,8 @@ const USAGE = `Usage:
   npm run evaluate -- tradingview-finish RETRIEVAL_ID [--store DIR] [--scan-store DIR]
   npm run evaluate -- tradingview-baseline SCAN_ID [--store DIR]
   npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
-  npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]`;
+  npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]
+  npm run evaluate -- scanner-research-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -580,6 +582,17 @@ const commandHandlers: Record<string, CommandHandler> = {
     research('scanner-research', value, args, runScannerResearch, researchSummary),
   'scanner-research-v2': (value, args) =>
     research('scanner-research-v2', value, args, runScannerResearchV2, researchSummaryV2),
+  'scanner-research-crypto': (value, args) => {
+    assertOptions('scanner-research-crypto', args, ['--scan-store', '--output-dir']);
+    const scanStore = safeCliPath(option(args, '--scan-store') ?? SCAN_STORE, '--scan-store');
+    return research(
+      'scanner-research-crypto',
+      value,
+      args,
+      (options) => runScannerResearchCrypto({ ...options, scanStore }),
+      researchSummaryCrypto,
+    );
+  },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>
     observe(requiredValue('observe', value).split(',').filter(Boolean), args),
