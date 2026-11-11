@@ -88,9 +88,17 @@ function decimal(numerator: bigint, digits: number, places: number): string {
   return places === 0 ? whole : `${whole}.${(rounded % unit).toString().padStart(places, '0')}`;
 }
 
+/** "1.2300" → "1.23", "5.00" → "5". Only for text with a decimal point. */
+function trimZeros(text: string): string {
+  let end = text.length;
+  while (text[end - 1] === '0') end -= 1;
+  if (text[end - 1] === '.') end -= 1;
+  return text.slice(0, end);
+}
+
 /** An exact 1e-8 count with trailing zeros trimmed: "0.0123", "161,290,322.58064516". */
 function exact(units: bigint): string {
-  return decimal(units, DECIMALS, DECIMALS).replace(/\.?0+$/, '');
+  return trimZeros(decimal(units, DECIMALS, DECIMALS));
 }
 
 /** USDT to the cent; a positive amount below half a cent reads "<0.01", never 0. */
@@ -101,7 +109,7 @@ function usdt(scaled: bigint): string {
 
 /** A recorded price as an input value: at most 8 decimals, no exponent ("0.00000612"). */
 export function decimalInput(value: number): string {
-  return value.toFixed(DECIMALS).replace(/\.?0+$/, '');
+  return trimZeros(value.toFixed(DECIMALS));
 }
 
 /**
