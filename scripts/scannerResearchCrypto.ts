@@ -391,7 +391,8 @@ function resultDifferences(
   const other = new Map(actual.map((result) => [result.ticker, result]));
   const tickers = [...new Set([...replayed, ...actual].map((result) => result.ticker))];
   const mine = new Map(replayed.map((result) => [result.ticker, result]));
-  return tickers.sort(compareTickers).flatMap((ticker) => {
+  tickers.sort(compareTickers);
+  return tickers.flatMap((ticker) => {
     const a = (mine.get(ticker) ?? {}) as Record<string, unknown>;
     const b = (other.get(ticker) ?? {}) as Record<string, unknown>;
     return [...new Set([...Object.keys(a), ...Object.keys(b)])]
@@ -466,7 +467,8 @@ export function firstEvaluationDay(history: readonly ScanInput[], cutoff: number
     const full = opens[SCAN_MIN_CLOSED_CANDLES - 1];
     return full === undefined ? [] : [utcDay(full)];
   });
-  return days.sort(compareTickers)[0] ?? null;
+  days.sort(compareTickers);
+  return days[0] ?? null;
 }
 
 /** Outcome prices: each member's bars closed at the export cutoff, keyed by UTC opening day. */
@@ -486,12 +488,14 @@ export function outcomeBars(
   );
 }
 
+type Tercile = 1 | 2 | 3;
+
 /** An EVALUATED member on one date, with its volatility tercile and what followed. */
 export interface CryptoObservation extends GroupedObservation {
   ticker: string;
   session: string;
   volatility: number;
-  tercile: 1 | 2 | 3;
+  tercile: Tercile;
   longOnsetUnknown: boolean;
   riskOnsetUnknown: boolean;
   outcomes: Record<CryptoHorizon, ResearchOutcome>;
@@ -505,7 +509,7 @@ export function cryptoObservations(
   replay: readonly CryptoReplayDate[],
   outcomeOf: (ticker: string, date: number, horizon: CryptoHorizon) => ResearchOutcome,
 ): CryptoObservation[] {
-  const placed = new Map<string, { volatility: number; tercile: 1 | 2 | 3 }>();
+  const placed = new Map<string, { volatility: number; tercile: Tercile }>();
   for (const date of replay) {
     const evaluated = date.results.flatMap((result) => {
       if (result.rank === null) return [];
@@ -513,12 +517,11 @@ export function cryptoObservations(
         throw new Error(`No ATR/close for ${result.ticker} on ${date.session}`);
       return [{ ticker: result.ticker, volatility: result.volatility }];
     });
-    evaluated
-      .sort((a, b) => a.volatility - b.volatility || compareTickers(a.ticker, b.ticker))
-      .forEach(({ ticker, volatility }, i) => {
-        const tercile = Math.ceil((3 * (i + 1)) / evaluated.length) as 1 | 2 | 3;
-        placed.set(`${date.session}|${ticker}`, { volatility, tercile });
-      });
+    evaluated.sort((a, b) => a.volatility - b.volatility || compareTickers(a.ticker, b.ticker));
+    evaluated.forEach(({ ticker, volatility }, i) => {
+      const tercile = Math.ceil((3 * (i + 1)) / evaluated.length) as Tercile;
+      placed.set(`${date.session}|${ticker}`, { volatility, tercile });
+    });
   }
   // No instrument types in crypto: the equity study's `type` is dropped.
   return studyObservations(replay, new Map(), outcomeOf).map(({ type, ...observation }) => ({
@@ -669,8 +672,7 @@ export function cryptoComposition(observations: readonly CryptoObservation[]) {
   return Object.fromEntries(
     SPEC.comparisons.groupsAgainstUniverse.map((id) => {
       const members = observations.filter(CRYPTO_MEMBERSHIP[id]);
-      const share = (t: 1 | 2 | 3) =>
-        members.filter((o) => o.tercile === t).length / members.length;
+      const share = (t: Tercile) => members.filter((o) => o.tercile === t).length / members.length;
       return [
         id,
         {
@@ -805,6 +807,7 @@ export function runCryptoStudy(
     );
   });
   const recordedDay = replayed.find(({ date }) => date.session === RECORDED_SCAN.day)?.scan;
+  const comparedStatus = mismatches.length === 0 ? 'MATCH' : 'MISMATCH';
 
   const bars = outcomeBars(history, cutoff);
   const observations = cryptoObservations(replay, (ticker, k, horizon) =>
@@ -834,8 +837,7 @@ export function runCryptoStudy(
       compared: covered.size,
     },
     parity: {
-      status:
-        replay.length === 0 ? 'NOT_COMPARABLE' : mismatches.length === 0 ? 'MATCH' : 'MISMATCH',
+      status: replay.length === 0 ? 'NOT_COMPARABLE' : comparedStatus,
       datesCompared: replay.length,
       first: replay[0]?.session ?? null,
       last: replay.at(-1)?.session ?? null,
