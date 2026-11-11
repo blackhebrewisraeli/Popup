@@ -75,7 +75,10 @@ whether to act, and where; Popup places no orders.
 - **Owner trial:** deferred by the owner and not started. When it starts, personal decisions and
   outcomes go in a private journal, never here.
 - **Model evidence:** [#118](https://github.com/blackhebrewisraeli/Popup/pull/118) and [scanner
-  research](SCANNER_RESEARCH.md) did not establish a predictive advantage.
+  research](SCANNER_RESEARCH.md) did not establish a predictive advantage. The frozen crypto study
+  (draft PR, below) is **mixed**: no 1- or 5-day information, a 20-day mean advantage for the top
+  ranks that the median observation does not share and one pair dominates, and too few Long
+  setups (3) to judge ([findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
 
 **Next:** Still pending: the first real new-session equity comparison. Run one fresh default
 (50-member) scan with the runbook prompt. `tradingview-finish` should list the full-universe import
@@ -101,6 +104,25 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-11 · Frozen retrospective study of the TradingView crypto ranking · Draft PR
+  (`feat/crypto-scanner-research`).** Decision: reuse the equity study's observations, outcomes,
+  statistics and write-once reproduction, and replay with the scanner itself (`evaluateScan`,
+  TradingView crypto policy unchanged) at each UTC day's close on candles closed by then. The
+  specification (`scanner-research-crypto.v1.json`, ID `6d005fee9ffd…`) was committed (`ac05b1f`)
+  after inspecting only bar counts, dates and response metadata, and the replay code (`aaf4eae`)
+  before its first real run. No new retrieval: the 11 Nov export holds 1000 bars for 21 pairs.
+  Outcomes: OPEN of the first bar after D's 23:59:59.999 UTC cutoff to OPEN 1/5/20 days later.
+  Baselines: same-date equal-weight universe, and same-tercile pairs outside the group (unmatched
+  counted). Evidence: labeled fixtures (no future candle, strictly later reference, UTC
+  boundaries and horizon ends, gaps, invalid bars, stale, young listings, coverage floor, ties,
+  order independence, both parities, tampered export/scan/results, no network); 1,458 tests,
+  typecheck, lint, build. Local real-data run: 801 days, 21–23 of 25 pairs per day, parity
+  `MATCH` on every day and on all 25 recorded results of `20261111T183825Z-dc217757`; reruns
+  (also with outbound network denied) `UNCHANGED`; equity v1 and v2 still `UNCHANGED`. Result:
+  mixed (aggregates in the doc). The study does not remove survivorship bias, data revisions or
+  prior knowledge of the model. Next: freeze an out-of-sample check of the 20-day top-rank
+  comparison on days after 2026-11-10, before any of them is seen.
 
 - **2026-11-11 · Manual Spot scenario in the TradingView crypto evidence · Draft PR
   [#151](https://github.com/blackhebrewisraeli/Popup/pull/151).** Decision: a disclosure at the

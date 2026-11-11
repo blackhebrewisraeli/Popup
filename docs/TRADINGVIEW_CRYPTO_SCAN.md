@@ -153,6 +153,12 @@ stay in git-ignored local storage.
   Down focus and Enter selection, and switching **Scan shown** to the 90-member equity scan and
   back.
 
+## Historical study
+
+A frozen retrospective study replays this scan over the first export's history (801 UTC days,
+2024-09-01 to 2026-11-10) and compares ranks and setups with what prices did next. Result: mixed,
+with Long setups too rare to judge ([method, findings and limits](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
+
 ## Manual Spot scenario
 
 The evidence of an evaluated pair in a TradingView crypto scan (beside the list, or in the sheet

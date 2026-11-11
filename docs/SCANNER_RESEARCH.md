@@ -9,6 +9,9 @@ It is **retrospective historical research**. The scanner did not record these re
 time, so nothing here is prospective evidence, a backtest, a fill or a trading result. It changes no
 model, weight, threshold, ranking, alert or campaign.
 
+The crypto scan has its own frozen study, run on the same infrastructure:
+[Crypto: `crypto-usdt-v1`](#crypto-crypto-usdt-v1).
+
 Code: `scripts/scannerResearch.ts` (specification, replay, outcomes, comparisons),
 `scripts/scannerResearchReport.ts` (private HTML), tests in `scripts/scannerResearch.test.ts`.
 
@@ -141,3 +144,146 @@ npm run evaluate -- scanner-research-v2 .zerochart-tradingview/20261029T103004Z.
 It refuses what v1 refuses and writes, git-ignored, `.zerochart-reports/scanner-research-117f36fd7b24.json`
 (written once, with each evaluated member's ATR/close per date) and `.html` (coverage and method,
 then each population's tercile mix and every horizon, by year and by asset).
+
+## Crypto: `crypto-usdt-v1`
+
+The same question for the TradingView crypto scan: within the 25 frozen Binance Spot USDT pairs
+([universe](TRADINGVIEW_CRYPTO_SCAN.md#universe-crypto-usdt-v1)), did higher-ranked pairs, or the
+Long setup, precede larger price changes than a same-date baseline? Retrospective historical
+research on today's provider history, not proof of profitability and not a trading system.
+
+### Frozen before it ran
+
+[`scanner-research-crypto.v1.json`](scanner-research-crypto.v1.json) (ID
+`6d005fee9ffdfb561e3ea8412800d0d5f116fc816482cf66c5dc46959389dcbc`, kept identical to the code
+by a test) fixes the universe exactly as committed with each pair's exact symbol, the export and
+per-pair input hashes, the scanner, model and `tradingview-crypto-daily-v1` policy, the 199-candle
+window, 801 evaluation days with a 15-pair coverage floor, the timestamps and horizons, the groups,
+both baselines, missing-data rules, the statistics and the prior knowledge it cannot be blind to.
+
+It was committed (`ac05b1f`, 2026-11-11 20:09:17Z) after inspecting only the export's identity
+fields, bar counts, first and last dates, UTC alignment, gaps, duplicates and response metadata.
+The replay code was committed (`aaf4eae`, 20:20:50Z) before it first ran on the export (20:21Z).
+Committing the study first improves research discipline. It does **not** remove survivorship
+bias, historical data revisions or prior knowledge of this model: the model and its thresholds,
+the live scan's aggregate on 10 Nov (0 Long, 20 Risk) and the equity results above were all known.
+
+### Method
+
+- **Data.** Only the private export of the first crypto retrieval,
+  `.zerochart-tradingview/20261111T183825Z.json` (sha256 `8d251bbf…`): 21 pairs hold 1000 daily
+  bars from 2024-02-16 (TradingView has older ones; none were retrieved), ENA and TAO back to
+  their 2024 listings, GRAM and HYPE back to their 2026 listings. No new retrieval, no Binance
+  candle, no reconstructed bar. A bar is used, as input or outcome, only if it closed by the
+  retrieval start, so the forming 11 Nov bar never is.
+- **Selection bias.** The universe was chosen on 2026-11-11 from today's market-cap ranking:
+  coins that collapsed or were delisted are absent, coins that grew are present. Every figure,
+  the baselines included, carries that bias, and no retrospective slice of this history is unseen
+  validation data.
+- **Replay.** On each UTC day D from 2024-09-01 (the first day any pair holds 199 closed candles)
+  to 2026-11-10, the scanner itself (`evaluateScan`, TradingView crypto policy, unchanged) gets
+  each pair's candles from the 200 days the scan requests that closed by **D's close, 23:59:59.999
+  UTC**, and nothing later. It validates, checks freshness (24h), scores the last 199 and ranks
+  evaluated pairs only.
+- **Parity.** Every day, the replay must equal `evaluateScan(importInputs(export, cutoff))`, the
+  import reading the whole export with later bars left for the validator to exclude; and on
+  10 Nov it must equal the recorded results of live scan `20261111T183825Z-dc217757` for all 25
+  pairs. Otherwise the study refuses to run.
+- **Outcomes.** OPEN of the bar opening at D+1 00:00:00.000 UTC (the first bar opening after the
+  cutoff, 1 ms later) to OPEN h = 1, 5, 20 UTC days later. D's close is never the reference. In a
+  24/7 market that open is usually at or near D's close: a reference price, not a fill. A bar not
+  closed at the export cutoff makes the outcome `PENDING`; a missing or invalid bar `MISSING` or
+  `INVALID`; nothing is substituted.
+- **Baselines.** Each group against (1) the same-date equal-weight mean of evaluated pairs, and
+  (2) same-date pairs in the same ATR/close tercile that are **outside** the group. An observation
+  whose tercile holds no such pair is unmatched and counted, never matched elsewhere. Statistics
+  add a date-weighted difference so busy dates do not dominate. Breakdowns by pair and quarter.
+
+### Reproduction
+
+```bash
+npm run evaluate -- scanner-research-crypto .zerochart-tradingview/20261111T183825Z.json
+```
+
+It reads the export and `.zerochart-scans/20261111T183825Z-dc217757.json` only, refuses either
+unless byte-identical to the frozen hashes (naming any changed pair entry), recomputes everything
+and writes, git-ignored, `.zerochart-reports/scanner-research-6d005fee9ffd.json` (once; a rerun
+prints `UNCHANGED`, a changed file `CONFLICT` with a non-zero exit) and `.html`. Results sha256:
+`a14c0d191bc4d2878bd043985ec696f0419c6b08bac03fddcb7a4ed2918ffe71`.
+
+Verified locally: rerun `UNCHANGED`; rerun with outbound network denied by a macOS sandbox
+`UNCHANGED`; a copy of the export with one close changed refused, naming that pair; a changed
+recorded scan refused; a changed results file `CONFLICT` with no report written. Equity v1 and v2
+still reproduce `UNCHANGED`.
+
+### Findings (aggregates)
+
+Coverage: 801 days, 21–23 of 25 pairs evaluated each day (no day below the floor); 18,322
+evaluated asset-days. GRAM and HYPE were `INSUFFICIENT_HISTORY` on every day; ENA joined on
+2024-10-17 and TAO on 2024-10-26; no `DATA_INVALID` or `STALE_DATA`. Parity `MATCH` on all 801
+days and on all 25 recorded results.
+
+The equal-weight universe rose on average (+0.12%, +0.64%, +3.15% at 1, 5, 20 days) while the
+typical pair trailed it (median difference −0.24, −0.68, −2.50 pp): a few large gains lift
+every mean. Read mean and median together. Δ is percentage points against the baseline.
+
+| Group (horizon)           |      n | Mean Δ | Median Δ | Above | Dates above | Matched mean Δ | Matched median Δ |
+| ------------------------- | -----: | -----: | -------: | ----: | ----------: | -------------: | ---------------: |
+| Top 5 (1 day)             |  3,995 |  −0.00 |    −0.17 | 46.3% |       50.4% |          −0.01 |            −0.05 |
+| Top 5 (5 days)            |  3,975 |  +0.06 |    −0.26 | 47.4% |       51.8% |          −0.18 |            −0.35 |
+| Top 5 (20 days)           |  3,900 |  +1.42 |    −1.51 | 43.9% |       51.4% |          +2.37 |            −0.69 |
+| Rank quintile 1 (20 days) |  3,120 |  +1.87 |    −1.41 | 44.6% |       51.4% |          +2.82 |            −0.44 |
+| Rank quintile 5 (20 days) |  3,900 |  +0.43 |    −3.52 | 37.6% |       44.0% |          +0.16 |            −2.75 |
+| Risk warning (20 days)    | 15,311 |  +0.15 |    −2.73 | 38.0% |       44.7% |  +0.99 (2,851) |            −2.31 |
+| Risk transition (20 days) |    124 |  −1.12 |    −2.24 | 38.7% |       39.1% |          −0.94 |            −1.69 |
+| Long setup (all horizons) |      3 |      — |        — |     — |           — |              — |                — |
+
+- **Long setup: insufficient evidence.** 3 asset-days in 801 days (1 transition), one pair, one
+  quarter. Nothing can be read from them.
+- **Ranking, 1 and 5 days: no difference.** Every rank group is within ±0.1 pp of the universe
+  mean (±0.4 pp of same-tercile pairs), medians negative, fewer than half above.
+- **Ranking, 20 days: a mean advantage the typical observation does not share.** Top 5 and
+  quintile 1 beat the universe mean by +1.4 and +1.9 pp (+2.4 and +2.8 against same-tercile
+  pairs), but their median difference is negative and fewer than half of their observations, and
+  about half of the dates, are above. The quintiles are not monotonic (2 to 4 negative, 5
+  positive). For the top 5, seven of ten quarters are positive, the largest in 2024-Q4; ten of 23 pairs
+  have a positive mean difference and four a positive median; and, read from the per-pair table,
+  one pair accounts for about half of the summed difference (58% against the universe, 48%
+  matched). Quintile 1 looks the same.
+- **Risk warnings** held on 86% of evaluated asset-days (ATR ≥ 4% of price is the usual crypto
+  regime), so the label separates little: changes after a warning were close to the universe.
+  Only 2,851 of 15,311 could be volatility-matched; the rest sat in terciles with no pair outside
+  the warning. The 124–128 new warnings were followed by below-universe changes at every horizon.
+  A decline after a warning is not profit; no short position is assumed.
+- **Volatility.** The top 5 sit 57% in the quietest tercile and quintile 5 58% in the most
+  volatile, as the model's design implies. The terciles themselves are not monotonic (20 days:
+  +0.46, −1.38, +0.98 pp).
+
+At 20 days the 780 overlapping dates hold about 39 non-overlapping windows, and 21–23 pairs move
+together on each: the counts are not independent trials, and no significance is claimed. These
+are price-change comparisons, not portfolio returns, win rates, Sharpe ratios or drawdowns.
+
+### Conclusion: mixed
+
+No 1- or 5-day information. At 20 days the top ranks' **mean** change was higher, against both
+baselines, but the **typical** top-ranked observation did worse than the universe, the advantage
+rests largely on one pair's large moves, and the rank order is not monotonic. Long setups were too
+rare to judge. This history does not show that the current crypto ranking carries useful
+information; it does not rule out a weak long-horizon effect concentrated in a few large moves.
+
+**One next step:** an out-of-sample check on days that did not exist when this was frozen. Freeze
+now, before any of them is seen, a narrow follow-up: the 20-day top-5 and quintile-1 comparisons
+(mean, median, share above, per-pair concentration), on evaluation days after 2026-11-10 only,
+from a later owner-initiated `crypto-usdt-v1` retrieval, with the model unchanged. A 1000-bar
+retrieval covers every day since, so no daily schedule is needed, but six months still yields only
+about eight non-overlapping 20-day windows.
+
+TradingView's terms as this repository reads them allow this as the owner's personal research;
+product use of its results would need TradingView's written confirmation first
+([feasibility](TRADINGVIEW_ONLY_FEASIBILITY.md#4-terms-by-use)).
+
+### Policy note
+
+At a cutoff of exactly D's close, `tradingview-crypto-daily-v1`'s 24h freshness bound also admits
+a pair whose latest candle is D−1 (exactly 24h old); fixtures pin this. The export has no missing
+day, so it never applied here. A live retrieval's mid-day cutoff does not reach that boundary.
