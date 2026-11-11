@@ -80,6 +80,11 @@ whether to act, and where; Popup places no orders.
   ranks that the median observation does not share and one pair dominates, and too few Long
   setups (3) to judge (draft [#152](https://github.com/blackhebrewisraeli/Popup/pull/152),
   [findings](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
+- **Prospective crypto check:** frozen in `fab48a3` (2026-11-11 20:37Z, same PR): top 5 against
+  the same-date universe at 20 days, a hypothesis selected after the retrospective results, for
+  scored days 2026-11-12 to 2027-11-11, analysed once on or after 2027-12-04. It collects
+  nothing: a day counts only if the owner's crypto scan for it was saved before the next UTC
+  midnight ([rules](SCANNER_RESEARCH.md#prospective-follow-up-frozen-not-yet-collected)).
 
 **Next:** Still pending: the first real new-session equity comparison. Run one fresh default
 (50-member) scan with the runbook prompt. `tradingview-finish` should list the full-universe import
@@ -87,7 +92,9 @@ whether to act, and where; Popup places no orders.
 `20261107T170244Z-76cde900` as the baseline, and report the published crypto view under
 `preservedView`; crypto imports are no longer candidates and are not listed. Research should show
 the same counts after **Reload local scan**, and every scan under **Scan shown**. The first crypto
-comparison needs a second `crypto-usdt-v1` retrieval on a later UTC day.
+comparison needs a second `crypto-usdt-v1` retrieval on a later UTC day. From 2026-11-13 UTC,
+each daily crypto scan finished before UTC midnight is also a prospective observation; keep
+`.zerochart-scans`.
 
 See the [scanner runbook](MARKET_SCANNER.md) for retrieval, import, reproduction, and review.
 The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is for engineering handoffs.
@@ -105,6 +112,21 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-11 · Prospective follow-up to the crypto study, frozen · Draft PR
+  [#152](https://github.com/blackhebrewisraeli/Popup/pull/152), commit `fab48a3`.** Decision:
+  confirm one selected hypothesis on days that had not begun at the freeze, rather than slice the
+  same history further. The 20-day horizon and top-5 comparison were chosen after seeing the
+  retrospective results; the specification says so. Reference: the first bar opening after the
+  scan's own cutoff (D+2 open), so no part of a window precedes the recorded scan. Only snapshots
+  saved before that bar opened are PROSPECTIVE; later replays are RECONSTRUCTED, reported apart
+  and never pooled. Days are summarised once each and split into 21 non-overlapping phase series;
+  the four possible readings and their conditions are fixed. Evidence: specification ID
+  `45a43d5c…` pinned by a test; the timing and category rules tested at UTC boundaries (saved at
+  23:59:59.999 counts, at midnight does not; the first live scan falls outside the period);
+  1,466 tests, typecheck, lint, build. No outcome of the period exists. Next: owner-initiated
+  daily crypto scans from 2026-11-13 UTC, finished before midnight (240 of 365 days needed); the
+  analysis code before 2027-12-04.
 
 - **2026-11-11 · Frozen retrospective study of the TradingView crypto ranking · Draft PR
   [#152](https://github.com/blackhebrewisraeli/Popup/pull/152).** Decision: reuse the equity study's observations, outcomes,

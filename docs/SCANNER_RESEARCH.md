@@ -271,12 +271,7 @@ rests largely on one pair's large moves, and the rank order is not monotonic. Lo
 rare to judge. This history does not show that the current crypto ranking carries useful
 information; it does not rule out a weak long-horizon effect concentrated in a few large moves.
 
-**One next step:** an out-of-sample check on days that did not exist when this was frozen. Freeze
-now, before any of them is seen, a narrow follow-up: the 20-day top-5 and quintile-1 comparisons
-(mean, median, share above, per-pair concentration), on evaluation days after 2026-11-10 only,
-from a later owner-initiated `crypto-usdt-v1` retrieval, with the model unchanged. A 1000-bar
-retrieval covers every day since, so no daily schedule is needed, but six months still yields only
-about eight non-overlapping 20-day windows.
+**Next step, now frozen:** a prospective check of the 20-day top-5 comparison, below.
 
 TradingView's terms as this repository reads them allow this as the owner's personal research;
 product use of its results would need TradingView's written confirmation first
@@ -287,3 +282,80 @@ product use of its results would need TradingView's written confirmation first
 At a cutoff of exactly D's close, `tradingview-crypto-daily-v1`'s 24h freshness bound also admits
 a pair whose latest candle is D−1 (exactly 24h old); fixtures pin this. The export has no missing
 day, so it never applied here. A live retrieval's mid-day cutoff does not reach that boundary.
+
+### Prospective follow-up (frozen, not yet collected)
+
+[`scanner-research-crypto-prospective.v1.json`](scanner-research-crypto-prospective.v1.json)
+(ID `45a43d5c6390f4ce6437c24cdfdc3adc817617e3634f1c24b3e8454951a268fa`) was frozen in commit
+`fab48a3` (2026-11-11 20:37:21Z, pushed at once), before any day of its period had begun. A test
+keeps the JSON and code identical, and any change to the model, scanner, policy, thresholds or
+universe constants changes its ID.
+
+**Where the hypothesis came from.** The 20-day horizon and the top-5 comparison were chosen
+**after** seeing the retrospective results above, from 3 horizons and 15 groups, because that is
+where a positive mean difference appeared. This is a future confirmation attempt of a selected
+hypothesis, not an independently preselected finding; the retrospective figures are not evidence
+for it.
+
+- **One comparison.** Top 5 ranked pairs against the same-date equal-weight mean of evaluated
+  pairs, 20 UTC days. Per scored day, Δ = top-5 mean change − universe mean change; the primary
+  statistic M is the mean of Δ over days, each day once. No other horizon, group, baseline or
+  threshold is analysed under it. Model, thresholds, `crypto-usdt-v1` and
+  `tradingview-crypto-daily-v1` unchanged.
+- **Timing.** The decision cutoff is the scan's own frozen cutoff, its retrieval start R. The
+  scored day D is the UTC day before R's day. The reference is the OPEN of the first bar opening
+  strictly after R, at D+2 00:00 UTC; the endpoint the OPEN 20 days later, D+22. That is one day
+  later than the retrospective study's D+1 open, so that no part of the outcome window precedes
+  the recorded scan.
+- **Period.** Scored days **2026-11-12 to 2027-11-11** (365), from retrievals on 2026-11-13 to
+  2027-11-12. Every scored day up to 2026-11-11 is excluded: their outcomes were inspected
+  (through 2026-11-08), or they were scored or partly retrieved before the freeze. The last
+  endpoint bar is 2027-12-03; the one analysis runs no earlier than **2027-12-04 00:00 UTC**.
+  Until then only collection status is checked, never an outcome.
+- **Coverage and missing data.** At least 15 of 25 pairs evaluated in the recorded scan. No
+  substitution; a pair that stops trading has a MISSING outcome, counted and listed. A day with
+  fewer than 3 measurable top-5 outcomes has no Δ. GRAM and HYPE become rankable during the period
+  and are ranked as the scanner ranks them.
+- **Overlap and correlation.** Δ is one value per day, so correlated pairs are never separate
+  trials. Days are split into 21 phase series (days since 2026-11-12, mod 21), within which
+  20-day windows never share a bar; M is reported per series. No p-value or confidence interval.
+- **Planned reading**, every outcome reported with the same prominence:
+  - **SUPPORTED** only if M > 0, the median Δ > 0, M stays > 0 without the pair contributing most,
+    M > 0 in at least 11 of 21 phase series, and at most 2% of top-5 outcomes are MISSING.
+  - **NOT_SUPPORTED** if M ≤ 0.
+  - **INCONCLUSIVE** if M > 0 but another condition fails.
+  - **INSUFFICIENT_COLLECTION** if fewer than 240 prospective days (or fewer than 8 in any phase
+    series) qualify.
+
+  Even SUPPORTED means only that a price-change association recurred: not a net trading return,
+  not proof of profitability.
+
+### Prospective versus reconstructed
+
+- **PROSPECTIVE:** a `crypto-usdt-v1` scan snapshot from an owner-initiated retrieval, saved
+  (`completedAt`) **before its reference bar opened**, under the unchanged versions and
+  membership, reproducing offline. Its recorded ranks are the observation.
+- **RECONSTRUCTED:** a day in the period without such a snapshot, replayed later from the outcome
+  retrieval. Labeled, reported in a separate table, never pooled with PROSPECTIVE and never
+  counted toward the minimum or the classification.
+- A snapshot saved at or after its reference bar opened, under another version, or that does not
+  reproduce is not prospective, whatever its contents. Nothing recorded later is ever moved into
+  PROSPECTIVE. `classifyRecordedScan` (`scripts/scannerResearchCryptoProspective.ts`) encodes
+  these rules and its tests pin the UTC boundaries; the analysis itself is not written yet and
+  must be committed before the outcome retrieval.
+
+### Collection requirement
+
+The specification collects nothing. Each prospective day needs the owner, in an agent session
+with TradingView's MCP server, to run the [crypto scan](TRADINGVIEW_CRYPTO_SCAN.md#running-it)
+(`tradingview-start --universe crypto-usdt-v1`, capture, `tradingview-finish`) on the day after
+the scored day, **finished before the next UTC midnight**, and to keep the snapshot in the
+git-ignored `.zerochart-scans`. The minimum is 240 of the 365 days, so about two days in three, on
+days chosen without regard to the market. No scheduler or campaign is added. Snapshot timestamps
+are the owner's own machine's, not an independent attestation. Then one outcome retrieval on or
+after 2027-12-04.
+
+Open blockers: no prospective day exists yet (the first possible retrieval is 2026-11-13 UTC);
+collection depends entirely on manual daily runs for a year; the analysis code is unwritten;
+`.zerochart-scans` is local and has no backup; and TradingView's confirmation would be needed
+before any product use.

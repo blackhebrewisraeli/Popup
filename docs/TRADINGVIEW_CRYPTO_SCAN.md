@@ -159,6 +159,11 @@ A frozen retrospective study replays this scan over the first export's history (
 2024-09-01 to 2026-11-10) and compares ranks and setups with what prices did next. Result: mixed,
 with Long setups too rare to judge ([method, findings and limits](SCANNER_RESEARCH.md#crypto-crypto-usdt-v1)).
 
+A [prospective follow-up](SCANNER_RESEARCH.md#prospective-follow-up-frozen-not-yet-collected)
+is frozen for scored days 2026-11-12 to 2027-11-11. A day counts only if its scan is run on the
+following UTC day and **finished before the next UTC midnight**; the snapshot must stay in
+`.zerochart-scans`. Nothing runs by itself.
+
 ## Manual Spot scenario
 
 The evidence of an evaluated pair in a TradingView crypto scan (beside the list, or in the sheet
