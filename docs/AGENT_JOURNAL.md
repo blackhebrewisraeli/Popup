@@ -90,7 +90,7 @@ whether to act, and where; Popup places no orders.
   by the clause that holds it, **High volatility** or **Low score** or both, on row tags and
   accessible names, evidence, comparison, the Manual Spot scenario and the landing example. Wording
   only: the Risk warnings view, its counts, ranks and scan-change transitions are unchanged.
-- **Crypto workflow acceptance (2026-11-12):** a fresh `crypto-usdt-v1` retrieval on `6e99803`
+- **Crypto workflow acceptance (2026-11-12):** draft [#155](https://github.com/blackhebrewisraeli/Popup/pull/155). A fresh `crypto-usdt-v1` retrieval on `6e99803`
   passed start → capture → finish → Research → evidence → Manual Spot scenario, with offline
   `MATCH`, an idempotent second finish and the first crypto comparison
   ([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)). No code defect; the runbook prompt now covers the
@@ -135,8 +135,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · TradingView crypto workflow acceptance · Draft PR (this branch), documentation
-  only.** Decision: verify the existing flow end to end and fix only what blocks or misrepresents
+- **2026-11-12 · TradingView crypto workflow acceptance · Draft PR
+  [#155](https://github.com/blackhebrewisraeli/Popup/pull/155), documentation only.** Decision: verify the existing flow end to end and fix only what blocks or misrepresents
   it; nothing in the code did. Evidence, kept apart in [the matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md):
   fresh live retrieval `20261112T012214Z` (25 of 25 captured, two inline short results copied byte
   for byte from the session transcript, read-only alert check); scan `20261112T012214Z-dc217757`,
