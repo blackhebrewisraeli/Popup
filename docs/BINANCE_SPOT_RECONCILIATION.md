@@ -90,9 +90,11 @@ One bounded case that the existing reads can support. Nothing wider is justified
   movements are reported, never reconciled.
 - **Time boundary.** An opening balance read at `O` and a closing balance read at `C` (their
   `readAt`), with `C − O ≤ 24 h − 2g`. One execution selection for that pair over `[O − g, C + g]`,
-  read after `C + g`. The guard `g` is **60 seconds**: a Popup policy covering the client's 20 s
-  read limit and the unknown skew between the function's clock and Binance's. It is not a Binance
-  figure and should be revisited after the live check (D6).
+  read after `C + g`. The guard `g` is **60 seconds**, a **provisional Popup policy**. It is set
+  above the client's 20 s read limit. It is not a Binance figure, and it is not a proven bound on
+  the skew between the function's clock and Binance's or on when Binance took the balance
+  snapshot. Passing the guard only means no fill is visibly close to a read. It does not make
+  either read an atomic or synchronized account snapshot (D6).
 - **Opening quantity and cost.** Opening quantity = `free + locked` of the subject at `O`
   (absent = 0). Opening cost is known only when the opening quantity is zero. Otherwise it is
   **unknown**: a quantity is not evidence of what it cost, and an owner-typed figure is an
@@ -108,15 +110,17 @@ One bounded case that the existing reads can support. Nothing wider is justified
   separate USDT component; a fee in any other asset is kept as an unvalued amount of that asset. No
   exchange rate is invented.
 - **Coverage.** The pair is complete for the selection only when its first page and every
-  continuation succeeded and the last page was short or passed the end. The consumer tracks this
-  across pages, because `coverage` describes one response and a failed pair drops out of later
-  ones. Account history is always **not established**: a fixed statement, not a computed result.
+  continuation succeeded and the last page was short or passed the end. "No further
+  continuation" alone is not completeness: a pair that failed also ends with none. The consumer
+  tracks this across pages, because `coverage` describes one response and a failed pair drops out
+  of later ones. Account history is always **not established**: a fixed statement, not a computed result.
   Reading every page of one pair and window says nothing about other pairs, windows or event kinds.
 - **Closing reconciliation.** `expected = opening + Σ subject movements`;
   `difference = closing − expected`.
   - **Consistent:** coverage complete, no conflict, no fill within `g` of `O` or `C`, and
-    `difference = 0`. The pair's fills explain the change. It does not mean nothing else
-    happened: offsetting unseen events cannot be ruled out.
+    `difference = 0`. This is **numerical consistency only**: the pair's fills add up to the
+    change. It does not prove that every event was seen, since offsetting unseen events cannot be
+    ruled out, and it does not make any acquisition cost known.
   - **Discrepancy:** the same conditions, with `difference ≠ 0`. Report the exact difference with
     its sign and leave it **unattributed**; the unsupported rows above are possible causes, and
     none is chosen.
@@ -127,9 +131,14 @@ One bounded case that the existing reads can support. Nothing wider is justified
 
 ## 4. Known, partial and unavailable
 
-Three results, each with its own status, never merged into one figure. "Known" always means
-**known within scope**: it assumes no unseen event touched the subject during the window, an
-assumption Popup cannot test (example 6b).
+Three results, each with its own status, never merged into one figure and never derived from one
+another. A Consistent quantity is a precondition for a cost status, not evidence of one. "Known"
+always means **known within scope**: it assumes no unseen event touched the subject during the
+window, an assumption Popup cannot test (example 6b).
+
+**The cost and P&L rows are specification only.** They must not be implemented while D1 and D2
+remain undecided and D3 and D4 remain unverified. Until then, at most the recorded components
+(USDT amounts, and fees in their own assets) are reported, with no cost status.
 
 | Result                                                 | Known within scope                                                                                                                                                                                  | Partial                                                                                                                                                                              | Unavailable                                                   |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
@@ -142,7 +151,8 @@ Unrealized P&L needs a valuation and stays out of scope. USDT is not treated as 
 ## 5. Synthetic examples
 
 Every value is invented. Subject BTC on BTCUSDT unless stated; `g` = 60 s; fills lie well inside
-`(O + g, C − g)` and coverage is complete unless stated.
+`(O + g, C − g)` and coverage is complete unless stated. Cost statuses are the provisional ones from
+section 4. They illustrate the contract and are not a result Popup would compute today.
 
 **E1. Buy and sell with USDT fees.** Opening 0; closing 0.30000000.
 
@@ -197,20 +207,22 @@ coverage matters here; an ETHUSDT failure would not change the BTC result.
   **unavailable**.
 - Average cost: undefined while any unit's cost is unknown. **Unavailable.**
 
-Giving the opening inventory zero cost would claim the 0.3 BTC cost 12.012 USDT and the sale
-gained 25.974 USDT. The contract forbids that.
+Giving the opening inventory zero cost would claim, fees included, that the 0.3 BTC cost
+12.012 USDT and the sale gained 25.974 USDT. The contract forbids that.
 
 **E6. Evidence that blocks a conclusion.**
 
-- **6a. Unseen increase.** Opening 0; trade 6001 buys 0.10000000 for 10.00000000 USDT; closing
-  0.15000000. Difference +0.05000000, **Discrepancy**. A deposit, a transfer in, a conversion,
+- **6a. Unseen increase.** Opening 0; trade 6001 buys 0.10000000 for 10.00000000 USDT, fee
+  0.01000000 USDT; closing 0.15000000. Difference +0.05000000, **Discrepancy**. A deposit, a transfer in, a conversion,
   a BTC trade on a pair not read or a distribution could each explain it, and none is chosen. Cost
   **unavailable**: +0.05 could equally be +0.15 in and −0.10 out, so which units are held is
   unknown.
-- **6b. Offsetting unseen events.** The same trade and a closing of 0.10000000, but 0.1 BTC was
-  withdrawn and 0.1 BTC deposited from elsewhere. **Consistent**, and the cost reads as known
-  (10.01 USDT) while the units held are not the ones bought. This is why every known result
-  carries the scope assumption and Consistent is never called complete.
+- **6b. Offsetting unseen events.** The same trade 6001 (10.00000000 USDT plus a 0.01000000 USDT
+  fee) and a closing of 0.10000000, but 0.1 BTC was withdrawn and 0.1 BTC deposited from
+  elsewhere. **Consistent**, and the cost would read as known (10.00000000 USDT plus
+  0.01000000 USDT of fee) while the units held are not the ones bought. This is why numerical
+  consistency never implies complete coverage or a known cost, and why every known result carries
+  the scope assumption.
 - **6c. Missing page.** Page 1 of BTCUSDT returns 100 fills and a continuation; page 2 times out.
   The response lists BTCUSDT as failed with no continuation, and the view shows "More results:
   No" beside the partial-retrieval alert. **Indeterminate**, even if the sum happens to match the
@@ -219,7 +231,7 @@ gained 25.974 USDT. The contract forbids that.
 - **6d. Boundary fill.** A fill 10 s after `O`. Whether the opening read included it is unknown,
   so the result is **Indeterminate**.
 
-| Example | Quantity                      | Acquisition cost                        | Realized result (later) |
+| Example | Quantity                      | Acquisition cost (provisional)          | Realized result (later) |
 | ------- | ----------------------------- | --------------------------------------- | ----------------------- |
 | E1      | Consistent                    | Known                                   | Known, given D2         |
 | E2      | Consistent                    | Known                                   | No sale                 |
@@ -244,9 +256,10 @@ gained 25.974 USDT. The contract forbids that.
   check confirms it.
 - **D5. One trade ID twice on one pair.** A self-trade under mode `NONE` could plausibly produce a
   buyer and a seller row; Binance does not document it. This contract treats it as a conflict.
-- **D6. Guard and clocks.** `readAt` comes from the function's clock while fill times come from
-  Binance. Stamping `readAt` from the Binance time the function already fetches would narrow the
-  guard. The 60 s value is policy.
+- **D6. Guard and clocks.** `readAt` comes from the function's clock, while fill times come from
+  Binance, and Binance does not say when its balance snapshot is taken. The 60 s guard is
+  provisional policy, not a measured or documented bound. Stamping `readAt` from the Binance time
+  the function already fetches would narrow it, but even then no read becomes an atomic snapshot.
 - **D7. Boundary inclusivity.** Popup keeps both window ends; Binance does not say. It only
   produces duplicates, which identity handles.
 
@@ -265,19 +278,33 @@ in memory.
 [p-eps]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts#L155
 [p-cash]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts#L50-L56
 
-## 8. Next increment (proposed, not started)
+## 8. Next increment: reliable accumulated execution evidence (proposed, not started)
 
-One pure, tested function in `src/lib` that takes two balance reads, one subject pair, the
-execution responses for that selection and the guard. It returns the three results above with
-their reasons and exact decimal differences, and states that account history is not
-established. Its tests are examples E1 to 6d. The same change makes the handler refuse a page in
-which one trade ID carries different content, since today the second row is dropped before any
-consumer could see the conflict.
+Reconciliation depends on evidence the current reads cannot yet guarantee (section 1). The next
+task is that one prerequisite, in the existing handler and execution view:
 
-It adds no UI, storage, endpoint, deployment or Binance request, and touches no paper, simulation
-or Live Tracking code.
+- **Identical duplicates may collapse.** The same `(symbol, tradeId)` with every recorded field
+  equal is one fill.
+- **Conflicts are surfaced, never resolved.** The same `(symbol, tradeId)` with any field
+  different is reported as inconsistent evidence, both within one provider page (today the
+  handler drops the second row, [L302][h-dup]) and across the pages accumulated for one retrieval
+  (today the view keeps the first, [`deduplicate`][u-dedup]).
+- **Earlier failures stay visible.** A pair that failed on any page of a retrieval stays failed
+  for that retrieval. A later successful page must not imply that it completed; today the failed
+  pair drops out of the continuation, later pages report `partial: false`, and the view replaces
+  its failure list on each page ([L115][u-fail]).
+- **No further continuation is not completeness.** A retrieval is complete for a pair only when
+  every page for it succeeded and its last page ended. "No more results" after a failure says
+  only that no cursor remains.
+- **A fresh explicit retrieval may start a new coverage state.** **Load executions** or a changed
+  selection begins again; a continuation never resets what earlier pages recorded.
 
-**Live dependency.** Real Binance verification has not run. Before any result of that function
-is compared with a real account, the owner check in
+It adds no endpoint, storage, reconciliation, cost or P&L code, deployment or Binance request, and
+touches no paper, simulation or Live Tracking code. Quantity reconciliation (section 3) comes
+only after this. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and D4
+are verified.
+
+**Live dependency.** Real Binance verification has not run. Before any reconciliation result is
+compared with a real account, the owner check in
 [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run, and it must also settle
 D3 and D4 on one known fill.
