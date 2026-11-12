@@ -35,7 +35,7 @@ export function contentKey(value: unknown): string {
   const text = JSON.stringify(value) ?? '';
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
-    hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+    hash = Math.imul(hash ^ (text.codePointAt(index) ?? 0), 0x01000193);
   }
   return (hash >>> 0).toString(16).padStart(8, '0');
 }

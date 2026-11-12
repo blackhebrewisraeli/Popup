@@ -146,9 +146,9 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   read again; missing, refused, unreadable or malformed ones say so with **Show the latest
   published scan**, never a silent fallback. The review is now keyed by an FNV-1a digest of what
   was read, so changed content resets the scenario even under the same scan ID, and identical
-  content keeps it (C12 as revised). Evidence: 13 new tests (restore, published semantics,
-  defaults, unreadable entries, missing, malformed, failed read, scenario after reload, identical
-  and changed reloads, production build), two of them checked to fail without the change; 1,528
+  content keeps it (C12 as revised). Evidence: 14 new tests (restore, published semantics,
+  defaults, unreadable entries, missing, malformed or non-text reference, failed read, scenario after reload, identical
+  and changed reloads, production build), two of them checked to fail without the change; 1,529
   tests, typecheck, lint, build. Browser: real reload at desktop and 375 px, light and dark,
   keyboard, stores byte-identical ([follow-up rows](TRADINGVIEW_CRYPTO_ACCEPTANCE.md#follow-up-2026-11-12-c7-fixed-c12-requirement-revised)).
   Next: none required.

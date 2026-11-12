@@ -25,7 +25,10 @@ export function readResearchSelection(): ResearchSelection | null {
     const source = stored?.source;
     if (source !== 'market-data' && source !== 'tradingview') return null;
     // Kept as stored even when it is not a scan ID: the review says so instead of guessing.
-    const scan = source === 'tradingview' && stored?.scan != null ? String(stored.scan) : null;
+    const raw = source === 'tradingview' ? stored?.scan : null;
+    let scan: string | null = null;
+    if (typeof raw === 'string') scan = raw;
+    else if (raw != null) scan = JSON.stringify(raw);
     return { source, scan };
   } catch {
     return null;

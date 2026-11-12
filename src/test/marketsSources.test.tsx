@@ -1192,6 +1192,15 @@ describe('Research selection across a full page reload', () => {
     await vi.waitFor(() => expect(scores()).toEqual(scoresOf(IMPORT)));
   });
 
+  it('names a restored reference that is not even text as it was stored', () => {
+    restore({ source: 'tradingview', scan: { id: 7 } });
+    load();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The scan restored for this tab, {"id":7}, is not a scan ID',
+    );
+    expect(marketScan()).toBeNull();
+  });
+
   it('shows a restored scan’s failed read as such, never another scan or source meanwhile', async () => {
     let answer!: (response: Response) => void;
     const late = new Promise<Response>((done) => (answer = done));
