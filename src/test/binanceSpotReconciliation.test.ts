@@ -484,6 +484,17 @@ describe('execution evidence and coverage', () => {
     expect(reasonCodes(result)).toContain('execution_evidence_invalid');
   });
 
+  it.each([
+    ['a latest page read before the first', new Date(C + G).toISOString()],
+    ['an unparseable latest read time', 'later'],
+  ])('rejects retrieval times with %s', (_, retrievedAt) => {
+    const evidence = { ...retrieve(page([])), retrievedAt };
+    expect(reconcile(opening(), closing(), evidence)).toMatchObject({
+      status: 'INDETERMINATE',
+      reasons: [{ code: 'execution_evidence_invalid', items: ['retrieval_time'] }],
+    });
+  });
+
   it('rejects a hand-made record that lists one identity twice', () => {
     const one = fill('9501', 'buy', '0.1');
     const evidence = { ...retrieve(page([])), executions: [one, one] };

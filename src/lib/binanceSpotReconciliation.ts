@@ -187,7 +187,8 @@ function evidenceProblems(evidence: SpotExecutionEvidence): string[] {
     problems.push('window');
   }
   const first = Date.parse(evidence.firstRetrievedAt);
-  if (!Number.isFinite(first) || !(Date.parse(evidence.retrievedAt) >= first)) {
+  const latest = Date.parse(evidence.retrievedAt);
+  if (!Number.isFinite(first) || !Number.isFinite(latest) || latest < first) {
     problems.push('retrieval_time');
   }
   if (
@@ -287,6 +288,75 @@ function measure(
   };
 }
 
+/** The subject pair's coverage within the accumulated retrieval. */
+function coverageReasons(evidence: SpotExecutionEvidence, symbol: string, add: AddReason): void {
+  if (evidence.symbols.includes(symbol)) {
+    const failed = evidence.partialFailures.filter((failure) => failure.symbol === symbol);
+    if (failed.length > 0) add('pair_failed', [...new Set(failed.map((failure) => failure.error))]);
+    // No continuation is not completion: only an explicit terminal success counts.
+    else if (!evidence.completedSymbols.includes(symbol)) add('pair_incomplete');
+  } else {
+    add('pair_not_selected');
+  }
+  // A continuation is opaque, so its failure cannot be confined to one pair.
+  if (evidence.continuationFailures.length > 0) {
+    add('continuation_failed', [
+      ...new Set(evidence.continuationFailures.map((failure) => failure.error)),
+    ]);
+  }
+  const conflicted = evidence.conflicts.filter((conflict) => conflict.symbol === symbol);
+  if (conflicted.length > 0) {
+    add(
+      'conflicting_fills',
+      conflicted.map((item) => item.tradeId),
+    );
+  }
+}
+
+/** Ordering, interval length, window coverage and when the retrieval began, against O and C. */
+function timingReasons(
+  evidence: SpotExecutionEvidence,
+  o: number,
+  c: number,
+  add: AddReason,
+): void {
+  const g = RECONCILIATION_GUARD_MS;
+  if (c <= o) add('balance_order_invalid');
+  else if (c - o > MAX_BALANCE_INTERVAL_MS) add('balance_interval_too_long');
+  if (evidence.startTime > o - g || evidence.endTime < c + g) add('execution_window_not_covering');
+  const firstRead = Date.parse(evidence.firstRetrievedAt);
+  if (!Number.isFinite(firstRead) || firstRead < c + g) add('executions_read_too_early');
+}
+
+/**
+ * The subject-pair fills strictly inside (O + g, C − g). Fills before O − g are already in the
+ * opening read and fills after C + g cannot be in the closing one, so both are ignored. A subject
+ * fill within g of either read could be in either, so it blocks the conclusion and is never
+ * summed. Conflict variants are scanned too; a subject conflict has already blocked the result.
+ */
+function countedFills(
+  evidence: SpotExecutionEvidence,
+  subject: string,
+  o: number,
+  c: number,
+  add: AddReason,
+): SpotExecution[] {
+  const g = RECONCILIATION_GUARD_MS;
+  const symbol = `${subject}USDT`;
+  const variants = evidence.conflicts.flatMap((conflict) => conflict.variants);
+  const relevant = [...evidence.executions, ...variants].filter(
+    (fill) => fill.time >= o - g && fill.time <= c + g,
+  );
+  const own = relevant.filter((fill) => fill.symbol === symbol);
+  const near = own.filter((fill) => fill.time <= o + g || fill.time >= c - g);
+  const foreignFees = relevant.filter(
+    (fill) => fill.symbol !== symbol && fill.commissionAsset === subject,
+  );
+  if (near.length > 0) add('fill_near_boundary', [...new Set(near.map((fill) => fill.tradeId))]);
+  if (foreignFees.length > 0) add('subject_fee_on_other_pair', foreignFees.map(executionIdentity));
+  return own.filter((fill) => fill.time > o + g && fill.time < c - g);
+}
+
 /**
  * Reconciles the subject's `free + locked` quantity from the opening to the closing read
  * against the subject pair's fills strictly inside the guarded interval. INDETERMINATE
@@ -312,59 +382,13 @@ export function reconcileSpotQuantity(input: QuantityReconciliationInput): Quant
     executions.accountContext,
   ]);
   if (contexts.size !== 1 || opening.accountContext === '') add('account_context_mismatch');
-
   const problems = evidenceProblems(evidence);
   if (problems.length > 0) add('execution_evidence_invalid', problems);
-  if (evidence.symbols.includes(symbol)) {
-    const failed = evidence.partialFailures.filter((failure) => failure.symbol === symbol);
-    if (failed.length > 0) add('pair_failed', [...new Set(failed.map((failure) => failure.error))]);
-    // No continuation is not completion: only an explicit terminal success counts.
-    else if (!evidence.completedSymbols.includes(symbol)) add('pair_incomplete');
-  } else {
-    add('pair_not_selected');
-  }
-  // A continuation is opaque, so its failure cannot be confined to one pair.
-  if (evidence.continuationFailures.length > 0) {
-    add('continuation_failed', [
-      ...new Set(evidence.continuationFailures.map((failure) => failure.error)),
-    ]);
-  }
-  const conflicted = evidence.conflicts.filter((conflict) => conflict.symbol === symbol);
-  if (conflicted.length > 0) {
-    add(
-      'conflicting_fills',
-      conflicted.map((item) => item.tradeId),
-    );
-  }
-
+  coverageReasons(evidence, symbol, add);
   if (open === null || close === null) return { ...base, status: 'INDETERMINATE', reasons };
 
-  const [o, c, g] = [open.at, close.at, RECONCILIATION_GUARD_MS];
-  if (c <= o) add('balance_order_invalid');
-  else if (c - o > MAX_BALANCE_INTERVAL_MS) add('balance_interval_too_long');
-  if (evidence.startTime > o - g || evidence.endTime < c + g) add('execution_window_not_covering');
-  if (!(Date.parse(evidence.firstRetrievedAt) >= c + g)) add('executions_read_too_early');
-
-  const counted: SpotExecution[] = [];
-  const near: string[] = [];
-  const foreignFees: string[] = [];
-  // Variants are scanned for timing and foreign fees only: a subject conflict already blocks
-  // a conclusion, so no variant reaches the sum.
-  const variants = evidence.conflicts.flatMap((conflict) => conflict.variants);
-  for (const fill of [...evidence.executions, ...variants]) {
-    // Before O − g the opening read already holds it; after C + g the closing read cannot.
-    if (fill.time < o - g || fill.time > c + g) continue;
-    if (fill.symbol !== symbol) {
-      if (fill.commissionAsset === subject) foreignFees.push(executionIdentity(fill));
-    } else if (fill.time <= o + g || fill.time >= c - g) {
-      // Either read may or may not include it, so it is never summed.
-      near.push(fill.tradeId);
-    } else {
-      counted.push(fill);
-    }
-  }
-  if (near.length > 0) add('fill_near_boundary', [...new Set(near)]);
-  if (foreignFees.length > 0) add('subject_fee_on_other_pair', foreignFees);
+  timingReasons(evidence, open.at, close.at, add);
+  const counted = countedFills(evidence, subject, open.at, close.at, add);
   if (reasons.length > 0) return { ...base, status: 'INDETERMINATE', reasons };
 
   // An absent asset holds zero only because this read succeeded and is well formed.
