@@ -111,8 +111,8 @@ whether to act, and where; Popup places no orders.
   zero. Quantity, acquisition cost and P&L get separate statuses, and account history is never
   called complete. A matching quantity is numerical consistency only. Cost and P&L statuses stay
   specification-only until the cost method and fee policy are decided.
-- **Reliable Binance execution evidence (2026-11-12):** draft
-  [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) implements only the prerequisite named
+- **Reliable Binance execution evidence (2026-11-12):**
+  [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) (merged `e179bc2`) implements only the prerequisite named
   by stage D. Identity stays `(symbol, trade ID)`. Exact duplicates collapse; exact-field
   conflicts remain visible within and across pages with no authoritative variant. Pair/page and
   continuation failures accumulate for one retrieval, and explicit per-pair terminal success keeps
@@ -123,6 +123,16 @@ whether to act, and where; Popup places no orders.
   covers and whether USDT moves by exactly `quoteQty` before reconciliation work. Evidence: 1,544
   tests, typecheck, lint and build; synthetic browser checks at desktop and 375 px, light and dark,
   including keyboard continuation retry, visible conflict/failure warnings and no page overflow.
+- **Binance quantity reconciliation (2026-11-12):** draft
+  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160) adds `reconcileSpotQuantity`, a
+  pure function for the stage-D quantity check on one subject asset between two balance reads:
+  `CONSISTENT` (numerical consistency only), `DISCREPANCY` (exact, signed, unattributed) or
+  `INDETERMINATE` with every reason. Its evidence is the execution view's accumulated record, whose
+  fold moved unchanged into `binanceSpotEvidence.ts`; there is no caller-supplied `complete` flag.
+  Exact BigInt decimals at the recorded scales; the 60 s guard stays provisional. Synthetic fixtures
+  only. No view, persistence, cost, P&L or Binance request. Do not compare a result with a real
+  account until the owner's live check settles what `commission` covers (D3)
+  ([section 9](BINANCE_SPOT_RECONCILIATION.md#9-quantity-reconciliation-function-implemented-synthetic-fixtures-only)).
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -161,6 +171,20 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-12 · Binance Spot quantity reconciliation · Draft PR
+  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160).** Decision: implement only the
+  quantity half of stage D, as a pure function over the evidence #159 already accumulates. To avoid
+  a second implementation, the view's fold moved into `src/lib/binanceSpotEvidence.ts` and now also
+  keeps when the first page was read, so "executions read after C + g" is checkable. Completion
+  comes only from the subject pair's explicit terminal success with no pair, page or continuation
+  failure and no conflict. Fills within the guard, inside or outside the balance interval, block the
+  conclusion and are never summed. An absent asset is zero only in a valid successful read, and
+  fees in USDT, BNB or another asset stay in their own asset. Evidence: 68 new labeled synthetic
+  tests (the quantity portions of E1–E6 plus decimal, coverage, window, boundary and purity cases),
+  each figure calculated by hand; deliberate mutations of the guard, coverage, fee, timing and
+  comparison rules each fail at least one test. 1,612 tests, typecheck, lint and build pass. Real
+  Binance: NOT RUN; no view calls the function.
 
 - **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · PR
   [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), merged `62f4fbb`, documentation only.** Decision:

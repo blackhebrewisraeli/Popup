@@ -68,7 +68,7 @@ const FORMAT_ERROR =
   'Enter a plain decimal such as 1250.5: digits and one decimal point, no commas, signs or exponents.';
 
 /** A typed decimal as a count of 10^-decimals, or why it is not one. Empty is null. */
-function parseDecimal(text: string, decimals: number): bigint | string | null {
+export function parseDecimal(text: string, decimals: number): bigint | string | null {
   const value = text.trim();
   if (value === '') return null;
   if (value.startsWith('-')) return 'Enter a positive number.';

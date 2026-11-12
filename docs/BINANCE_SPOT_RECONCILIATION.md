@@ -1,7 +1,8 @@
 # Binance Spot outcome tracking: account-event and reconciliation contract
 
-**Specification only (stage D). Nothing here is implemented.** It adds no endpoint, storage,
-ledger, valuation, P&L, display, scheduler or Binance request. It does not show that a live
+**Stage D specification.** Sections 8 and 9 record the parts implemented since; everything else
+is specification only. It adds no endpoint, storage, ledger, valuation, P&L, display, scheduler or
+Binance request. It does not show that a live
 Binance connection works (none has run), that account history is complete, or that outcomes
 measured this way are economically useful. Canonical model `1.0.0` stays descriptive.
 
@@ -12,8 +13,10 @@ point to `56366db`.
 [#157](https://github.com/blackhebrewisraeli/Popup/pull/157) merged the original stage-D
 specification at `62f4fbb`. Commit `ddb949b` was a later documentation correction, not part of that
 merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158) carried its corrected contract
-onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite from section 8 is
-now implemented. Reconciliation, acquisition cost and P&L remain unimplemented.
+onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite from section 8
+merged in [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) at `e179bc2`. Quantity
+reconciliation (section 9) is a pure function checked on synthetic fixtures only; nothing calls it
+yet. Acquisition cost and P&L remain unimplemented.
 
 [p]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts
 
@@ -313,11 +316,77 @@ retrieval. It remains display-only and in component memory:
   logout still unmount the owner-keyed component; request sequencing still drops late answers.
 
 It adds no endpoint, storage, reconciliation, cost or P&L code, deployment or Binance request, and
-touches no paper, simulation or Live Tracking code. Quantity reconciliation (section 3) comes
-only in a later task. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and
-D4 are verified.
+touches no paper, simulation or Live Tracking code. Quantity reconciliation (section 3) is section 9. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and D4 are verified.
 
 **Live dependency.** Real Binance verification has not run. Before any reconciliation result is
 compared with a real account, the owner check in
 [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run, and it must also settle
 D3 and D4 on one known fill.
+
+## 9. Quantity reconciliation function (implemented, synthetic fixtures only)
+
+[`reconcileSpotQuantity`](../src/lib/binanceSpotReconciliation.ts) applies section 3 to quantities
+and nothing else. It is pure: no provider request, clock, storage, ledger or view. No view calls it
+yet, and it has run only on the labeled synthetic fixtures in
+[`binanceSpotReconciliation.test.ts`](../src/test/binanceSpotReconciliation.test.ts), which use the
+quantity portions of E1–E6, never their cost statuses.
+
+**Inputs.**
+
+- `subject`: the base asset of one supported USDT pair (`BTC` for `BTCUSDT`). USDT and BNB are
+  refused.
+- `opening` and `closing`: one balance read each, as `parseSpotRead` returns it, with its
+  `accountContext`.
+- `executions`: the accumulated evidence of one retrieval with its `accountContext`. It is the record
+  the execution view already folds page by page with `nextExecutionEvidence`, now in
+  [`binanceSpotEvidence.ts`](../src/lib/binanceSpotEvidence.ts). That fold moved out of the view
+  unchanged; it also records when the retrieval's first page was read. There is no `complete` flag:
+  completeness is derived from the record's terminal successes, failures and conflicts.
+
+`accountContext` is the caller's label for whose reads these are, such as the signed-in owner's
+user ID, compared exactly. Popup keeps no Binance account identifier, so this stops reads made for
+different owners being mixed; it does not prove which Binance account answered.
+
+**Rules.** O and C are the two `readAt` times and g is 60 s. Any failed rule is a reason.
+
+- Both reads succeeded and are well formed: exact decimal strings, distinct assets, a parseable
+  time. An absent subject is zero only in such a read.
+- One non-empty `accountContext` across all three inputs.
+- O < C and C − O ≤ 24 h − 2g. The selection covers [O − g, C + g], lasts at most 24 h, and its
+  first page was read at or after C + g.
+- Every fill, consistent or conflicting, lies within its declared pairs and window and has valid
+  identifiers and decimals. Each identity appears once.
+- The subject pair has explicit terminal success and no pair or page failure, and has no conflict.
+  No continuation failed: a continuation is opaque, so its failure cannot be confined to one pair.
+  Another selected pair's failure or conflict does not matter (E4), but a fill on it that pays its
+  fee in the subject does.
+- A subject-pair fill within g of O or C, including the guard bands outside [O, C] and the exact
+  edges, makes the result Indeterminate and is never summed. Fills before O − g or after C + g are
+  ignored: the opening read already holds them, or the closing read cannot.
+
+Over the fills strictly inside (O + g, C − g): `opening = free + locked`,
+`movement = buys − sells − fees paid in the subject`, `expected = opening + movement` and
+`difference = closing − expected`.
+
+**Arithmetic.** BigInt counts at the widest scale recorded among the amounts that enter a figure,
+parsed with `spotScenario.ts`'s `parseDecimal` at that scale rather than its fixed 1e-8. No
+floating point, epsilon or rounding. `1.0` and `1.00` are the same amount here, while section 8
+still treats them as conflicting evidence under one identity.
+
+**Result.**
+
+- `CONSISTENT`: the difference is exactly zero.
+- `DISCREPANCY`: the exact signed difference, unattributed.
+- `INDETERMINATE`: every reason found, each a code with the trade IDs, error codes or evidence
+  problems behind it, and no figures.
+
+A determinate result lists every figure, the counted trade IDs and the fees the counted fills paid
+in other assets (USDT, BNB or any other), each summed in its own asset, never converted and never
+reconciled. Every result carries the same fixed limits: numerical consistency only, account history
+not established, unseen events not excluded (6b), acquisition cost not evaluated, `commission`
+coverage unverified (D3) and a provisional guard (D6).
+
+**Not implemented.** Acquisition cost, P&L, any choice on D1–D4, USDT or BNB reconciliation,
+persistence, display and any Binance request. Before a result is compared with a real account, the
+owner check in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run and settle
+D3.

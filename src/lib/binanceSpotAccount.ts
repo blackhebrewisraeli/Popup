@@ -2,6 +2,7 @@
 // (docs/BINANCE_SPOT_ACCOUNT.md). It holds one account snapshot in component
 // state: no query cache, no storage, and nothing here touches a portfolio,
 // ledger, paper cash or simulation.
+import { sameExecution } from '@/lib/binanceSpotEvidence';
 import { supabase } from '@/lib/supabaseClient';
 import type {
   SpotAccountResponse,
@@ -75,18 +76,6 @@ const isExecution = (row: unknown): row is SpotExecution =>
   typeof row['quoteQuantity'] === 'string' &&
   typeof row['commission'] === 'string' &&
   typeof row['commissionAsset'] === 'string';
-
-const sameExecution = (left: SpotExecution, right: SpotExecution): boolean =>
-  left.symbol === right.symbol &&
-  left.tradeId === right.tradeId &&
-  left.orderId === right.orderId &&
-  left.time === right.time &&
-  left.side === right.side &&
-  left.quantity === right.quantity &&
-  left.price === right.price &&
-  left.quoteQuantity === right.quoteQuantity &&
-  left.commission === right.commission &&
-  left.commissionAsset === right.commissionAsset;
 
 function isConflict(value: unknown): value is SpotExecutionConflict {
   if (
