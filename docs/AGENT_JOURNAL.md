@@ -95,10 +95,22 @@ whether to act, and where; Popup places no orders.
   `MATCH`, an idempotent second finish and the first crypto comparison
   ([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)). No code defect; the runbook prompt now covers the
   crypto start and short results shown inline.
-- **Research selection across reloads (2026-11-12):** draft [#156](https://github.com/blackhebrewisraeli/Popup/pull/156). Owner
+- **Research selection across reloads (2026-11-12):** [#156](https://github.com/blackhebrewisraeli/Popup/pull/156) (merged `56366db`). Owner
   decisions on the two open rows: a full page reload now restores the source and **Scan shown**
   (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
   even under the same scan ID, resets them (C12, revised).
+- **Binance outcome tracking, stage D (2026-11-12):** draft
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.
+  [BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) specifies the smallest
+  account-event and reconciliation contract over the existing read-only balances and execution
+  history ([#148](https://github.com/blackhebrewisraeli/Popup/pull/148), merged `54f9a6c`).
+  Proposed scope: one subject asset (the base of one supported pair, never USDT or BNB) between two
+  balance reads at most 24 hours apart. Opening cost is unknown unless the opening quantity is
+  zero. Quantity, acquisition cost and P&L get separate statuses, and account history is never
+  called complete. Next increment, proposed and not started: one pure reconciliation function with
+  the spec's synthetic examples as its tests, plus the handler refusing a trade ID that repeats
+  with different content. It still depends on the owner's real Binance check, which has not run
+  and must also settle what `commission` covers and whether USDT moves by exactly `quoteQty`.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -138,8 +150,36 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Restore the Research source and scan after a full reload · Draft PR
-  [#156](https://github.com/blackhebrewisraeli/Popup/pull/156).** Decision: the smallest mechanism, per tab. `useResearchSelection` keeps the source
+- **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · Draft PR
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.** Decision:
+  specify before building, and only what the existing four GET requests can evidence. The trace
+  of the integration at `56366db` (cited by line in
+  [the spec](BINANCE_SPOT_RECONCILIATION.md)) found three gaps that matter for reconciliation:
+  - A second row with the same `(symbol, trade ID)` is dropped without comparing its content. The
+    handler test asserts first-wins for a conflicting row.
+  - A pair that fails on one page silently drops out of later pages, which then report
+    `partial: false`.
+  - `readAt` comes from the function's clock, not Binance's.
+
+  A throwaway test confirmed the two handler behaviours; it was not committed. Binance facts were
+  rechecked on 2026-11-12: trade-list fields, no stated retention or bound inclusivity, an
+  undocumented `updateTime`, the three commission kinds and self-trade mode `NONE`.
+
+  The contract covers one subject asset over a window of at most 24 hours between two balance
+  reads, with a 60 s boundary guard (a Popup policy). Identity is `(symbol, trade ID)`: identical
+  repeats collapse, and differing ones are conflicts. Fees stay in their own asset, with no
+  invented rate. Quantity is Consistent, Discrepancy or Indeterminate. Cost and later P&L are
+  known within scope, partial or unavailable. The three are kept apart.
+
+  Ten synthetic examples were hand-calculated, and their arithmetic was rechecked with exact
+  decimals. Seven open decisions (D1–D7) are listed but not chosen: cost method, fees in cost,
+  what `commission` covers, quote movement, duplicate IDs from self-trades, the guard and clocks,
+  and boundary inclusivity. There is no code, endpoint, storage, migration, deployment or Binance
+  request. Next: the pure reconciliation function (proposed, not started). The real Binance check
+  remains the owner's.
+
+- **2026-11-12 · Restore the Research source and scan after a full reload · PR
+  [#156](https://github.com/blackhebrewisraeli/Popup/pull/156), merged `56366db`.** Decision: the smallest mechanism, per tab. `useResearchSelection` keeps the source
   and a scan ID in `sessionStorage` under `vite dev` only, read synchronously at mount (the shell
   renders only after client-side auth, so there is no hydration mismatch and no frame of Market
   data). Nothing else is kept: no results, prices, selection or scenario input. A restored scan is

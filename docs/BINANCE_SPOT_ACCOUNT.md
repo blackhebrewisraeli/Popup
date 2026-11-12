@@ -71,6 +71,11 @@ Popup deliberately narrows that contract:
 - Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
   Executions alone cannot reconstruct balances.
 
+Outcome tracking is specified but not built:
+[BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) maps which account events these
+reads can and cannot evidence, defines one bounded reconciliation scope with separate quantity,
+cost and P&L statuses, and works through synthetic examples.
+
 ## States
 
 | Shown                                                                                         | Meaning                                                                                                  |
