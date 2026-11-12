@@ -376,6 +376,8 @@ describe('separation from Popup ledgers', () => {
   it('imports no portfolio, ledger, storage or database module', () => {
     for (const file of [
       'src/lib/binanceSpotAccount.ts',
+      'src/lib/binanceSpotEvidence.ts',
+      'src/lib/binanceSpotReconciliation.ts',
       'src/components/BinanceSpotBalances.tsx',
       'src/components/BinanceSpotExecutions.tsx',
     ]) {

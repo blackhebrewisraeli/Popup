@@ -2,29 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { History } from 'lucide-react';
 import {
   readSpotExecutions,
-  type SpotExecution,
-  type SpotExecutionConflict,
-  type SpotExecutionFailure,
   type SpotExecutionRead,
   type SpotExecutionSelection,
   type SpotFailure,
 } from '@/lib/binanceSpotAccount';
-
-/** Mirrors the explicit server allowlist, sourced from the app's known crypto set. */
-export const SPOT_EXECUTION_SYMBOLS = [
-  'BTCUSDT',
-  'ETHUSDT',
-  'SOLUSDT',
-  'AVAXUSDT',
-  'LINKUSDT',
-  'BNBUSDT',
-  'XRPUSDT',
-  'ADAUSDT',
-  'DOGEUSDT',
-  'DOTUSDT',
-  'MATICUSDT',
-  'LTCUSDT',
-] as const;
+import {
+  executionIdentity,
+  nextExecutionEvidence,
+  requestedCoverageComplete,
+  SPOT_EXECUTION_SYMBOLS,
+  type SpotExecutionEvidence,
+} from '@/lib/binanceSpotEvidence';
 
 const RANGE_OPTIONS = [
   { hours: 1, label: 'Last hour' },
@@ -32,20 +20,6 @@ const RANGE_OPTIONS = [
   { hours: 24, label: 'Last 24 hours' },
 ] as const;
 const DEFAULT_BACKOFF_SECONDS = 60;
-
-interface ExecutionSnapshot {
-  executions: SpotExecution[];
-  conflicts: SpotExecutionConflict[];
-  symbols: string[];
-  startTime: number;
-  endTime: number;
-  retrievedAt: string;
-  lastPageReturned: number;
-  continuation: string | null;
-  partialFailures: SpotExecutionFailure[];
-  completedSymbols: string[];
-  continuationFailures: SpotFailure[];
-}
 
 function failureText(failure: SpotFailure): string {
   switch (failure.error) {
@@ -70,64 +44,6 @@ function failureText(failure: SpotFailure): string {
   }
 }
 
-function executionIdentity(execution: SpotExecution): string {
-  return `${execution.symbol}:${execution.tradeId}`;
-}
-
-function sameExecution(left: SpotExecution, right: SpotExecution): boolean {
-  return (
-    left.symbol === right.symbol &&
-    left.tradeId === right.tradeId &&
-    left.orderId === right.orderId &&
-    left.time === right.time &&
-    left.side === right.side &&
-    left.quantity === right.quantity &&
-    left.price === right.price &&
-    left.quoteQuantity === right.quoteQuantity &&
-    left.commission === right.commission &&
-    left.commissionAsset === right.commissionAsset
-  );
-}
-
-function mergeEvidence(
-  current: Pick<ExecutionSnapshot, 'executions' | 'conflicts'> | null,
-  executions: SpotExecution[],
-  conflicts: SpotExecutionConflict[],
-): Pick<ExecutionSnapshot, 'executions' | 'conflicts'> {
-  const variantsByIdentity = new Map<string, SpotExecution[]>();
-  const add = (execution: SpotExecution) => {
-    const identity = executionIdentity(execution);
-    const variants = variantsByIdentity.get(identity);
-    if (variants === undefined) variantsByIdentity.set(identity, [execution]);
-    else if (!variants.some((variant) => sameExecution(variant, execution))) {
-      variants.push(execution);
-    }
-  };
-  current?.executions.forEach(add);
-  current?.conflicts.forEach((conflict) => conflict.variants.forEach(add));
-  executions.forEach(add);
-  conflicts.forEach((conflict) => conflict.variants.forEach(add));
-
-  const consistent: SpotExecution[] = [];
-  const inconsistent: SpotExecutionConflict[] = [];
-  for (const variants of variantsByIdentity.values()) {
-    const first = variants[0] as SpotExecution;
-    if (variants.length === 1) consistent.push(first);
-    else inconsistent.push({ symbol: first.symbol, tradeId: first.tradeId, variants });
-  }
-  return { executions: consistent, conflicts: inconsistent };
-}
-
-function uniqueFailures(failures: SpotExecutionFailure[]): SpotExecutionFailure[] {
-  const seen = new Set<string>();
-  return failures.filter((failure) => {
-    const key = `${failure.symbol}:${failure.error}:${failure.retryAfterSeconds ?? ''}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 /** What a button says instead of its own label while no read can start. */
 function busyLabel(loading: boolean, paused: boolean): string | null {
   if (loading) return 'Loading…';
@@ -146,56 +62,12 @@ function backoffSeconds(result: SpotExecutionRead): number | null {
   return limited ? (limited.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS) : null;
 }
 
-/** The records to show after an answer: a failed refresh keeps them unless access was lost. */
-function nextSnapshot(
-  current: ExecutionSnapshot | null,
-  result: SpotExecutionRead,
-  more: boolean,
-): ExecutionSnapshot | null {
-  if (result.state === 'error') {
-    if (result.error === 'unauthenticated' || result.error === 'forbidden') return null;
-    return more && current
-      ? { ...current, continuationFailures: [...current.continuationFailures, result] }
-      : current;
-  }
-  if (result.state !== 'executions') return null;
-  const accumulated = more ? current : null;
-  const evidence = mergeEvidence(accumulated, result.executions, result.conflicts);
-  return {
-    ...evidence,
-    symbols: result.coverage.symbols,
-    startTime: result.coverage.startTime,
-    endTime: result.coverage.endTime,
-    retrievedAt: result.coverage.retrievedAt,
-    lastPageReturned: result.coverage.returned,
-    continuation: result.continuation ?? null,
-    partialFailures: uniqueFailures([
-      ...(accumulated?.partialFailures ?? []),
-      ...result.coverage.failures,
-    ]),
-    completedSymbols: [
-      ...new Set([...(accumulated?.completedSymbols ?? []), ...result.coverage.completedSymbols]),
-    ],
-    continuationFailures: accumulated?.continuationFailures ?? [],
-  };
-}
-
-function requestedCoverageComplete(snapshot: ExecutionSnapshot): boolean {
-  return (
-    snapshot.continuation === null &&
-    snapshot.partialFailures.length === 0 &&
-    snapshot.continuationFailures.length === 0 &&
-    snapshot.conflicts.length === 0 &&
-    snapshot.symbols.every((symbol) => snapshot.completedSymbols.includes(symbol))
-  );
-}
-
 function ExecutionResults({
   snapshot,
   busy,
   onNextPage,
 }: Readonly<{
-  snapshot: ExecutionSnapshot;
+  snapshot: SpotExecutionEvidence;
   busy: string | null;
   onNextPage: (continuation: string) => void;
 }>) {
@@ -394,7 +266,7 @@ export function BinanceSpotExecutions({
 }>) {
   const [symbol, setSymbol] = useState<(typeof SPOT_EXECUTION_SYMBOLS)[number]>('BTCUSDT');
   const [hours, setHours] = useState(24);
-  const [snapshot, setSnapshot] = useState<ExecutionSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<SpotExecutionEvidence | null>(null);
   const [failure, setFailure] = useState<SpotFailure | null>(null);
   const [failureContext, setFailureContext] = useState<'refresh' | 'continuation' | null>(null);
   const [loading, setLoading] = useState(false);
@@ -452,7 +324,7 @@ export function BinanceSpotExecutions({
           setFailureContext(
             result.state === 'error' ? (continuation ? 'continuation' : 'refresh') : null,
           );
-          setSnapshot((shown) => nextSnapshot(shown, result, continuation !== null));
+          setSnapshot((shown) => nextExecutionEvidence(shown, result, continuation !== null));
           const backoff = backoffSeconds(result);
           if (backoff !== null) setPausedUntil(Date.now() + backoff * 1000);
         });
