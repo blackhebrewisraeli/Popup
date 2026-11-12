@@ -90,12 +90,15 @@ whether to act, and where; Popup places no orders.
   by the clause that holds it, **High volatility** or **Low score** or both, on row tags and
   accessible names, evidence, comparison, the Manual Spot scenario and the landing example. Wording
   only: the Risk warnings view, its counts, ranks and scan-change transitions are unchanged.
-- **Crypto workflow acceptance (2026-11-12):** draft [#155](https://github.com/blackhebrewisraeli/Popup/pull/155). A fresh `crypto-usdt-v1` retrieval on `6e99803`
+- **Crypto workflow acceptance (2026-11-12):** [#155](https://github.com/blackhebrewisraeli/Popup/pull/155) (merged `134fef7`). A fresh `crypto-usdt-v1` retrieval on `6e99803`
   passed start → capture → finish → Research → evidence → Manual Spot scenario, with offline
   `MATCH`, an idempotent second finish and the first crypto comparison
   ([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)). No code defect; the runbook prompt now covers the
-  crypto start and short results shown inline. Two behaviours await an owner decision: **Scan
-  shown** resets on a page reload, and an in-app reload of an unchanged file keeps scenario inputs.
+  crypto start and short results shown inline.
+- **Research selection across reloads (2026-11-12):** draft follow-up (this branch). Owner
+  decisions on the two open rows: a full page reload now restores the source and **Scan shown**
+  (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
+  even under the same scan ID, resets them (C12, revised).
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -135,8 +138,24 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · TradingView crypto workflow acceptance · Draft PR
-  [#155](https://github.com/blackhebrewisraeli/Popup/pull/155), documentation only.** Decision: verify the existing flow end to end and fix only what blocks or misrepresents
+- **2026-11-12 · Restore the Research source and scan after a full reload · Draft PR (this
+  branch).** Decision: the smallest mechanism, per tab. `useResearchSelection` keeps the source
+  and a scan ID in `sessionStorage` under `vite dev` only, read synchronously at mount (the shell
+  renders only after client-side auth, so there is no hydration mismatch and no frame of Market
+  data). Nothing else is kept: no results, prices, selection or scenario input. A restored scan is
+  read again; missing, refused, unreadable or malformed ones say so with **Show the latest
+  published scan**, never a silent fallback. The review is now keyed by an FNV-1a digest of what
+  was read, so changed content resets the scenario even under the same scan ID, and identical
+  content keeps it (C12 as revised). Evidence: 13 new tests (restore, published semantics,
+  defaults, unreadable entries, missing, malformed, failed read, scenario after reload, identical
+  and changed reloads, production build), two of them checked to fail without the change; 1,528
+  tests, typecheck, lint, build. Browser: real reload at desktop and 375 px, light and dark,
+  keyboard, stores byte-identical ([follow-up rows](TRADINGVIEW_CRYPTO_ACCEPTANCE.md#follow-up-2026-11-12-c7-fixed-c12-requirement-revised)).
+  Next: none required.
+
+- **2026-11-12 · TradingView crypto workflow acceptance · PR
+  [#155](https://github.com/blackhebrewisraeli/Popup/pull/155), merged `134fef7`, documentation
+  only.** Decision: verify the existing flow end to end and fix only what blocks or misrepresents
   it; nothing in the code did. Evidence, kept apart in [the matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md):
   fresh live retrieval `20261112T012214Z` (25 of 25 captured, two inline short results copied byte
   for byte from the session transcript, read-only alert check); scan `20261112T012214Z-dc217757`,

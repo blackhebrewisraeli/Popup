@@ -204,5 +204,7 @@ nothing, and offers no order: you decide, and act in Binance yourself if you cho
   A stop reference is a planning input, not a placed stop or a guaranteed maximum: a gap or
   execution costs can lose more. The quantity is illustrative until Binance's lot size, minimum
   notional and price filters are checked.
-- **Memory only.** Choosing another asset or scan, or closing the sheet, clears it. Nothing is
-  journaled or stored, and no background process runs.
+- **Memory only.** Choosing another asset or scan, closing the sheet, reloading the page, or an
+  in-app reload that brings changed content (even under the same scan ID) clears it. An in-app
+  reload of an unchanged file keeps it. Nothing is journaled or stored, and no background process
+  runs.

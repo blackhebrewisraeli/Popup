@@ -401,7 +401,15 @@ stay byte-identical. The source selector's count stays the published import's.
   disappeared stays selected, marked "not in the scan store", until the owner picks another.
 - **Changing the scan** starts the review over: no selection, Compare or open evidence carries
   across. Comparison rules and source isolation are unchanged. Switching to Market data and back
-  returns to the latest published scan.
+  returns to the latest published scan. So does a reload that brings different content, even
+  under the same scan ID; an unchanged file keeps the review.
+- **A full page reload** restores the source and **Scan shown** chosen in that browser tab, and
+  reads the scan again: a saved scan by its ID, **Latest published scan** as whatever is published
+  now. The tab's `sessionStorage` holds only the source and a scan ID, under `vite dev` only; a new
+  tab opens on Market data. Selection, Compare, open evidence and Manual Spot inputs are not kept.
+  A restored scan that is missing, unreadable, refused or not a scan ID says so, shows nothing
+  from it and offers **Show the latest published scan**; Research never falls back to Market data
+  or another scan by itself.
 - **Access.** `/__zerochart/tradingview-saved-scans` lists and `/<scanId>` reads one. Only a scan
   ID (`YYYYMMDDTHHMMSSZ-xxxxxxxx`) is accepted, never a path. Files are read directly in the store
   and a symbolic link reads as absent. A read returns results, never candles. Like the published

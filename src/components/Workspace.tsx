@@ -51,6 +51,7 @@ import {
   type ScanAssetResult,
 } from '@/lib/marketScanner';
 import { useMarketScan } from '@/hooks/useMarketScan';
+import { useResearchSource } from '@/hooks/useResearchSelection';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import type { User } from '@supabase/supabase-js';
@@ -511,7 +512,8 @@ function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
-  const [marketsSource, setMarketsSource] = useState<MarketsSource>('market-data');
+  // Restored after a full page reload under `vite dev`; market data on a tab's first visit.
+  const [marketsSource, setMarketsSource] = useResearchSource();
   const [researchPlace, setResearchPlace] = useState<ResearchPlace>('scan');
   // The URL is the source of truth: / (Research), /paper-trading, /account.
   const navigate = useNavigate();

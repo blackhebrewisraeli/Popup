@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import type { MarketsSource } from '@/components/TradingViewDevScan';
 import { MarketsSection, ResearchZone, type ResearchPlace } from '@/components/Workspace';
+import { RESEARCH_SELECTION_KEY, useResearchSource } from '@/hooks/useResearchSelection';
 import type { Candle } from '@/lib/binance';
 import { REGIME_LABELS } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanInput } from '@/lib/marketScanner';
@@ -31,6 +32,8 @@ vi.mock('@/components/RoboAdvisor', () => ({
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(EQUITY_NOW);
+  // Each test is a new tab: no source or scan restored from another.
+  sessionStorage.clear();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -108,8 +111,9 @@ const IMPORT = importOf([
   equity('SPY', (i) => (i % 2 === 0 ? 100 : 106)),
 ]);
 
+/** Research as the workspace holds it: the source is restored after a full reload. */
 function Markets() {
-  const [source, setSource] = useState<MarketsSource>('market-data');
+  const [source, setSource] = useResearchSource();
   const [place, setPlace] = useState<ResearchPlace>('scan');
   return (
     <ResearchZone
@@ -960,5 +964,320 @@ describe('Markets source: saved scans', () => {
     expect(scores()).toEqual(scoresOf(IMPORT));
     const shown = screen.getByRole('combobox', { name: 'Scan shown' });
     expect(within(shown).getAllByRole('option')).toHaveLength(1);
+  });
+});
+
+describe('Research selection across a full page reload', () => {
+  /** Labeled fixture: a saved snapshot, shown under Scan shown. */
+  const SAVED: DevScan = {
+    ...importOf([equity('AAPL', rising), equity('MSFT', wave)]),
+    scanId: '20261027T170000Z-000000aa',
+    saved: { repositoryCommit: 'c'.repeat(40), legacy: false, view: 'preserved' },
+  };
+  /** Labeled fixture: a scan published later in place of IMPORT. */
+  const LATER: DevScan = {
+    ...importOf([equity('AAPL', falling), equity('NVDA', rising)]),
+    scanId: '20261029T170000Z-0000000b',
+    importedAt: new Date(EQUITY_NOW + 3_600_000).toISOString(),
+  };
+  /** Labeled synthetic crypto import: the Manual Spot scenario needs evaluated Binance Spot pairs. */
+  const CRYPTO: DevScan = {
+    ...IMPORT,
+    scanId: '20261028T180000Z-000000c0',
+    source: {
+      ...IMPORT.source,
+      symbols: { 'BTC-USD': 'BINANCE:BTCUSDT', 'ETH-USD': 'BINANCE:ETHUSDT' },
+    },
+    scan: evaluateScan([crypto('BTC-USD'), crypto('ETH-USD')], {
+      evaluationTime: EQUITY_NOW,
+      universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+      cryptoProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    }),
+  };
+  const LIST: SavedScanList = {
+    scans: [
+      {
+        scanId: SAVED.scanId,
+        session: '2026-10-27',
+        members: 2,
+        evaluated: 2,
+        supported: 2,
+        legacy: false,
+      },
+    ],
+    unreadable: 0,
+  };
+  const one = (scanId: string) => `${TRADINGVIEW_SAVED_SCANS_ROUTE}/${scanId}`;
+  const ok = (body: unknown) => Promise.resolve(new Response(JSON.stringify(body)));
+  const restore = (selection: unknown) =>
+    sessionStorage.setItem(RESEARCH_SELECTION_KEY, JSON.stringify(selection));
+  const stored = () => JSON.parse(sessionStorage.getItem(RESEARCH_SELECTION_KEY) ?? 'null');
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** One page load in this tab: a fresh query cache over the same local files and storage. */
+  function load(
+    options: {
+      published?: () => Promise<Response>;
+      saved?: Record<string, () => Promise<Response>>;
+    } = {},
+  ) {
+    const published = vi.fn((_url: string) => (options.published ?? (() => ok(IMPORT)))());
+    const saved = vi.fn((url: string) => {
+      const answer = options.saved?.[url];
+      if (answer) return answer();
+      if (url === TRADINGVIEW_SAVED_SCANS_ROUTE) return ok(LIST);
+      if (url === one(SAVED.scanId)) return ok({ state: 'VERIFIED', view: SAVED });
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+    stubLocalRoutes(published, saved);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const page = render(
+      <QueryClientProvider client={client}>
+        <Markets />
+      </QueryClientProvider>,
+    );
+    return {
+      unmount: page.unmount,
+      published,
+      reads: () => saved.mock.calls.map(([url]) => url),
+    };
+  }
+
+  const tradingViewTab = () => screen.getByRole('tab', { name: /TradingView import/ });
+  const marketTab = () => screen.getByRole('tab', { name: 'Market data' });
+  const panel = () => screen.getByRole('region', { name: 'TradingView development scan' });
+  const shown = () => screen.getByRole('combobox', { name: 'Scan shown' });
+  const marketScan = () => screen.queryByRole('region', { name: 'Market scan' });
+  const scores = () =>
+    rowsOf(panel()).map((row) => row.querySelector('.market-scan-score')?.textContent);
+  const scoresOf = (view: DevScan) =>
+    view.scan.results
+      .filter((result) => result.status === 'EVALUATED')
+      .map((result) => `Score ${result.model!.signal_score}`);
+
+  async function openTradingView() {
+    await screen.findByRole('tab', { name: /TradingView import \d+/ });
+    fireEvent.click(tradingViewTab());
+  }
+
+  function wideScreen() {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query === '(min-width: 1024px)',
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }) as unknown as MediaQueryList,
+    );
+  }
+
+  /** Selects BTC-USD in the review and opens its Manual Spot scenario. */
+  async function planBtc() {
+    // The whole screen: the panel shown while reading is replaced once the scan is read.
+    const row = await screen.findByRole('button', { name: /^BTC-USD, rank/ });
+    fireEvent.click(row);
+    const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
+    fireEvent.click(within(section).getByText('Plan a hypothetical scenario'));
+    return section;
+  }
+  const allocation = (section: HTMLElement) =>
+    within(section).getByLabelText(/^Available allocation/);
+
+  it('restores TradingView and the saved scan chosen, read again, after a full reload', async () => {
+    const first = load();
+    await openTradingView();
+    await within(shown()).findByRole('option', { name: new RegExp(SAVED.scanId) });
+    fireEvent.change(shown(), { target: { value: SAVED.scanId } });
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SAVED)));
+    expect(stored()).toEqual({ source: 'tradingview', scan: SAVED.scanId });
+    first.unmount();
+
+    const second = load();
+    // Before any answer: the restored source and scan, and nothing from another in their place.
+    expect(tradingViewTab()).toHaveAttribute('aria-selected', 'true');
+    expect(marketScan()).toBeNull();
+    expect(shown()).toHaveValue(SAVED.scanId);
+    expect(within(shown()).getByRole('option', { name: SAVED.scanId })).toBeInTheDocument();
+    expect(panel()).toHaveTextContent(
+      `Reading saved scan ${SAVED.scanId} and reproducing it offline`,
+    );
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(SAVED)));
+    expect(panel().querySelector('.market-scan-head')).toHaveTextContent(
+      'Saved scan, not the published view',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(`Saved scan ${SAVED.scanId}`);
+    expect(second.reads()).toContain(one(SAVED.scanId));
+  });
+
+  it('restores "Latest published scan" as the latest: a reload shows what is published now', async () => {
+    const first = load();
+    await openTradingView();
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(IMPORT)));
+    expect(stored()).toEqual({ source: 'tradingview', scan: null });
+    first.unmount();
+
+    load({ published: () => ok(LATER) });
+    expect(tradingViewTab()).toHaveAttribute('aria-selected', 'true');
+    expect(panel()).toHaveTextContent('Reading the local TradingView import');
+    expect(marketScan()).toBeNull();
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(LATER)));
+    expect(shown()).toHaveValue('');
+    expect(screen.getByRole('status')).toHaveTextContent(`Scan ${LATER.scanId}`);
+  });
+
+  it('opens a new tab on market data, and restores market data when that was chosen', async () => {
+    const first = load();
+    expect(marketTab()).toHaveAttribute('aria-selected', 'true');
+    expect(marketScan()).toBeInTheDocument();
+    expect(stored()).toBeNull();
+    await openTradingView();
+    fireEvent.click(marketTab());
+    expect(stored()).toEqual({ source: 'market-data', scan: null });
+    first.unmount();
+
+    load();
+    expect(marketTab()).toHaveAttribute('aria-selected', 'true');
+    expect(marketScan()).toBeInTheDocument();
+  });
+
+  it.each(['{oops', '{"source":"binance"}', '"tradingview"'])(
+    'treats an unreadable entry (%s) as no earlier choice',
+    (entry) => {
+      sessionStorage.setItem(RESEARCH_SELECTION_KEY, entry);
+      load();
+      expect(marketTab()).toHaveAttribute('aria-selected', 'true');
+      expect(marketScan()).toBeInTheDocument();
+    },
+  );
+
+  it('keeps a restored scan that left the store selected, says so, and offers the way back', async () => {
+    const missing = '20261020T170000Z-0000dead';
+    restore({ source: 'tradingview', scan: missing });
+    const { reads } = load();
+    expect(tradingViewTab()).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `Saved scan ${missing} is no longer a TradingView snapshot in the scan store. Nothing from it is shown.`,
+    );
+    await within(shown()).findByRole('option', { name: `${missing} · not in the scan store` });
+    expect(rowsOf(panel())).toHaveLength(0);
+    expect(marketScan()).toBeNull();
+    expect(reads()).toContain(one(missing));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the latest published scan' }));
+    expect(shown()).toHaveFocus();
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(IMPORT)));
+    expect(shown()).toHaveValue('');
+    expect(stored()).toEqual({ source: 'tradingview', scan: null });
+  });
+
+  it('reads nothing for a restored reference that is not a scan ID, and offers the way back', async () => {
+    restore({ source: 'tradingview', scan: '../tradingview-dev-scan' });
+    const { reads } = load();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'The scan restored for this tab, ../tradingview-dev-scan, is not a scan ID, so nothing was read and nothing is shown.',
+    );
+    expect(
+      within(shown()).getByRole('option', { name: '../tradingview-dev-scan · not a scan ID' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reload saved scan' }));
+    await vi.waitFor(() => expect(reads().length).toBeGreaterThan(0));
+    expect(reads().every((url) => url === TRADINGVIEW_SAVED_SCANS_ROUTE)).toBe(true);
+    expect(marketScan()).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the latest published scan' }));
+    await vi.waitFor(() => expect(scores()).toEqual(scoresOf(IMPORT)));
+  });
+
+  it('shows a restored scan’s failed read as such, never another scan or source meanwhile', async () => {
+    let answer!: (response: Response) => void;
+    const late = new Promise<Response>((done) => (answer = done));
+    restore({ source: 'tradingview', scan: SAVED.scanId });
+    load({ saved: { [one(SAVED.scanId)]: () => late } });
+    // The published import has been read, and is still not shown in the saved scan's place.
+    await screen.findByRole('tab', { name: 'TradingView import 4' });
+    expect(panel()).toHaveTextContent(`Reading saved scan ${SAVED.scanId}`);
+    expect(rowsOf(panel())).toHaveLength(0);
+    expect(marketScan()).toBeNull();
+
+    answer(new Response('', { status: 500 }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      `Saved scan ${SAVED.scanId} could not be read (HTTP 500). Nothing from it is shown.`,
+    );
+    expect(rowsOf(panel())).toHaveLength(0);
+    expect(tradingViewTab()).toHaveAttribute('aria-selected', 'true');
+    expect(
+      screen.getByRole('button', { name: 'Show the latest published scan' }),
+    ).toBeInTheDocument();
+  });
+
+  it('starts every Manual Spot input empty after a full reload, and stores none of them', async () => {
+    wideScreen();
+    const first = load({ published: () => ok(CRYPTO) });
+    await openTradingView();
+    const section = await planBtc();
+    fireEvent.change(allocation(section), { target: { value: '1000' } });
+    fireEvent.change(within(section).getByLabelText(/^Maximum planned loss/), {
+      target: { value: '20' },
+    });
+    expect(sessionStorage).toHaveLength(1);
+    expect(stored()).toEqual({ source: 'tradingview', scan: null });
+    expect(localStorage.getItem(RESEARCH_SELECTION_KEY)).toBeNull();
+    first.unmount();
+
+    load({ published: () => ok(CRYPTO) });
+    expect(allocation(await planBtc())).toHaveValue('');
+  });
+
+  it('keeps Manual Spot inputs over an in-app reload of an unchanged file', async () => {
+    wideScreen();
+    const { published } = load({ published: () => ok(CRYPTO) });
+    await openTradingView();
+    fireEvent.change(allocation(await planBtc()), { target: { value: '1000' } });
+    const button = screen.getByRole('button', { name: 'Reload local scan' });
+    fireEvent.click(button);
+    await vi.waitFor(() => expect(published).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'false'));
+    const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
+    expect(allocation(section)).toHaveValue('1000');
+  });
+
+  it('starts the review over when a reload brings changed content under the same scan ID', async () => {
+    wideScreen();
+    // Same scan ID, import time and baseline, which the review was once keyed by; only the
+    // recorded notice differs.
+    const changed: DevScan = {
+      ...CRYPTO,
+      source: { ...CRYPTO.source, notice: 'A corrected notice (labeled fixture).' },
+    };
+    const answers = [CRYPTO, changed];
+    load({ published: () => ok(answers.length > 1 ? answers.shift() : answers[0]) });
+    await openTradingView();
+    fireEvent.change(allocation(await planBtc()), { target: { value: '1000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reload local scan' }));
+    await vi.waitFor(() => expect(panel()).toHaveTextContent('A corrected notice'));
+    expect(screen.queryByRole('region', { name: 'Manual Spot scenario' })).toBeNull();
+    expect(panel().querySelector('[aria-current="true"]')).toBeNull();
+    expect(allocation(await planBtc())).toHaveValue('');
+  });
+
+  it('neither reads nor writes a selection in a production build', () => {
+    vi.stubEnv('DEV', false);
+    restore({ source: 'tradingview', scan: SAVED.scanId });
+    const write = vi.spyOn(window.sessionStorage, 'setItem');
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Markets />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole('tablist', { name: 'Markets source' })).toBeNull();
+    expect(marketScan()).toBeInTheDocument();
+    expect(write).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
