@@ -60,14 +60,23 @@ Popup deliberately narrows that contract:
   the next request returns fewer.
 - Fills are not orders. Multiple fills sharing one `orderId` remain separate. The execution
   identity is `(symbol, trade ID)`, including when pages overlap or the same numeric trade ID occurs
-  on another symbol.
+  on another symbol. Repeated rows collapse only when every recorded field is exactly equal:
+  `symbol`, `tradeId`, `orderId`, `time`, `side`, `quantity`, `price`, `quoteQuantity`,
+  `commission` and `commissionAsset`. Decimal strings are compared character for character, so
+  `1.0` and `1.00` are different evidence even though they have the same numerical value. Distinct
+  rows under one identity are retained as conflicting variants; neither is treated as authoritative.
 - The view names selected pairs, requested range, records shown, retrieval time, partial failures
-  and whether another page may remain. It never calls a selected finite window lifetime history.
+  and whether a continuation remains. It calls the requested pairs and window complete only when
+  every requested pair reached a successful terminal page and the retrieval accumulated no pair,
+  page or continuation failure and no conflict. No continuation means only that no cursor remains;
+  it does not by itself mean that every requested page succeeded. Earlier failures and conflicts
+  stay attached to that retrieval. It never calls a selected finite window lifetime history.
   Binance does not state a lifetime-retention guarantee for this endpoint in the cited contract,
   so Popup makes none.
 - No execution read runs on mount or in the background. It is manual. A failed refresh retains and
-  labels the prior in-memory result; a changed selection clears it; a late answer cannot replace a
-  newer selection. Logout or account change unmounts and clears the private state.
+  labels the prior in-memory result without changing its coverage status. A successful explicit new
+  retrieval starts a new evidence state. A changed selection clears it; a late answer cannot replace
+  a newer selection. Logout or account change unmounts and clears the private state.
 - Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
   Executions alone cannot reconstruct balances.
 
@@ -95,11 +104,14 @@ Answers are applied in request order, and a snapshot is never replaced by one Bi
 earlier, so overlapping refreshes cannot move the view backwards.
 
 The execution section starts with no provider request. **Load executions** shows the exact pair and
-range, record count, retrieval time and whether another page may remain. Zero records says so for
-that selection. A failed page names the failure and retains prior records; partial pages name the
-failed pairs/pages. Invalid selections/continuations, permission refusal, rate limits, timeouts and
-malformed provider records remain distinct. A rate limit pauses both load buttons for Binance's
-`Retry-After` duration (60 seconds when none is usable).
+range, consistent-record count, conflicting-identity count, retrieval time, continuation availability
+and requested-coverage status. Zero records says so for that selection. A failed page names the
+failure and retains prior records; partial pages name the failed pairs/pages. Conflicting variants
+are shown with their exact recorded fields in a separate evidence table. A failed continuation keeps
+the same cursor available for an explicit retry, but the failure remains visible and the retrieval
+remains unresolved even if that retry succeeds. Invalid selections/continuations, permission refusal,
+rate limits, timeouts and malformed provider records remain distinct. A rate limit pauses both load
+buttons for Binance's `Retry-After` duration (60 seconds when none is usable).
 
 ## Binance documentation used
 
@@ -177,11 +189,13 @@ Three levels, kept apart. Only the first two have been run.
 `src/test/binanceSpotAccountHandler.test.ts`, `src/test/binanceSpotBalances.test.tsx` and
 `src/test/binanceSpotExecutions.test.tsx`. Balance coverage includes one initial read under React
 StrictMode and an answer that arrives after the account changed being ignored. Execution coverage
-includes multiple fills with one order ID, duplicate and overlapping pages, the same trade ID on
-different symbols, decimal precision and commission assets, pagination boundaries and signed
-continuations, partial failure, invalid symbol/range/continuation, refusal before Binance, rate
-limits, timeouts, malformed records, account switching/late responses, keyboard controls, no
-storage/ledger imports and the fixed four-GET allowlist.
+includes multiple fills with one order ID, identical and conflicting duplicates within and across
+pages, the same trade ID on different symbols, exact decimal-representation conflicts, pagination
+boundaries and signed continuations, accumulated pair/page and continuation failures, a failed
+terminal page, an exactly full page followed by an empty terminal page, fresh and failed refreshes,
+invalid symbol/range/continuation, refusal before Binance, rate limits, timeouts, malformed records,
+account switching/late responses, keyboard controls, no storage/ledger imports and the fixed
+four-GET allowlist.
 
 **Local runtime integration (2026-11-10).** Browser → edge function → Supabase Auth → account
 reader → card, on an isolated local Supabase stack (CLI 2.118, edge runtime 1.76.2) with two

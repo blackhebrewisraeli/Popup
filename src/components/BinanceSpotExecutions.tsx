@@ -3,6 +3,7 @@ import { History } from 'lucide-react';
 import {
   readSpotExecutions,
   type SpotExecution,
+  type SpotExecutionConflict,
   type SpotExecutionFailure,
   type SpotExecutionRead,
   type SpotExecutionSelection,
@@ -34,6 +35,7 @@ const DEFAULT_BACKOFF_SECONDS = 60;
 
 interface ExecutionSnapshot {
   executions: SpotExecution[];
+  conflicts: SpotExecutionConflict[];
   symbols: string[];
   startTime: number;
   endTime: number;
@@ -41,6 +43,8 @@ interface ExecutionSnapshot {
   lastPageReturned: number;
   continuation: string | null;
   partialFailures: SpotExecutionFailure[];
+  completedSymbols: string[];
+  continuationFailures: SpotFailure[];
 }
 
 function failureText(failure: SpotFailure): string {
@@ -66,12 +70,60 @@ function failureText(failure: SpotFailure): string {
   }
 }
 
-function deduplicate(executions: SpotExecution[]): SpotExecution[] {
+function executionIdentity(execution: SpotExecution): string {
+  return `${execution.symbol}:${execution.tradeId}`;
+}
+
+function sameExecution(left: SpotExecution, right: SpotExecution): boolean {
+  return (
+    left.symbol === right.symbol &&
+    left.tradeId === right.tradeId &&
+    left.orderId === right.orderId &&
+    left.time === right.time &&
+    left.side === right.side &&
+    left.quantity === right.quantity &&
+    left.price === right.price &&
+    left.quoteQuantity === right.quoteQuantity &&
+    left.commission === right.commission &&
+    left.commissionAsset === right.commissionAsset
+  );
+}
+
+function mergeEvidence(
+  current: Pick<ExecutionSnapshot, 'executions' | 'conflicts'> | null,
+  executions: SpotExecution[],
+  conflicts: SpotExecutionConflict[],
+): Pick<ExecutionSnapshot, 'executions' | 'conflicts'> {
+  const variantsByIdentity = new Map<string, SpotExecution[]>();
+  const add = (execution: SpotExecution) => {
+    const identity = executionIdentity(execution);
+    const variants = variantsByIdentity.get(identity);
+    if (variants === undefined) variantsByIdentity.set(identity, [execution]);
+    else if (!variants.some((variant) => sameExecution(variant, execution))) {
+      variants.push(execution);
+    }
+  };
+  current?.executions.forEach(add);
+  current?.conflicts.forEach((conflict) => conflict.variants.forEach(add));
+  executions.forEach(add);
+  conflicts.forEach((conflict) => conflict.variants.forEach(add));
+
+  const consistent: SpotExecution[] = [];
+  const inconsistent: SpotExecutionConflict[] = [];
+  for (const variants of variantsByIdentity.values()) {
+    const first = variants[0] as SpotExecution;
+    if (variants.length === 1) consistent.push(first);
+    else inconsistent.push({ symbol: first.symbol, tradeId: first.tradeId, variants });
+  }
+  return { executions: consistent, conflicts: inconsistent };
+}
+
+function uniqueFailures(failures: SpotExecutionFailure[]): SpotExecutionFailure[] {
   const seen = new Set<string>();
-  return executions.filter((execution) => {
-    const identity = `${execution.symbol}:${execution.tradeId}`;
-    if (seen.has(identity)) return false;
-    seen.add(identity);
+  return failures.filter((failure) => {
+    const key = `${failure.symbol}:${failure.error}:${failure.retryAfterSeconds ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -101,19 +153,41 @@ function nextSnapshot(
   more: boolean,
 ): ExecutionSnapshot | null {
   if (result.state === 'error') {
-    return result.error === 'unauthenticated' || result.error === 'forbidden' ? null : current;
+    if (result.error === 'unauthenticated' || result.error === 'forbidden') return null;
+    return more && current
+      ? { ...current, continuationFailures: [...current.continuationFailures, result] }
+      : current;
   }
   if (result.state !== 'executions') return null;
+  const accumulated = more ? current : null;
+  const evidence = mergeEvidence(accumulated, result.executions, result.conflicts);
   return {
-    executions: deduplicate([...(more && current ? current.executions : []), ...result.executions]),
+    ...evidence,
     symbols: result.coverage.symbols,
     startTime: result.coverage.startTime,
     endTime: result.coverage.endTime,
     retrievedAt: result.coverage.retrievedAt,
     lastPageReturned: result.coverage.returned,
     continuation: result.continuation ?? null,
-    partialFailures: result.coverage.failures,
+    partialFailures: uniqueFailures([
+      ...(accumulated?.partialFailures ?? []),
+      ...result.coverage.failures,
+    ]),
+    completedSymbols: [
+      ...new Set([...(accumulated?.completedSymbols ?? []), ...result.coverage.completedSymbols]),
+    ],
+    continuationFailures: accumulated?.continuationFailures ?? [],
   };
+}
+
+function requestedCoverageComplete(snapshot: ExecutionSnapshot): boolean {
+  return (
+    snapshot.continuation === null &&
+    snapshot.partialFailures.length === 0 &&
+    snapshot.continuationFailures.length === 0 &&
+    snapshot.conflicts.length === 0 &&
+    snapshot.symbols.every((symbol) => snapshot.completedSymbols.includes(symbol))
+  );
 }
 
 function ExecutionResults({
@@ -126,6 +200,7 @@ function ExecutionResults({
   onNextPage: (continuation: string) => void;
 }>) {
   const next = snapshot.continuation;
+  const complete = requestedCoverageComplete(snapshot);
   return (
     <>
       <dl className="spot-coverage" aria-label="Execution history coverage">
@@ -150,6 +225,10 @@ function ExecutionResults({
           <dd>{snapshot.executions.length}</dd>
         </div>
         <div>
+          <dt>Conflicting identities</dt>
+          <dd>{snapshot.conflicts.length}</dd>
+        </div>
+        <div>
           <dt>Retrieved</dt>
           <dd>
             <time dateTime={snapshot.retrievedAt}>
@@ -158,8 +237,12 @@ function ExecutionResults({
           </dd>
         </div>
         <div>
-          <dt>More results</dt>
-          <dd>{next ? 'Yes' : 'No'}</dd>
+          <dt>Continuation</dt>
+          <dd>{next ? 'Available' : 'None'}</dd>
+        </div>
+        <div>
+          <dt>Requested coverage</dt>
+          <dd>{complete ? 'Complete for requested pairs and window' : 'Incomplete'}</dd>
         </div>
       </dl>
 
@@ -173,9 +256,32 @@ function ExecutionResults({
         </p>
       )}
 
+      {snapshot.continuationFailures.length > 0 && (
+        <p className="spot-failed" role="alert">
+          Continuation failed earlier. This retrieval remains unresolved even if a later request
+          succeeded: {snapshot.continuationFailures.map((item) => failureText(item)).join(' ')}
+        </p>
+      )}
+
+      {snapshot.conflicts.length > 0 && (
+        <p className="spot-failed" role="alert">
+          Inconsistent execution evidence. Conflicting rows share one pair and trade ID; no variant
+          is authoritative:{' '}
+          {snapshot.conflicts
+            .map(
+              (conflict) =>
+                `${conflict.symbol} trade ${conflict.tradeId} (${conflict.variants.length} variants)`,
+            )
+            .join(', ')}
+          .
+        </p>
+      )}
+
       {snapshot.executions.length === 0 ? (
         <p className="spot-note">
-          Binance returned no executions for the selected pair in this requested range.
+          {snapshot.conflicts.length > 0 || snapshot.partialFailures.length > 0
+            ? 'No consistent executions are available for this requested range.'
+            : 'Binance returned no executions for the selected pair in this requested range.'}
         </p>
       ) : (
         <div className="spot-execution-scroll">
@@ -219,6 +325,52 @@ function ExecutionResults({
         </div>
       )}
 
+      {snapshot.conflicts.length > 0 && (
+        <div className="spot-execution-scroll">
+          <table className="spot-table spot-execution-table">
+            <caption className="sr-only">Conflicting Binance Spot execution evidence</caption>
+            <thead>
+              <tr>
+                <th scope="col">Variant</th>
+                <th scope="col">Time</th>
+                <th scope="col">Pair</th>
+                <th scope="col">Side</th>
+                <th scope="col">Trade ID</th>
+                <th scope="col">Order ID</th>
+                <th scope="col">Quantity</th>
+                <th scope="col">Price</th>
+                <th scope="col">Quote quantity</th>
+                <th scope="col">Commission</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.conflicts.flatMap((conflict) =>
+                conflict.variants.map((variant, index) => (
+                  <tr key={`${executionIdentity(variant)}:${index}`}>
+                    <th scope="row">{index + 1}</th>
+                    <td>
+                      <time dateTime={new Date(variant.time).toISOString()}>
+                        {new Date(variant.time).toLocaleString()}
+                      </time>
+                    </td>
+                    <td>{variant.symbol}</td>
+                    <td>{variant.side}</td>
+                    <td>{variant.tradeId}</td>
+                    <td>{variant.orderId}</td>
+                    <td>{variant.quantity}</td>
+                    <td>{variant.price}</td>
+                    <td>{variant.quoteQuantity}</td>
+                    <td>
+                      {variant.commission} {variant.commissionAsset}
+                    </td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <p className="spot-note">
         Commissions stay in the asset Binance recorded; Popup does not convert BNB or another fee
         asset into USDT or USD. Execution history alone cannot reconstruct all balances.
@@ -229,7 +381,7 @@ function ExecutionResults({
         aria-disabled={busy !== null || !next}
         onClick={next ? () => onNextPage(next) : undefined}
       >
-        {busy ?? (next ? 'Load next page' : 'No more results')}
+        {busy ?? (next ? 'Load next page' : 'No continuation')}
       </button>
     </>
   );
@@ -244,6 +396,7 @@ export function BinanceSpotExecutions({
   const [hours, setHours] = useState(24);
   const [snapshot, setSnapshot] = useState<ExecutionSnapshot | null>(null);
   const [failure, setFailure] = useState<SpotFailure | null>(null);
+  const [failureContext, setFailureContext] = useState<'refresh' | 'continuation' | null>(null);
   const [loading, setLoading] = useState(false);
   const [pausedUntil, setPausedUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -268,6 +421,7 @@ export function BinanceSpotExecutions({
     setHours(nextHours);
     setSnapshot(null);
     setFailure(null);
+    setFailureContext(null);
     setLoading(false);
   };
 
@@ -282,6 +436,7 @@ export function BinanceSpotExecutions({
       const seq = ++seqRef.current;
       setLoading(true);
       setFailure(null);
+      setFailureContext(null);
       const endTime = Date.now();
       const request: SpotExecutionSelection | { continuation: string } = continuation
         ? { continuation }
@@ -294,6 +449,9 @@ export function BinanceSpotExecutions({
           if (!current) return;
           setLoading(false);
           setFailure(result.state === 'error' ? result : null);
+          setFailureContext(
+            result.state === 'error' ? (continuation ? 'continuation' : 'refresh') : null,
+          );
           setSnapshot((shown) => nextSnapshot(shown, result, continuation !== null));
           const backoff = backoffSeconds(result);
           if (backoff !== null) setPausedUntil(Date.now() + backoff * 1000);
@@ -352,7 +510,12 @@ export function BinanceSpotExecutions({
 
       {failure && (
         <p className="spot-failed" role="alert">
-          {snapshot && 'Refresh failed. Retaining the records shown below. '}
+          {snapshot &&
+            failureContext === 'continuation' &&
+            'Continuation failed. Retaining the accumulated evidence below. '}
+          {snapshot &&
+            failureContext === 'refresh' &&
+            'Refresh failed. Retaining the previous result below unchanged. '}
           {failureText(failure)}
         </p>
       )}

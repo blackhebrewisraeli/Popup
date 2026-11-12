@@ -7,12 +7,14 @@ import type {
   SpotAccountResponse,
   SpotBalance,
   SpotExecution,
+  SpotExecutionConflict,
   SpotExecutionCoverage,
 } from '../../supabase/functions/binance-spot-account/handler';
 
 export type {
   SpotBalance,
   SpotExecution,
+  SpotExecutionConflict,
   SpotExecutionCoverage,
   SpotExecutionFailure,
 } from '../../supabase/functions/binance-spot-account/handler';
@@ -74,6 +76,41 @@ const isExecution = (row: unknown): row is SpotExecution =>
   typeof row['commission'] === 'string' &&
   typeof row['commissionAsset'] === 'string';
 
+const sameExecution = (left: SpotExecution, right: SpotExecution): boolean =>
+  left.symbol === right.symbol &&
+  left.tradeId === right.tradeId &&
+  left.orderId === right.orderId &&
+  left.time === right.time &&
+  left.side === right.side &&
+  left.quantity === right.quantity &&
+  left.price === right.price &&
+  left.quoteQuantity === right.quoteQuantity &&
+  left.commission === right.commission &&
+  left.commissionAsset === right.commissionAsset;
+
+function isConflict(value: unknown): value is SpotExecutionConflict {
+  if (
+    !isRecord(value) ||
+    typeof value['symbol'] !== 'string' ||
+    typeof value['tradeId'] !== 'string' ||
+    !Array.isArray(value['variants']) ||
+    value['variants'].length < 2 ||
+    !value['variants'].every(isExecution)
+  ) {
+    return false;
+  }
+  const variants = value['variants'];
+  return (
+    variants.every(
+      (variant) => variant.symbol === value['symbol'] && variant.tradeId === value['tradeId'],
+    ) &&
+    variants.every(
+      (variant, index) =>
+        !variants.slice(0, index).some((earlier) => sameExecution(earlier, variant)),
+    )
+  );
+}
+
 function parseFailure(body: Record<string, unknown>): SpotFailure | null {
   if (body['state'] !== 'error' || typeof body['error'] !== 'string') return null;
   if (!ERROR_CODES.has(body['error'])) return null;
@@ -118,6 +155,8 @@ export function parseSpotExecutionRead(body: unknown): SpotExecutionRead {
     body['state'] !== 'executions' ||
     !Array.isArray(body['executions']) ||
     !body['executions'].every(isExecution) ||
+    !Array.isArray(body['conflicts']) ||
+    !body['conflicts'].every(isConflict) ||
     !isRecord(coverage) ||
     !Array.isArray(coverage['symbols']) ||
     !coverage['symbols'].every((symbol) => typeof symbol === 'string') ||
@@ -129,6 +168,8 @@ export function parseSpotExecutionRead(body: unknown): SpotExecutionRead {
     typeof coverage['hasMore'] !== 'boolean' ||
     typeof coverage['partial'] !== 'boolean' ||
     !Array.isArray(coverage['failures']) ||
+    !Array.isArray(coverage['completedSymbols']) ||
+    !coverage['completedSymbols'].every((symbol) => typeof symbol === 'string') ||
     coverage['limitation'] !== 'selected_pairs_and_24h_window'
   ) {
     return { state: 'unavailable' };
@@ -146,12 +187,32 @@ export function parseSpotExecutionRead(body: unknown): SpotExecutionRead {
     return { state: 'unavailable' };
   }
   const executions = body['executions'].map((execution) => ({ ...execution })) as SpotExecution[];
+  const conflicts = body['conflicts'].map((conflict) => ({
+    symbol: conflict.symbol,
+    tradeId: conflict.tradeId,
+    variants: conflict.variants.map((variant) => ({ ...variant })),
+  })) as SpotExecutionConflict[];
   if (coverage['returned'] !== executions.length) return { state: 'unavailable' };
+  const symbols = coverage['symbols'] as string[];
+  const completedSymbols = coverage['completedSymbols'] as string[];
+  if (
+    new Set(completedSymbols).size !== completedSymbols.length ||
+    completedSymbols.some((symbol) => !symbols.includes(symbol)) ||
+    conflicts.some((conflict) =>
+      executions.some(
+        (execution) =>
+          execution.symbol === conflict.symbol && execution.tradeId === conflict.tradeId,
+      ),
+    )
+  ) {
+    return { state: 'unavailable' };
+  }
   return {
     state: 'executions',
     executions,
+    conflicts,
     coverage: {
-      symbols: [...coverage['symbols']] as string[],
+      symbols: [...symbols],
       startTime: coverage['startTime'],
       endTime: coverage['endTime'],
       returned: coverage['returned'],
@@ -165,6 +226,7 @@ export function parseSpotExecutionRead(body: unknown): SpotExecutionRead {
           ? { retryAfterSeconds: failure['retryAfterSeconds'] }
           : {}),
       })),
+      completedSymbols: [...completedSymbols],
       limitation: 'selected_pairs_and_24h_window',
     },
     ...(typeof body['continuation'] === 'string' ? { continuation: body['continuation'] } : {}),

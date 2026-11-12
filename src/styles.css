@@ -3765,6 +3765,7 @@ body {
 .spot-table {
   width: 100%;
   border-collapse: collapse;
+  color: var(--foreground);
   font:
     500 13px 'JetBrains Mono',
     monospace;

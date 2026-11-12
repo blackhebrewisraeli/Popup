@@ -102,6 +102,13 @@ export interface SpotExecutionFailure {
   retryAfterSeconds?: number;
 }
 
+export interface SpotExecutionConflict {
+  symbol: string;
+  tradeId: string;
+  /** Distinct rows for one identity. Exact decimal spellings are evidence. */
+  variants: SpotExecution[];
+}
+
 export interface SpotExecutionCoverage {
   symbols: string[];
   startTime: number;
@@ -111,6 +118,8 @@ export interface SpotExecutionCoverage {
   hasMore: boolean;
   partial: boolean;
   failures: SpotExecutionFailure[];
+  /** Pairs whose terminal page succeeded in this response. */
+  completedSymbols: string[];
   /** Binance documents symbol-scoped, finite requests, not lifetime completeness. */
   limitation: 'selected_pairs_and_24h_window';
 }
@@ -133,6 +142,7 @@ export type SpotAccountResponse =
   | {
       state: 'executions';
       executions: SpotExecution[];
+      conflicts: SpotExecutionConflict[];
       coverage: SpotExecutionCoverage;
       continuation?: string;
     }
@@ -280,16 +290,36 @@ function parseExecutionRow(row: unknown, expectedSymbol: string): SpotExecution 
   };
 }
 
+/** Every recorded field must match exactly; decimal strings are never normalized. */
+function sameExecution(left: SpotExecution, right: SpotExecution): boolean {
+  return (
+    left.symbol === right.symbol &&
+    left.tradeId === right.tradeId &&
+    left.orderId === right.orderId &&
+    left.time === right.time &&
+    left.side === right.side &&
+    left.quantity === right.quantity &&
+    left.price === right.price &&
+    left.quoteQuantity === right.quoteQuantity &&
+    left.commission === right.commission &&
+    left.commissionAsset === right.commissionAsset
+  );
+}
+
 /** Parse one documented myTrades page without rounding or merging fills. */
 export function parseExecutions(
   body: unknown,
   expectedSymbol: string,
   startTime: number,
   endTime: number,
-): { executions: SpotExecution[]; lastTradeId: string | null; crossedEnd: boolean } | null {
+): {
+  executions: SpotExecution[];
+  conflicts: SpotExecutionConflict[];
+  lastTradeId: string | null;
+  crossedEnd: boolean;
+} | null {
   if (!Array.isArray(body)) return null;
-  const executions: SpotExecution[] = [];
-  const seen = new Set<string>();
+  const variantsByTrade = new Map<string, SpotExecution[]>();
   let lastTradeId: string | null = null;
   let crossedEnd = false;
   for (const row of body) {
@@ -299,11 +329,21 @@ export function parseExecutions(
     if (lastTradeId !== null && BigInt(tradeId) < BigInt(lastTradeId)) return null;
     lastTradeId = tradeId;
     crossedEnd ||= time > endTime;
-    if (time > endTime || time < startTime || seen.has(tradeId)) continue;
-    seen.add(tradeId);
-    executions.push(execution);
+    if (time > endTime || time < startTime) continue;
+    const variants = variantsByTrade.get(tradeId);
+    if (variants === undefined) {
+      variantsByTrade.set(tradeId, [execution]);
+    } else if (!variants.some((variant) => sameExecution(variant, execution))) {
+      variants.push(execution);
+    }
   }
-  return { executions, lastTradeId, crossedEnd };
+  const executions: SpotExecution[] = [];
+  const conflicts: SpotExecutionConflict[] = [];
+  for (const [tradeId, variants] of variantsByTrade) {
+    if (variants.length === 1) executions.push(variants[0] as SpotExecution);
+    else conflicts.push({ symbol: expectedSymbol, tradeId, variants });
+  }
+  return { executions, conflicts, lastTradeId, crossedEnd };
 }
 
 function base64UrlEncode(value: string): string {
@@ -583,7 +623,11 @@ async function readSymbolPage(
   symbol: string,
   fromId: string,
   range: { startTime: number; endTime: number },
-): Promise<{ executions: SpotExecution[]; next: string | null }> {
+): Promise<{
+  executions: SpotExecution[];
+  conflicts: SpotExecutionConflict[];
+  next: string | null;
+}> {
   const { startTime, endTime } = range;
   const params =
     fromId === ''
@@ -599,6 +643,7 @@ async function readSymbolPage(
   const more = fullPage && parsed.lastTradeId !== null && !parsed.crossedEnd;
   return {
     executions: parsed.executions,
+    conflicts: parsed.conflicts,
     next: more ? (BigInt(parsed.lastTradeId as string) + 1n).toString() : null,
   };
 }
@@ -625,7 +670,9 @@ async function readExecutions(
   const signed = { apiKey, query: await verifiedSignedQuery(deps, apiKey, apiSecret) };
   // Each pair is read once and its page holds only its own, already distinct, trades.
   const executions: SpotExecution[] = [];
+  const conflicts: SpotExecutionConflict[] = [];
   const failures: SpotExecutionFailure[] = [];
+  const completedSymbols: string[] = [];
   const next: Record<string, string> = {};
   // A pair with no cursor completed on an earlier page.
   const pending = symbols.filter((symbol) => nextBySymbol[symbol] !== undefined);
@@ -637,7 +684,9 @@ async function readExecutions(
         endTime,
       });
       executions.push(...page.executions);
+      conflicts.push(...page.conflicts);
       if (page.next !== null) next[symbol] = page.next;
+      else completedSymbols.push(symbol);
     } catch (error) {
       const failure = error instanceof Failure ? error : new Failure('provider_error');
       // A rate limit is IP-wide. Stop rather than spend more provider requests;
@@ -654,6 +703,7 @@ async function readExecutions(
   return {
     state: 'executions',
     executions,
+    conflicts,
     coverage: {
       symbols,
       startTime,
@@ -663,6 +713,7 @@ async function readExecutions(
       hasMore,
       partial: failures.length > 0,
       failures,
+      completedSymbols,
       limitation: 'selected_pairs_and_24h_window',
     },
     ...(hasMore
@@ -776,6 +827,7 @@ export async function handleSpotAccount(req: Request, deps: AccountDeps): Promis
       const result = await readExecutions(deps, apiKey, apiSecret, operation);
       return respond(200, result, {
         records: result.executions.length,
+        conflicts: result.conflicts.length,
         symbols: result.coverage.symbols.length,
         partial: result.coverage.partial,
         hasMore: result.coverage.hasMore,
