@@ -7,6 +7,7 @@ import type { SpotExecutionRead, SpotFailure } from '@/lib/binanceSpotAccount';
 import type {
   SpotExecution,
   SpotExecutionConflict,
+  SpotExecutionCoverage,
   SpotExecutionFailure,
 } from '../../supabase/functions/binance-spot-account/handler';
 
@@ -102,10 +103,22 @@ function uniqueFailures(failures: SpotExecutionFailure[]): SpotExecutionFailure[
   });
 }
 
+/** A continued answer belongs to a retrieval only if it names the same pairs and window. */
+function sameSelection(evidence: SpotExecutionEvidence, coverage: SpotExecutionCoverage): boolean {
+  return (
+    coverage.startTime === evidence.startTime &&
+    coverage.endTime === evidence.endTime &&
+    coverage.symbols.length === evidence.symbols.length &&
+    coverage.symbols.every((symbol, index) => symbol === evidence.symbols[index])
+  );
+}
+
 /**
  * The evidence after one answer. `continued` is true when the answer is to a continuation
  * of `current`; otherwise a successful answer starts a new retrieval. A failed answer keeps
- * the earlier evidence unless access was lost, and a failed continuation stays recorded.
+ * the earlier evidence unless access was lost, and a failed continuation stays recorded. A
+ * continued answer for other pairs or another window, or with nothing to continue, is never
+ * merged.
  */
 export function nextExecutionEvidence(
   current: SpotExecutionEvidence | null,
@@ -119,6 +132,19 @@ export function nextExecutionEvidence(
       : current;
   }
   if (result.state !== 'executions') return null;
+  if (continued && (current === null || !sameSelection(current, result.coverage))) {
+    // Merging would claim pages this retrieval never read. Like any failed continuation it
+    // is kept as evidence, with the cursor, and the retrieval stays unresolved.
+    return (
+      current && {
+        ...current,
+        continuationFailures: [
+          ...current.continuationFailures,
+          { state: 'error', error: 'invalid_request' },
+        ],
+      }
+    );
+  }
   const accumulated = continued ? current : null;
   const evidence = mergeEvidence(accumulated, result.executions, result.conflicts);
   return {
