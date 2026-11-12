@@ -86,10 +86,16 @@ whether to act, and where; Popup places no orders.
   traces it to volatility: crypto's median ATR/close (6.4%) puts 85.5% of pair-days in
   HIGH_VOLATILITY, where no RSI or momentum reading can reach the Long score above 4.25%, and
   99.7% of Risk observations rest on that clause. No defect found.
-- **Risk clauses named in Research:** draft [#154](https://github.com/blackhebrewisraeli/Popup/pull/154) labels every Risk warning
+- **Risk clauses named in Research:** [#154](https://github.com/blackhebrewisraeli/Popup/pull/154) (merged `6e99803`) labels every Risk warning
   by the clause that holds it, **High volatility** or **Low score** or both, on row tags and
   accessible names, evidence, comparison, the Manual Spot scenario and the landing example. Wording
   only: the Risk warnings view, its counts, ranks and scan-change transitions are unchanged.
+- **Crypto workflow acceptance (2026-11-12):** draft [#155](https://github.com/blackhebrewisraeli/Popup/pull/155). A fresh `crypto-usdt-v1` retrieval on `6e99803`
+  passed start → capture → finish → Research → evidence → Manual Spot scenario, with offline
+  `MATCH`, an idempotent second finish and the first crypto comparison
+  ([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)). No code defect; the runbook prompt now covers the
+  crypto start and short results shown inline. Two behaviours await an owner decision: **Scan
+  shown** resets on a page reload, and an in-app reload of an unchanged file keeps scenario inputs.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -108,7 +114,7 @@ whether to act, and where; Popup places no orders.
 `20261107T170244Z-76cde900` as the baseline, and report the published crypto view under
 `preservedView`; crypto imports are no longer candidates and are not listed. Research should show
 the same counts after **Reload local scan**, and every scan under **Scan shown**. The first crypto
-comparison needs a second `crypto-usdt-v1` retrieval on a later UTC day. From 2026-11-13 UTC,
+comparison is done (10 → 11 Nov, 2026-11-12). From 2026-11-13 UTC,
 each daily crypto scan finished before UTC midnight is also a prospective observation; keep
 `.zerochart-scans`.
 
@@ -128,6 +134,21 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-12 · TradingView crypto workflow acceptance · Draft PR
+  [#155](https://github.com/blackhebrewisraeli/Popup/pull/155), documentation only.** Decision: verify the existing flow end to end and fix only what blocks or misrepresents
+  it; nothing in the code did. Evidence, kept apart in [the matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md):
+  fresh live retrieval `20261112T012214Z` (25 of 25 captured, two inline short results copied byte
+  for byte from the session transcript, read-only alert check); scan `20261112T012214Z-dc217757`,
+  `PARTIAL` 23 of 25, 0 Long, 20 Risk, offline `MATCH` also with outbound IP denied; a second
+  finish `ALREADY_IMPORTED` with both stores byte-identical; an independent script confirmed exact
+  symbols, one cutoff, closed bars, 199-day history, freshness and accounting for all 25. In the
+  browser, all 23 rows matched the snapshot in the published view and its saved copy; evidence,
+  scenario arithmetic (against a `Decimal` reference, fees included), 15 validation cases,
+  clearing on asset, scan and sheet changes, no storage write or account call, keyboard, desktop
+  and 375 px all passed. The first crypto comparison (10 → 11 Nov) matched a recomputation. The
+  runbook prompt now names the crypto start and the inline-result step. Not prospective (11 Nov
+  precedes the period). Next: owner decision on the two reload behaviours (matrix C7, C12).
 
 - **2026-11-12 · Name the Risk clause in Research · Draft PR
   [#154](https://github.com/blackhebrewisraeli/Popup/pull/154).** Decision: wording only, from `explainResult`'s own clauses, so no

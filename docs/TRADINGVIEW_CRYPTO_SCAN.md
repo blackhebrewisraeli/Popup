@@ -119,7 +119,8 @@ Between two crypto scans, days that were never evaluated are counted in UTC days
 ## Running it
 
 The [owner runbook](MARKET_SCANNER.md#refreshing-it-owner-runbook), with
-`npm run evaluate -- tradingview-start --universe crypto-usdt-v1` in step 1. Fresh retrieval needs an
+`npm run evaluate -- tradingview-start --universe crypto-usdt-v1` in step 1 (its prompt covers the
+inline case below). Fresh retrieval needs an
 agent session with TradingView's MCP server connected and signed in as the owner; Popup cannot
 fetch TradingView bars itself and nothing re-scans on a schedule.
 
@@ -152,6 +153,16 @@ stay in git-ignored local storage.
   list), at 375 px (no horizontal overflow; the evidence sheet closes back to its row), with Up and
   Down focus and Enter selection, and switching **Scan shown** to the 90-member equity scan and
   back.
+
+## End-to-end acceptance, 2026-11-12
+
+A second retrieval on `main` `6e99803` repeated the whole flow
+([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)): scan `20261112T012214Z-dc217757`, 11 Nov UTC day,
+23 of 25 evaluated (the same two short histories), 0 Long, 20 Risk, offline `MATCH`, an idempotent
+second finish, and the first crypto comparison (against the 10 Nov scan: no setup appeared or
+cleared). Research matched the snapshot row for row, and the Manual Spot scenario matched an
+independent decimal reference. No code defect was found; the runbook prompt gained the crypto
+start command and the inline-result step.
 
 ## Historical study
 

@@ -245,7 +245,9 @@ Run Popup's TradingView development scan. You retrieve; the repository's helper 
 and reproduces. Local only: never commit, publish or send anything you retrieve.
 
 1. Run `npm run evaluate -- tradingview-start` (the default 50), or
-   `npm run evaluate -- tradingview-start --universe all` only when the owner asked for all 90.
+   `npm run evaluate -- tradingview-start --universe all` only when the owner asked for all 90, or
+   `npm run evaluate -- tradingview-start --universe crypto-usdt-v1` only when the owner asked for
+   the crypto scan.
    Note RETRIEVAL_ID, universe, validUntil and the symbols under `retry`. If validUntil is less
    than 15 minutes away, stop and start again after it.
 2. For each symbol under `retry`, call TradingView `get_ohlcv` with exactly that symbol,
@@ -254,7 +256,10 @@ and reproduces. Local only: never commit, publish or send anything you retrieve.
    `npm run evaluate -- tradingview-capture RETRIEVAL_ID SYMBOL=PATH SYMBOL=PATH ...`,
    pairing each symbol with the file its own call's result was saved to. Never retype, edit or
    merge response data. For a call that returned an error, run
-   `npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "<the error>"`.
+   `npm run evaluate -- tradingview-fail RETRIEVAL_ID SYMBOL "<the error>"`. A short result (a
+   young crypto listing) may be shown inline instead of saved to a file: copy it byte for byte
+   from your client's own record of that call, with that record's time as the file's modification
+   time, and capture that file; if you cannot, record it with `tradingview-fail` and say so.
 4. Repeat steps 2-3 for the symbols the last capture lists under `retry`, at most three rounds,
    while `window` is OPEN. Never substitute another symbol, venue, provider or remembered value.
 5. Call TradingView `list_alerts` once (read only), then run
@@ -262,7 +267,8 @@ and reproduces. Local only: never commit, publish or send anything you retrieve.
 6. Run `npm run evaluate -- tradingview-finish RETRIEVAL_ID`. Report its outcome, the requested,
    evaluated and failed counts, every failure with its reason, universe, evaluatedSession, scanId,
    reproduction, viewStatus and preservedView. Only outcome COMPLETE with reproduction MATCH is a full success;
-   state PARTIAL, REFUSED or NOT_REPRODUCED plainly. From `baseline`, report status, chosenBy,
+   state PARTIAL, REFUSED or NOT_REPRODUCED plainly (a crypto scan stays PARTIAL, and the command
+   exits non-zero, while a member has fewer than 199 closed UTC days). From `baseline`, report status, chosenBy,
    before.scanId with before.session and after.session, the Long, Risk and score counts, reason,
    and every entry under skipped with its reason.
 7. If viewStatus is PUBLISHED, run `npm run dev`, open http://localhost:8080/?devAuth=1, go to
