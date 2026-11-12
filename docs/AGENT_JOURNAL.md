@@ -95,7 +95,7 @@ whether to act, and where; Popup places no orders.
   `MATCH`, an idempotent second finish and the first crypto comparison
   ([matrix](TRADINGVIEW_CRYPTO_ACCEPTANCE.md)). No code defect; the runbook prompt now covers the
   crypto start and short results shown inline.
-- **Research selection across reloads (2026-11-12):** draft follow-up (this branch). Owner
+- **Research selection across reloads (2026-11-12):** draft [#156](https://github.com/blackhebrewisraeli/Popup/pull/156). Owner
   decisions on the two open rows: a full page reload now restores the source and **Scan shown**
   (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
   even under the same scan ID, resets them (C12, revised).
@@ -138,8 +138,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Restore the Research source and scan after a full reload · Draft PR (this
-  branch).** Decision: the smallest mechanism, per tab. `useResearchSelection` keeps the source
+- **2026-11-12 · Restore the Research source and scan after a full reload · Draft PR
+  [#156](https://github.com/blackhebrewisraeli/Popup/pull/156).** Decision: the smallest mechanism, per tab. `useResearchSelection` keeps the source
   and a scan ID in `sessionStorage` under `vite dev` only, read synchronously at mount (the shell
   renders only after client-side auth, so there is no hydration mismatch and no frame of Market
   data). Nothing else is kept: no results, prices, selection or scenario input. A restored scan is
