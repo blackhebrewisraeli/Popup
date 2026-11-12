@@ -6,22 +6,29 @@ Binance connection works (none has run), that account history is complete, or th
 measured this way are economically useful. Canonical model `1.0.0` stays descriptive.
 
 It builds on the read-only integration in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md) and
-does not repeat the provider contract recorded there. Code links point to `56366db`.
+does not repeat the provider contract recorded there. Code links in the historical gap analysis
+point to `56366db`.
+
+[#157](https://github.com/blackhebrewisraeli/Popup/pull/157) merged the original stage-D
+specification at `62f4fbb`. Commit `ddb949b` was a later documentation correction, not part of that
+merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158) carried its corrected contract
+onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite from section 8 is
+now implemented. Reconciliation, acquisition cost and P&L remain unimplemented.
 
 [p]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts
 
 ## 1. What the integration records today
 
-| Topic           | Recorded and guaranteed                                                                                                                                                                                                                                                            | Gap for reconciliation                                                                                                                                                                                                                                                                                                                             |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Balances        | `asset`, `free`, `locked` as Binance's decimal strings. Zero rows are omitted by Binance (`omitZeroBalances=true`) and again by Popup, so an asset absent from a successful read holds zero. A repeated asset refuses the read ([`parseBalances`][h-bal], [`readBalances`][h-rb]). | Spot wallet only. The time is `readAt`, the function's own clock after the read ([L787][h-at]); Binance's `updateTime` is not kept, and Binance does not document its meaning. Balances and fills come from separate requests at different moments, so there is no common snapshot. Kept in component memory only ([`applySpotRead`][c-apply]).    |
-| Fill identity   | `(symbol, tradeId)`; trade and order IDs as decimal strings; several fills of one order stay separate. An ID above 2^53 refuses the page instead of being rounded ([`parseExecutionRow`][h-row], [`isSafeId`][h-id]).                                                              | A second row with the same identity is dropped **without comparing its content**: inside one page ([L302][h-dup]) and across pages, where the view keeps the first ([`deduplicate`][u-dedup]). The handler test asserts this for a row that differs in side and quantity ([L453][t-dup]). `orderListId`, `isMaker` and `isBestMatch` are not kept. |
-| Decimals        | Strings matching `^\d+(\.\d+)?$`, never floats ([L239][h-dec]).                                                                                                                                                                                                                    | Any arithmetic must stay exact at each value's own scale. `spotScenario.ts`'s BigInt parsing fits; its fixed 1e-8 quantity scale does not.                                                                                                                                                                                                         |
-| Commission      | Amount and asset kept together, never converted ([L259–268][h-fee]).                                                                                                                                                                                                               | Binance does not say how the trade-list `commission` relates to its standard, tax and special commissions (decision D3).                                                                                                                                                                                                                           |
-| Time range      | At most 24 hours, kept inclusive at both ends ([`validRange`][h-range], [L302][h-dup]). The first page is time-bounded, later pages use `fromId` ([`readSymbolPage`][h-page]). The view's window ends at the browser clock ([L285][u-end]).                                        | Binance does not state whether `startTime`/`endTime` are inclusive for this endpoint, so a fill on a shared boundary millisecond can appear in two windows. Times are milliseconds, and several fills can share one.                                                                                                                               |
-| Pagination      | 100 fills per page. A full page returns an HMAC-signed continuation from the last ID plus one; a short page or one past the end completes the pair; a page whose IDs decrease is refused ([`readSymbolPage`][h-page], [L299][h-mono]).                                             | `coverage` describes one response, not the whole read ([L654–667][h-cov]), and the view replaces its failure list on each page ([L115][u-fail]). For a multi-pair read, per-pair completion is not exposed; the continuation is opaque.                                                                                                            |
-| Partial failure | Failed pairs are listed per response. A rate limit fails every remaining pair and stops ([L641–648][h-fail]).                                                                                                                                                                      | A failed pair gets no cursor, so it is **absent from later pages, which then report `partial: false`**. A throwaway test against the handler at `56366db` confirmed this (not committed). The pair's window can only be recovered by reading it again from the start.                                                                              |
-| Retention       | Popup claims no lifetime history.                                                                                                                                                                                                                                                  | Binance states no retention period for the trade list.                                                                                                                                                                                                                                                                                             |
+| Topic           | Recorded and guaranteed                                                                                                                                                                                                                                                                                                                            | Gap for reconciliation                                                                                                                                                                                                                                                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Balances        | `asset`, `free`, `locked` as Binance's decimal strings. Zero rows are omitted by Binance (`omitZeroBalances=true`) and again by Popup, so an asset absent from a successful read holds zero. A repeated asset refuses the read ([`parseBalances`][h-bal], [`readBalances`][h-rb]).                                                                 | Spot wallet only. The time is `readAt`, the function's own clock after the read ([L787][h-at]); Binance's `updateTime` is not kept, and Binance does not document its meaning. Balances and fills come from separate requests at different moments, so there is no common snapshot. Kept in component memory only ([`applySpotRead`][c-apply]). |
+| Fill identity   | `(symbol, tradeId)`; trade and order IDs as decimal strings; several fills of one order stay separate. Identical repeats collapse only when every recorded field is exactly equal. Distinct variants under one identity are retained as a conflict and excluded from consistent fills. An ID above 2^53 refuses the page instead of being rounded. | `orderListId`, `isMaker` and `isBestMatch` are not kept. Binance does not document whether one account can legitimately receive different trade-list rows under one identity; Popup therefore reports the conflict without choosing.                                                                                                            |
+| Decimals        | Strings matching `^\d+(\.\d+)?$`, never floats. Duplicate equality is character-for-character, so numerically equal `1.0` and `1.00` are conflicting representations.                                                                                                                                                                              | Any later arithmetic must stay exact at each value's own scale. `spotScenario.ts`'s BigInt parsing fits; its fixed 1e-8 quantity scale does not.                                                                                                                                                                                                |
+| Commission      | Amount and asset kept together, never converted ([L259–268][h-fee]).                                                                                                                                                                                                                                                                               | Binance does not say how the trade-list `commission` relates to its standard, tax and special commissions (decision D3).                                                                                                                                                                                                                        |
+| Time range      | At most 24 hours, kept inclusive at both ends ([`validRange`][h-range], [L302][h-dup]). The first page is time-bounded, later pages use `fromId` ([`readSymbolPage`][h-page]). The view's window ends at the browser clock ([L285][u-end]).                                                                                                        | Binance does not state whether `startTime`/`endTime` are inclusive for this endpoint, so a fill on a shared boundary millisecond can appear in two windows. Times are milliseconds, and several fills can share one.                                                                                                                            |
+| Pagination      | 100 fills per page. A full page returns an HMAC-signed continuation from the last ID plus one; a short page or one past the end completes the pair; a page whose IDs decrease is refused. Each response explicitly names pairs whose terminal page succeeded, and the view accumulates that evidence with earlier failures and conflicts.          | The continuation remains opaque and proves only that another request may be made. Completion is scoped to the requested pairs and window; it says nothing about another pair, another window or lifetime account history.                                                                                                                       |
+| Partial failure | Failed pairs are listed per response. A rate limit fails every remaining pair and stops. The view keeps every earlier pair/page failure for the retrieval even when a later response reports `partial: false`; top-level continuation failures are retained too.                                                                                   | A failed pair gets no cursor and cannot resume inside that retrieval. Its window can only be attempted again from the start in a fresh explicit retrieval; the failed retrieval remains incomplete.                                                                                                                                             |
+| Retention       | Popup claims no lifetime history.                                                                                                                                                                                                                                                                                                                  | Binance states no retention period for the trade list.                                                                                                                                                                                                                                                                                          |
 
 [h-bal]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/supabase/functions/binance-spot-account/handler.ts#L409-L426
 [h-rb]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/supabase/functions/binance-spot-account/handler.ts#L525-L539
@@ -278,31 +285,37 @@ in memory.
 [p-eps]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts#L155
 [p-cash]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts#L50-L56
 
-## 8. Next increment: reliable accumulated execution evidence (proposed, not started)
+## 8. Reliable accumulated execution evidence (implemented prerequisite)
 
-Reconciliation depends on evidence the current reads cannot yet guarantee (section 1). The next
-task is that one prerequisite, in the existing handler and execution view:
+The existing handler response and execution view now carry this prerequisite through one manual
+retrieval. It remains display-only and in component memory:
 
-- **Identical duplicates may collapse.** The same `(symbol, tradeId)` with every recorded field
-  equal is one fill.
+- **Identical duplicates collapse.** Equality covers `symbol`, `tradeId`, `orderId`, `time`, `side`,
+  `quantity`, `price`, `quoteQuantity`, `commission` and `commissionAsset`. Decimal strings compare
+  exactly as recorded: `1.0` and `1.00` conflict rather than normalize.
 - **Conflicts are surfaced, never resolved.** The same `(symbol, tradeId)` with any field
-  different is reported as inconsistent evidence, both within one provider page (today the
-  handler drops the second row, [L302][h-dup]) and across the pages accumulated for one retrieval
-  (today the view keeps the first, [`deduplicate`][u-dedup]).
+  different is removed from the consistent-fill table and every distinct variant is shown as
+  inconsistent evidence, both within one provider page and across accumulated pages. Neither the
+  first nor the last variant is authoritative.
 - **Earlier failures stay visible.** A pair that failed on any page of a retrieval stays failed
-  for that retrieval. A later successful page must not imply that it completed; today the failed
-  pair drops out of the continuation, later pages report `partial: false`, and the view replaces
-  its failure list on each page ([L115][u-fail]).
-- **No further continuation is not completeness.** A retrieval is complete for a pair only when
-  every page for it succeeded and its last page ended. "No more results" after a failure says
-  only that no cursor remains.
-- **A fresh explicit retrieval may start a new coverage state.** **Load executions** or a changed
-  selection begins again; a continuation never resets what earlier pages recorded.
+  for that retrieval. A page response explicitly names pairs whose terminal page succeeded; the
+  view accumulates that evidence instead of inferring it from the opaque cursor. A later response
+  with `partial: false` does not erase an earlier failure.
+- **No continuation is not completeness.** `Continuation: None` says only that no cursor remains.
+  Coverage is complete only for the named requested pairs and finite window, and only when every
+  pair has explicit terminal-success evidence with no accumulated pair/page or continuation failure
+  and no conflict.
+- **Continuation failures are evidence.** A top-level continuation failure retains the earlier
+  records and cursor for an explicit retry, marks the retrieval unresolved, and remains visible if
+  a later retry succeeds.
+- **A fresh successful retrieval starts a new evidence state.** A failed refresh leaves the retained
+  earlier result and its label unchanged. A changed selection clears it; owner account changes and
+  logout still unmount the owner-keyed component; request sequencing still drops late answers.
 
 It adds no endpoint, storage, reconciliation, cost or P&L code, deployment or Binance request, and
 touches no paper, simulation or Live Tracking code. Quantity reconciliation (section 3) comes
-only after this. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and D4
-are verified.
+only in a later task. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and
+D4 are verified.
 
 **Live dependency.** Real Binance verification has not run. Before any reconciliation result is
 compared with a real account, the owner check in

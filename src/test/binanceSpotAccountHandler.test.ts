@@ -439,18 +439,19 @@ describe('binance-spot-account: execution history', () => {
   };
 
   it('preserves individual fills, exact decimals and commission assets', async () => {
+    const preciseSell = execution(2, 'BTCUSDT', {
+      orderId: 42,
+      isBuyer: false,
+      qty: '123456789012345678.123456789012345678',
+      price: '0.000000000000000001',
+      quoteQty: '123456789012345678.123456789012345678',
+      commission: '0.000000000000000001',
+      commissionAsset: 'USDT',
+    });
     const btc = [
       execution(1, 'BTCUSDT', { orderId: 42, commissionAsset: 'BNB' }),
-      execution(2, 'BTCUSDT', {
-        orderId: 42,
-        isBuyer: false,
-        qty: '123456789012345678.123456789012345678',
-        price: '0.000000000000000001',
-        quoteQty: '123456789012345678.123456789012345678',
-        commission: '0.000000000000000001',
-        commissionAsset: 'USDT',
-      }),
-      execution(2, 'BTCUSDT', { orderId: 42 }), // duplicate in one provider page
+      preciseSell,
+      { ...preciseSell }, // identical duplicate in one provider page
     ];
     const eth = [execution(1, 'ETHUSDT', { orderId: 42, commissionAsset: 'ETH' })];
     const { res, body, binance } = await call({
@@ -491,8 +492,10 @@ describe('binance-spot-account: execution history', () => {
       returned: 3,
       hasMore: false,
       partial: false,
+      completedSymbols: ['BTCUSDT', 'ETHUSDT'],
       limitation: 'selected_pairs_and_24h_window',
     });
+    expect(body?.['conflicts']).toEqual([]);
     const tradeCalls = binance.filter((request) => request.url.pathname === ENDPOINTS.trades);
     expect(tradeCalls).toHaveLength(2);
     for (const request of tradeCalls) {
@@ -500,6 +503,35 @@ describe('binance-spot-account: execution history', () => {
       expect(request.url.searchParams.get('endTime')).toBe(String(range.endTime));
       expect(request.url.searchParams.get('limit')).toBe(String(EXECUTION_PAGE_LIMIT));
     }
+  });
+
+  it('collapses identical rows and reports distinct exact-string variants as a conflict', async () => {
+    const identical = execution(1, 'BTCUSDT', { qty: '1.0' });
+    const firstVariant = execution(2, 'BTCUSDT', { qty: '1.0' });
+    const secondVariant = execution(2, 'BTCUSDT', { qty: '1.00' });
+    const { body } = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT'], ...range },
+      trades: ok([identical, { ...identical }, firstVariant, secondVariant]),
+    });
+
+    expect(body?.['executions']).toEqual([
+      expect.objectContaining({ symbol: 'BTCUSDT', tradeId: '1', quantity: '1.0' }),
+    ]);
+    expect(body?.['conflicts']).toEqual([
+      {
+        symbol: 'BTCUSDT',
+        tradeId: '2',
+        variants: [
+          expect.objectContaining({ quantity: '1.0' }),
+          expect.objectContaining({ quantity: '1.00' }),
+        ],
+      },
+    ]);
+    expect(body?.['coverage']).toMatchObject({
+      returned: 1,
+      partial: false,
+      completedSymbols: ['BTCUSDT'],
+    });
   });
 
   it('issues a validated continuation at the page boundary and advances fromId', async () => {
@@ -520,9 +552,13 @@ describe('binance-spot-account: execution history', () => {
 
     const second = await call({
       body: { action: 'executions', continuation },
-      trades: ok([execution(101)]),
+      trades: ok([]),
     });
-    expect(second.body?.['coverage']).toMatchObject({ returned: 1, hasMore: false });
+    expect(second.body?.['coverage']).toMatchObject({
+      returned: 0,
+      hasMore: false,
+      completedSymbols: ['BTCUSDT'],
+    });
     const tradeCall = second.binance.find((request) => request.url.pathname === ENDPOINTS.trades);
     expect(tradeCall?.url.searchParams.get('fromId')).toBe('101');
     expect(tradeCall?.url.searchParams.has('startTime')).toBe(false);
@@ -540,7 +576,51 @@ describe('binance-spot-account: execution history', () => {
       returned: 1,
       partial: true,
       failures: [{ symbol: 'ETHUSDT', error: 'timeout' }],
+      completedSymbols: ['BTCUSDT'],
     });
+  });
+
+  it('keeps terminal success explicit when another pair failed before a continuation', async () => {
+    const fullPage = Array.from({ length: EXECUTION_PAGE_LIMIT }, (_, index) =>
+      execution(index + 1),
+    );
+    const first = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT', 'ETHUSDT'], ...range },
+      trades: [ok(fullPage), timeoutError()],
+    });
+    expect(first.body?.['coverage']).toMatchObject({
+      symbols: ['BTCUSDT', 'ETHUSDT'],
+      partial: true,
+      hasMore: true,
+      failures: [{ symbol: 'ETHUSDT', error: 'timeout' }],
+      completedSymbols: [],
+    });
+
+    const second = await call({
+      body: { action: 'executions', continuation: first.body?.['continuation'] },
+      trades: ok([]),
+    });
+    expect(second.body?.['coverage']).toMatchObject({
+      symbols: ['BTCUSDT', 'ETHUSDT'],
+      partial: false,
+      hasMore: false,
+      failures: [],
+      completedSymbols: ['BTCUSDT'],
+    });
+  });
+
+  it('does not label a failed terminal page as completed when no continuation remains', async () => {
+    const { body } = await call({
+      body: { action: 'executions', symbols: ['BTCUSDT'], ...range },
+      trades: timeoutError(),
+    });
+    expect(body?.['coverage']).toMatchObject({
+      hasMore: false,
+      partial: true,
+      failures: [{ symbol: 'BTCUSDT', error: 'timeout' }],
+      completedSymbols: [],
+    });
+    expect(body).not.toHaveProperty('continuation');
   });
 
   it.each([

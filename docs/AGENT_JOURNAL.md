@@ -101,6 +101,8 @@ whether to act, and where; Popup places no orders.
   even under the same scan ID, resets them (C12, revised).
 - **Binance outcome tracking, stage D (2026-11-12):**
   [#157](https://github.com/blackhebrewisraeli/Popup/pull/157) (merged `62f4fbb`), documentation only.
+  The later `ddb949b` correction was not in that merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158)
+  carried its corrected boundary, consistency and next-increment wording onto main at `bfea2e6`.
   [BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) specifies the smallest
   account-event and reconciliation contract over the existing read-only balances and execution
   history ([#148](https://github.com/blackhebrewisraeli/Popup/pull/148), merged `54f9a6c`).
@@ -108,13 +110,19 @@ whether to act, and where; Popup places no orders.
   balance reads at most 24 hours apart. Opening cost is unknown unless the opening quantity is
   zero. Quantity, acquisition cost and P&L get separate statuses, and account history is never
   called complete. A matching quantity is numerical consistency only. Cost and P&L statuses stay
-  specification-only until the cost method and fee policy are decided. Next increment, proposed
-  and not started: reliable accumulated execution evidence. Identical duplicates collapse.
-  Conflicting `(symbol, trade ID)` records are surfaced, within a page and across pages. Earlier
-  page failures stay visible for the same retrieval. "No further continuation" is kept distinct
-  from "complete". A reconciliation function comes only after that. All of it still depends on
-  the owner's real Binance check, which has not run and must also settle what `commission` covers
-  and whether USDT moves by exactly `quoteQty`.
+  specification-only until the cost method and fee policy are decided.
+- **Reliable Binance execution evidence (2026-11-12):** draft
+  [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) implements only the prerequisite named
+  by stage D. Identity stays `(symbol, trade ID)`. Exact duplicates collapse; exact-field
+  conflicts remain visible within and across pages with no authoritative variant. Pair/page and
+  continuation failures accumulate for one retrieval, and explicit per-pair terminal success keeps
+  "no continuation" distinct from "complete for the requested pairs and window". A successful
+  explicit new retrieval starts over; a failed refresh retains the previous result unchanged.
+  No provider call, endpoint, pair/window limit, persistence, reconciliation, acquisition cost or
+  P&L was added. The owner's real Binance check still has not run and must settle what `commission`
+  covers and whether USDT moves by exactly `quoteQty` before reconciliation work. Evidence: 1,544
+  tests, typecheck, lint and build; synthetic browser checks at desktop and 375 px, light and dark,
+  including keyboard continuation retry, visible conflict/failure warnings and no page overflow.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs

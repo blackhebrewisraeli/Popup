@@ -9,6 +9,8 @@ import {
   parseSpotExecutionRead,
   readSpotExecutions,
   type SpotExecution,
+  type SpotExecutionConflict,
+  type SpotExecutionFailure,
   type SpotExecutionRead,
 } from '@/lib/binanceSpotAccount';
 
@@ -39,23 +41,45 @@ const page = (
   executions: SpotExecution[],
   options: {
     continuation?: string;
-    failures?: Array<{ symbol: string; error: 'timeout' }>;
+    failures?: SpotExecutionFailure[];
+    conflicts?: SpotExecutionConflict[];
+    completedSymbols?: string[];
+    symbols?: string[];
   } = {},
-): SpotExecutionRead => ({
-  state: 'executions',
-  executions,
-  coverage: {
-    symbols: [...new Set(executions.map((item) => item.symbol).concat('BTCUSDT'))],
-    ...RANGE,
-    returned: executions.length,
-    retrievedAt: '2026-11-10T09:00:01.000Z',
-    hasMore: options.continuation !== undefined,
-    partial: (options.failures?.length ?? 0) > 0,
-    failures: options.failures ?? [],
-    limitation: 'selected_pairs_and_24h_window',
-  },
-  ...(options.continuation ? { continuation: options.continuation } : {}),
-});
+): SpotExecutionRead => {
+  const failures = options.failures ?? [];
+  const symbols = options.symbols ?? [
+    ...new Set(
+      executions
+        .map((item) => item.symbol)
+        .concat(
+          failures.map((item) => item.symbol),
+          'BTCUSDT',
+        ),
+    ),
+  ];
+  return {
+    state: 'executions',
+    executions,
+    conflicts: options.conflicts ?? [],
+    coverage: {
+      symbols,
+      ...RANGE,
+      returned: executions.length,
+      retrievedAt: '2026-11-10T09:00:01.000Z',
+      hasMore: options.continuation !== undefined,
+      partial: failures.length > 0,
+      failures,
+      completedSymbols:
+        options.completedSymbols ??
+        (options.continuation
+          ? []
+          : symbols.filter((symbol) => !failures.some((failure) => failure.symbol === symbol))),
+      limitation: 'selected_pairs_and_24h_window',
+    },
+    ...(options.continuation ? { continuation: options.continuation } : {}),
+  };
+};
 
 function deferredReads() {
   const pending: Array<(read: SpotExecutionRead) => void> = [];
@@ -144,10 +168,112 @@ describe('Binance Spot execution view', () => {
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows).toHaveLength(5);
     expect(screen.getByText('Records shown').parentElement).toHaveTextContent('4');
-    expect(screen.getByRole('button', { name: 'No more results' })).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'No more results' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'No continuation' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'No continuation' })).toHaveAttribute(
       'aria-disabled',
       'true',
+    );
+  });
+
+  it('turns conflicting rows across pages into explicit non-authoritative evidence', async () => {
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+    await answer(
+      0,
+      page([execution('1', 'BTCUSDT', { quantity: '1.0' })], { continuation: 'next' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, page([execution('1', 'BTCUSDT', { quantity: '1.00' })]));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Inconsistent execution evidence. Conflicting rows share one pair and trade ID; no variant is authoritative: BTCUSDT trade 1 (2 variants).',
+    );
+    expect(screen.queryByRole('table', { name: 'Binance Spot execution history' })).toBeNull();
+    const conflicts = screen.getByRole('table', {
+      name: 'Conflicting Binance Spot execution evidence',
+    });
+    expect(within(conflicts).getByText('1.0')).toBeVisible();
+    expect(within(conflicts).getByText('1.00')).toBeVisible();
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
+  });
+
+  it('retains an earlier pair failure after another pair reaches its terminal page', async () => {
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+    await answer(
+      0,
+      page([execution('1')], {
+        continuation: 'next',
+        failures: [{ symbol: 'ETHUSDT', error: 'timeout' }],
+        symbols: ['BTCUSDT', 'ETHUSDT'],
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, page([], { symbols: ['BTCUSDT', 'ETHUSDT'], completedSymbols: ['BTCUSDT'] }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('ETHUSDT (timeout)');
+    expect(screen.getByText('Continuation').parentElement).toHaveTextContent('None');
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
+  });
+
+  it('distinguishes a failed terminal page from complete requested coverage', async () => {
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+    await answer(
+      0,
+      page([], {
+        failures: [{ symbol: 'BTCUSDT', error: 'timeout' }],
+        completedSymbols: [],
+      }),
+    );
+    expect(screen.getByText('Continuation').parentElement).toHaveTextContent('None');
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
+  });
+
+  it('marks a full page followed by an empty terminal page complete for only its requested scope', async () => {
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+    await answer(
+      0,
+      page(
+        Array.from({ length: 100 }, (_, index) => execution(String(index + 1))),
+        { continuation: 'next' },
+      ),
+    );
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, page([], { completedSymbols: ['BTCUSDT'] }));
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent(
+      'Complete for requested pairs and window',
+    );
+    expect(screen.getByRole('button', { name: 'No continuation' })).toBeVisible();
+    expect(document.body).toHaveTextContent('This is not complete account history');
+  });
+
+  it('keeps a continuation failure unresolved after retry, but a fresh success starts over', async () => {
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    const load = screen.getByRole('button', { name: 'Load executions' });
+    fireEvent.click(load);
+    await answer(0, page([execution('1')], { continuation: 'next' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, { state: 'error', error: 'timeout' });
+    expect(screen.getByText(/Continuation failed earlier/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(2, page([], { completedSymbols: ['BTCUSDT'] }));
+    expect(screen.getByText(/Continuation failed earlier/)).toBeVisible();
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
+
+    fireEvent.click(load);
+    await answer(3, page([]));
+    expect(screen.queryByText(/Continuation failed earlier/)).toBeNull();
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent(
+      'Complete for requested pairs and window',
     );
   });
 
@@ -167,16 +293,18 @@ describe('Binance Spot execution view', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Partial retrieval. Failed pairs/pages: ETHUSDT (timeout). Records shown are retained.',
     );
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
     expect(screen.getByRole('table')).toBeVisible();
 
     fireEvent.click(load);
     await answer(2, { state: 'error', error: 'timeout' });
     expect(
       screen.getByText(
-        'Refresh failed. Retaining the records shown below. Binance did not answer in time.',
+        'Refresh failed. Retaining the previous result below unchanged. Binance did not answer in time.',
       ),
     ).toHaveAttribute('role', 'alert');
     expect(screen.getByRole('table')).toBeVisible();
+    expect(screen.getByText('Requested coverage').parentElement).toHaveTextContent('Incomplete');
   });
 
   it('ignores a late response after the selection changes', async () => {
@@ -186,6 +314,16 @@ describe('Binance Spot execution view', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Pair' }), {
       target: { value: 'ETHUSDT' },
     });
+    await answer(0, page([execution('1')]));
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByText('Records shown')).toBeNull();
+  });
+
+  it('drops accumulated private evidence and a late answer when the owner account remounts', async () => {
+    const { read, answer } = deferredReads();
+    const view = render(<BinanceSpotExecutions key="owner-a" read={read} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+    view.rerender(<BinanceSpotExecutions key="owner-b" read={read} />);
     await answer(0, page([execution('1')]));
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByText('Records shown')).toBeNull();
@@ -360,6 +498,7 @@ describe('reading executions through the edge function', () => {
     expect(read).toEqual({
       state: 'executions',
       executions: [execution('1'), execution('2')],
+      conflicts: [],
       coverage: {
         ...wire().coverage,
         partial: true,
@@ -369,6 +508,18 @@ describe('reading executions through the edge function', () => {
         ],
       },
     });
+  });
+
+  it('parses every exact conflicting variant without selecting an authoritative row', () => {
+    const variants = [
+      execution('1', 'BTCUSDT', { quantity: '1.0' }),
+      execution('1', 'BTCUSDT', { quantity: '1.00' }),
+    ];
+    const answer = page([], {
+      conflicts: [{ symbol: 'BTCUSDT', tradeId: '1', variants }],
+      completedSymbols: ['BTCUSDT'],
+    });
+    expect(parseSpotExecutionRead(answer)).toEqual(answer);
   });
 
   it('passes through not_configured and a known error', () => {
@@ -390,6 +541,25 @@ describe('reading executions through the edge function', () => {
     ['is an unknown error', { state: 'error', error: 'surprise' }],
     ['is a balance answer', { state: 'connected', readAt: '2026-11-10T09:00:00Z', balances: [] }],
     ['has executions that are not a list', wire({ executions: 'all' })],
+    ['has conflicts that are not a list', wire({ conflicts: null })],
+    [
+      'has a conflict with only one variant',
+      wire({
+        conflicts: [{ symbol: 'BTCUSDT', tradeId: '1', variants: [execution('1')] }],
+      }),
+    ],
+    [
+      'has a conflict whose variant uses another identity',
+      wire({
+        conflicts: [
+          {
+            symbol: 'BTCUSDT',
+            tradeId: '1',
+            variants: [execution('1'), execution('2')],
+          },
+        ],
+      }),
+    ],
     [
       'has a fill with a numeric quantity',
       wire({ executions: [{ ...execution('1'), quantity: 1 }] }),
@@ -410,6 +580,8 @@ describe('reading executions through the edge function', () => {
     ['has no more-results flag', wire({}, { hasMore: 'yes' })],
     ['has no partial flag', wire({}, { partial: 0 })],
     ['has failures that are not a list', wire({}, { failures: null })],
+    ['has completed pairs that are not a list', wire({}, { completedSymbols: null })],
+    ['has a completed pair outside the selection', wire({}, { completedSymbols: ['ETHUSDT'] })],
     ['has a failure that is not an object', wire({}, { failures: ['ETHUSDT'] })],
     ['has a failure without a pair', wire({}, { failures: [{ error: 'timeout' }] })],
     ['has a failure without a code', wire({}, { failures: [{ symbol: 'ETHUSDT' }] })],
