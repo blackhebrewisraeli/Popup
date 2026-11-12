@@ -99,18 +99,22 @@ whether to act, and where; Popup places no orders.
   decisions on the two open rows: a full page reload now restores the source and **Scan shown**
   (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
   even under the same scan ID, resets them (C12, revised).
-- **Binance outcome tracking, stage D (2026-11-12):** draft
-  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.
+- **Binance outcome tracking, stage D (2026-11-12):**
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157) (merged `62f4fbb`), documentation only.
   [BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) specifies the smallest
   account-event and reconciliation contract over the existing read-only balances and execution
   history ([#148](https://github.com/blackhebrewisraeli/Popup/pull/148), merged `54f9a6c`).
   Proposed scope: one subject asset (the base of one supported pair, never USDT or BNB) between two
   balance reads at most 24 hours apart. Opening cost is unknown unless the opening quantity is
   zero. Quantity, acquisition cost and P&L get separate statuses, and account history is never
-  called complete. Next increment, proposed and not started: one pure reconciliation function with
-  the spec's synthetic examples as its tests, plus the handler refusing a trade ID that repeats
-  with different content. It still depends on the owner's real Binance check, which has not run
-  and must also settle what `commission` covers and whether USDT moves by exactly `quoteQty`.
+  called complete. A matching quantity is numerical consistency only. Cost and P&L statuses stay
+  specification-only until the cost method and fee policy are decided. Next increment, proposed
+  and not started: reliable accumulated execution evidence. Identical duplicates collapse.
+  Conflicting `(symbol, trade ID)` records are surfaced, within a page and across pages. Earlier
+  page failures stay visible for the same retrieval. "No further continuation" is kept distinct
+  from "complete". A reconciliation function comes only after that. All of it still depends on
+  the owner's real Binance check, which has not run and must also settle what `commission` covers
+  and whether USDT moves by exactly `quoteQty`.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -150,8 +154,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · Draft PR
-  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.** Decision:
+- **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · PR
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), merged `62f4fbb`, documentation only.** Decision:
   specify before building, and only what the existing four GET requests can evidence. The trace
   of the integration at `56366db` (cited by line in
   [the spec](BINANCE_SPOT_RECONCILIATION.md)) found three gaps that matter for reconciliation:
@@ -166,16 +170,20 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   undocumented `updateTime`, the three commission kinds and self-trade mode `NONE`.
 
   The contract covers one subject asset over a window of at most 24 hours between two balance
-  reads, with a 60 s boundary guard (a Popup policy). Identity is `(symbol, trade ID)`: identical
-  repeats collapse, and differing ones are conflicts. Fees stay in their own asset, with no
-  invented rate. Quantity is Consistent, Discrepancy or Indeterminate. Cost and later P&L are
-  known within scope, partial or unavailable. The three are kept apart.
+  reads, with a 60 s boundary guard. The guard is provisional Popup policy, not a proven bound on
+  clock skew or snapshot timing, and no read becomes an atomic snapshot. Identity is
+  `(symbol, trade ID)`: identical repeats collapse, and differing ones are conflicts. Fees stay in
+  their own asset, with no invented rate. Quantity is Consistent (numerical consistency only),
+  Discrepancy or Indeterminate. Cost and later P&L are known within scope, partial or unavailable,
+  and stay specification-only while the accounting policies are open. The three are kept apart.
 
   Ten synthetic examples were hand-calculated, and their arithmetic was rechecked with exact
   decimals. Seven open decisions (D1–D7) are listed but not chosen: cost method, fees in cost,
   what `commission` covers, quote movement, duplicate IDs from self-trades, the guard and clocks,
   and boundary inclusivity. There is no code, endpoint, storage, migration, deployment or Binance
-  request. Next: the pure reconciliation function (proposed, not started). The real Binance check
+  request. #157 merged at its first commit, so the review follow-up landed in a separate documentation PR: example 6b now names its 0.01 USDT fee, the guard is
+  marked provisional, and the next increment became the evidence-integrity prerequisite. Next:
+  reliable accumulated execution evidence (proposed, not started). The real Binance check
   remains the owner's.
 
 - **2026-11-12 · Restore the Research source and scan after a full reload · PR
