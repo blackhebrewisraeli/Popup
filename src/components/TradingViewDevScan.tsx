@@ -1,15 +1,18 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { Radar, RefreshCw } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { Segmented } from '@/components/Segmented';
 import { Button } from '@/components/ui/button';
+import { useResearchScan, type MarketsSource } from '@/hooks/useResearchSelection';
 import { compareScans } from '@/lib/scanChanges';
 import { UTC_TIME } from '@/lib/scanReview';
 import {
+  contentKey,
   parseSavedScanList,
   parseSavedScanRead,
   parseTradingViewDevScan,
+  SCAN_ID,
   TRADINGVIEW_DEV_SCAN_ROUTE,
   TRADINGVIEW_SAVED_SCANS_ROUTE,
   type SavedScanEntry,
@@ -34,8 +37,9 @@ const READ_TIME = new Intl.DateTimeFormat('en-GB', {
 function DevScanState({
   busy = false,
   alert = false,
+  action,
   children,
-}: Readonly<{ busy?: boolean; alert?: boolean; children: ReactNode }>) {
+}: Readonly<{ busy?: boolean; alert?: boolean; action?: ReactNode; children: ReactNode }>) {
   return (
     <section
       className="market-scan market-scan-devscan"
@@ -50,6 +54,7 @@ function DevScanState({
       <p role={alert ? 'alert' : undefined} className="market-scan-empty">
         {children}
       </p>
+      {action}
     </section>
   );
 }
@@ -190,19 +195,26 @@ function ScanShown({
   selected,
   published,
   onSelect,
+  selectRef,
 }: Readonly<{
   list: UseQueryResult<SavedScanList | null>;
   selected: string | null;
   published: string | undefined;
   onSelect: (scanId: string | null) => void;
+  selectRef: RefObject<HTMLSelectElement | null>;
 }>) {
   const scans = list.data?.scans ?? [];
   // A selection that left the store stays selected, and says so, until the owner changes it.
   const gone = scans.some((entry) => entry.scanId === selected) ? null : selected;
+  // A restored selection is only named missing once the list says so.
+  let goneNote = '';
+  if (gone !== null && !SCAN_ID.test(gone)) goneNote = ' · not a scan ID';
+  else if (list.data) goneNote = ' · not in the scan store';
   return (
     <label className="devscan-shown">
       <span>Scan shown</span>
       <select
+        ref={selectRef}
         className="portfolio-cash-input"
         name="scan-shown"
         value={selected ?? ''}
@@ -211,7 +223,12 @@ function ScanShown({
         <option value="">Latest published scan</option>
         {(scans.length > 0 || gone !== null) && (
           <optgroup label="Saved scans">
-            {gone && <option value={gone}>{gone} · not in the scan store</option>}
+            {gone && (
+              <option value={gone}>
+                {gone}
+                {goneNote}
+              </option>
+            )}
             {scans.map((entry) => (
               <option key={entry.scanId} value={entry.scanId}>
                 {savedLabel(entry, entry.scanId === published)}
@@ -246,17 +263,18 @@ function SavedListNotes({ list }: Readonly<{ list: UseQueryResult<SavedScanList 
 }
 
 function DevScanContent({ query }: Readonly<{ query: DevScanQuery }>) {
+  const view = query.data;
+  const key = useMemo(() => (view ? contentKey(view) : ''), [view]);
   if (query.isPending) {
     return <DevScanState busy>Reading the local TradingView import…</DevScanState>;
   }
-  const view = query.data;
   if (view) {
     const { scanId, importedAt, scan, source, baseline } = view;
-    // A different snapshot starts the review over: no selection, comparison or open
-    // evidence carries across. An identical reload keeps the same key and the review.
+    // Different content starts the review over, even under the same scan ID: no selection,
+    // comparison, open evidence or scenario carries across. An identical reload keeps it.
     return (
       <MarketScanSummary
-        key={`${scanId}|${importedAt}|${baseline?.scanId ?? ''}`}
+        key={`${scanId}|${key}`}
         scan={scan}
         completedAt={Date.parse(importedAt)}
         scanning={false}
@@ -310,8 +328,31 @@ function SavedNote({ scanId, saved }: Readonly<{ scanId: string; saved: TradingV
   );
 }
 
-/** A selected saved scan: shown only once it reproduces; every other state says why not. */
-function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: SavedScanQuery }>) {
+/**
+ * A selected saved scan: shown only once it reproduces; every other state says why not and
+ * offers the way back, never another source or scan in its place.
+ */
+function SavedScanContent({
+  scanId,
+  query,
+  onShowPublished,
+}: Readonly<{ scanId: string; query: SavedScanQuery; onShowPublished: () => void }>) {
+  const read = query.data;
+  const view = read?.state === 'VERIFIED' ? read.view : undefined;
+  const key = useMemo(() => (view ? contentKey(view) : ''), [view]);
+  const recover = (
+    <Button type="button" variant="outline" size="sm" onClick={onShowPublished}>
+      Show the latest published scan
+    </Button>
+  );
+  if (!SCAN_ID.test(scanId)) {
+    return (
+      <DevScanState alert action={recover}>
+        The scan restored for this tab, <code>{scanId.slice(0, 40)}</code>, is not a scan ID, so
+        nothing was read and nothing is shown.
+      </DevScanState>
+    );
+  }
   if (query.isPending) {
     return (
       <DevScanState busy>
@@ -319,14 +360,12 @@ function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: S
       </DevScanState>
     );
   }
-  const read = query.data;
-  if (read?.state === 'VERIFIED') {
-    const { view } = read;
+  if (view) {
     return (
       <>
         {view.saved && <SavedNote scanId={view.scanId} saved={view.saved} />}
         <MarketScanSummary
-          key={`saved|${view.scanId}|${view.importedAt}|${view.baseline?.scanId ?? ''}`}
+          key={`saved|${view.scanId}|${key}`}
           scan={view.scan}
           completedAt={Date.parse(view.importedAt)}
           scanning={false}
@@ -339,9 +378,9 @@ function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: S
       </>
     );
   }
-  if (read) {
+  if (read && read.state !== 'VERIFIED') {
     return (
-      <DevScanState alert>
+      <DevScanState alert action={recover}>
         Saved scan <code>{scanId}</code> {REFUSED[read.state]} ({read.reason}). Nothing from it is
         shown.
       </DevScanState>
@@ -349,13 +388,14 @@ function SavedScanContent({ scanId, query }: Readonly<{ scanId: string; query: S
   }
   if (query.isError) {
     return (
-      <DevScanState alert>
-        Saved scan <code>{scanId}</code> could not be read ({query.error.message}).
+      <DevScanState alert action={recover}>
+        Saved scan <code>{scanId}</code> could not be read ({query.error.message}). Nothing from it
+        is shown.
       </DevScanState>
     );
   }
   return (
-    <DevScanState alert>
+    <DevScanState alert action={recover}>
       Saved scan <code>{scanId}</code> is no longer a TradingView snapshot in the scan store.
       Nothing from it is shown.
     </DevScanState>
@@ -376,11 +416,20 @@ function shownScan(read: SavedScanRead | null | undefined) {
 export function TradingViewDevScan() {
   const published = useTradingViewDevScan();
   const list = useSavedScanList();
-  const [selected, setSelected] = useState<string | null>(null);
-  const saved = useSavedScan(selected);
+  // Restored after a full page reload, so a reload shows the same scan, read again.
+  const [selected, setSelected] = useResearchScan();
+  const readable = selected !== null && SCAN_ID.test(selected);
+  const saved = useSavedScan(readable ? selected : null);
+  const shownRef = useRef<HTMLSelectElement>(null);
+  const showPublished = () => {
+    setSelected(null);
+    // The recovery button leaves with the state it was in; keep keyboard focus on the choice.
+    shownRef.current?.focus();
+  };
   const reload = () => {
     void list.refetch({ cancelRefetch: false });
-    void (selected === null ? published : saved).refetch({ cancelRefetch: false });
+    if (selected === null) void published.refetch({ cancelRefetch: false });
+    else if (readable) void saved.refetch({ cancelRefetch: false });
   };
   return (
     <>
@@ -390,6 +439,7 @@ export function TradingViewDevScan() {
           selected={selected}
           published={published.data?.scanId}
           onSelect={setSelected}
+          selectRef={shownRef}
         />
         <ReloadLocalScan
           query={selected === null ? published : saved}
@@ -402,13 +452,13 @@ export function TradingViewDevScan() {
       {selected === null ? (
         <DevScanContent query={published} />
       ) : (
-        <SavedScanContent scanId={selected} query={saved} />
+        <SavedScanContent scanId={selected} query={saved} onShowPublished={showPublished} />
       )}
     </>
   );
 }
 
-export type MarketsSource = 'market-data' | 'tradingview';
+export type { MarketsSource } from '@/hooks/useResearchSelection';
 
 /**
  * Which source the scan reviews, under `vite dev` only. Research renders one

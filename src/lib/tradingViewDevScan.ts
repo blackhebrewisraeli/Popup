@@ -25,6 +25,21 @@ export const TRADINGVIEW_SAVED_SCANS_ROUTE = '/__zerochart/tradingview-saved-sca
 /** A snapshot's scan ID, and so its file name: the only thing the saved-scan route accepts. */
 export const SCAN_ID = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/;
 
+/**
+ * A short digest of a view as read (FNV-1a over its JSON). The review is keyed by it, so a
+ * re-read whose content changed starts over, Manual Spot inputs included, even under the same
+ * scan ID; an identical re-read keeps the key and the review. Not a security hash.
+ */
+// ponytail: 32-bit, so two different reads of one view collide about 1 in 4 billion; widen if that matters.
+export function contentKey(value: unknown): string {
+  const text = JSON.stringify(value) ?? '';
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ (text.codePointAt(index) ?? 0), 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 /** Where the bars came from, as the agent recorded it. Times are ISO strings. */
 export interface TradingViewDevSource {
   tool: 'get_ohlcv';
