@@ -99,8 +99,8 @@ whether to act, and where; Popup places no orders.
   decisions on the two open rows: a full page reload now restores the source and **Scan shown**
   (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
   even under the same scan ID, resets them (C12, revised).
-- **Binance outcome tracking, stage D (2026-11-12):** draft
-  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.
+- **Binance outcome tracking, stage D (2026-11-12):**
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157) (merged `62f4fbb`), documentation only.
   [BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) specifies the smallest
   account-event and reconciliation contract over the existing read-only balances and execution
   history ([#148](https://github.com/blackhebrewisraeli/Popup/pull/148), merged `54f9a6c`).
@@ -154,8 +154,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · Draft PR
-  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), documentation only.** Decision:
+- **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · PR
+  [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), merged `62f4fbb`, documentation only.** Decision:
   specify before building, and only what the existing four GET requests can evidence. The trace
   of the integration at `56366db` (cited by line in
   [the spec](BINANCE_SPOT_RECONCILIATION.md)) found three gaps that matter for reconciliation:
@@ -181,7 +181,7 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   decimals. Seven open decisions (D1–D7) are listed but not chosen: cost method, fees in cost,
   what `commission` covers, quote movement, duplicate IDs from self-trades, the guard and clocks,
   and boundary inclusivity. There is no code, endpoint, storage, migration, deployment or Binance
-  request. Review follow-up on the same PR: example 6b now names its 0.01 USDT fee, the guard is
+  request. #157 merged at its first commit, so the review follow-up landed in a separate documentation PR: example 6b now names its 0.01 USDT fee, the guard is
   marked provisional, and the next increment became the evidence-integrity prerequisite. Next:
   reliable accumulated execution evidence (proposed, not started). The real Binance check
   remains the owner's.
