@@ -133,8 +133,14 @@ whether to act, and where; Popup places no orders.
   only. No view, persistence, cost, P&L or Binance request. Do not compare a result with a real
   account until the owner's live check settles what `commission` covers (D3)
   ([section 9](BINANCE_SPOT_RECONCILIATION.md#9-quantity-reconciliation-function-implemented-synthetic-fixtures-only)).
-  Draft [#161](https://github.com/blackhebrewisraeli/Popup/pull/161) clears SonarCloud's three
-  new issues on it without changing any result.
+  [#161](https://github.com/blackhebrewisraeli/Popup/pull/161) (merged `50d2d75`) cleared
+  SonarCloud's three new issues on it without changing any result.
+- **Binance reconciliation pipeline acceptance (2026-11-12):** draft
+  [#162](https://github.com/blackhebrewisraeli/Popup/pull/162) runs browser client → committed
+  handler → synthetic Binance → client parsers → evidence fold → `reconcileSpotQuantity` on
+  synthetic data. It found that the fold merged a continued answer for other pairs or another window
+  (or with nothing to continue) and now refuses it as a failed continuation. Real Binance: NOT RUN
+  ([acceptance record](BINANCE_SPOT_RECONCILIATION.md#synthetic-pipeline-acceptance-2026-11-12)).
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -174,6 +180,21 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
+- **2026-11-12 · Binance quantity-reconciliation pipeline acceptance · Draft PR
+  [#162](https://github.com/blackhebrewisraeli/Popup/pull/162), from `50d2d75`.** Decision: verify the
+  layers together before any view uses `reconcileSpotQuantity`, through the committed handler with
+  its existing injected env, fetch and clock, a synthetic Binance and the production client, so no
+  folded evidence is built by hand. Fix: `nextExecutionEvidence` merged any answer marked as
+  continued; through the real handler, another window's continuation turned a retrieval missing ten
+  fills into a confident `DISCREPANCY`. A continued answer is now merged only when it names the
+  same pairs and window, otherwise it is recorded as an `invalid_request` continuation failure; with
+  nothing to continue it yields no evidence. One view fixture that changed pairs mid-retrieval was
+  corrected. Evidence: 12 synthetic pipeline tests (consistent, discrepancy, three fee assets,
+  overlaps and conflicts within and across pages, failed pair then success, continuation failure
+  then retry, full then empty page, guard edge, read too early, failed read, owner mismatch,
+  isolation); mutations of the first-page time and the parser's terminal successes each fail
+  several. Real Binance: NOT RUN; the account context remains a caller label, not Binance identity.
+
 - **2026-11-12 · Binance Spot quantity reconciliation · PR
   [#160](https://github.com/blackhebrewisraeli/Popup/pull/160), merged `e74fb6c`.** Decision: implement only the
   quantity half of stage D, as a pure function over the evidence #159 already accumulates. To avoid
@@ -186,8 +207,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   tests (the quantity portions of E1–E6 plus decimal, coverage, window, boundary and purity cases),
   each figure calculated by hand; deliberate mutations of the guard, coverage, fee, timing and
   comparison rules each fail at least one test. 1,612 tests, typecheck, lint and build pass. Real
-  Binance: NOT RUN; no view calls the function. The SonarCloud follow-up, draft
-  [#161](https://github.com/blackhebrewisraeli/Popup/pull/161), splits `reconcileSpotQuantity` into
+  Binance: NOT RUN; no view calls the function. The SonarCloud follow-up,
+  [#161](https://github.com/blackhebrewisraeli/Popup/pull/161) (merged `50d2d75`), splits `reconcileSpotQuantity` into
   coverage, timing and fill helpers (cognitive complexity 28 → under 15), replaces two negated
   comparisons with explicit finiteness checks, and adds two tests for an unparseable or earlier
   latest-page time (1,614 tests). Results and reason order are unchanged.

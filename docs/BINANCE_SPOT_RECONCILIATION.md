@@ -311,6 +311,11 @@ retrieval. It remains display-only and in component memory:
 - **Continuation failures are evidence.** A top-level continuation failure retains the earlier
   records and cursor for an explicit retry, marks the retrieval unresolved, and remains visible if
   a later retry succeeds.
+- **A continued answer must continue this retrieval.** It is merged only when it names the same
+  pairs, in the same order, and the same window. Otherwise it is recorded as a failed continuation
+  (`invalid_request`) and the earlier evidence and cursor stay; with nothing to continue it yields
+  no evidence. (Added after the [pipeline acceptance](#synthetic-pipeline-acceptance-2026-11-12)
+  showed the gap.)
 - **A fresh successful retrieval starts a new evidence state.** A failed refresh leaves the retained
   earlier result and its label unchanged. A changed selection clears it; owner account changes and
   logout still unmount the owner-keyed component; request sequencing still drops late answers.
@@ -327,9 +332,10 @@ D3 and D4 on one known fill.
 
 [`reconcileSpotQuantity`](../src/lib/binanceSpotReconciliation.ts) applies section 3 to quantities
 and nothing else. It is pure: no provider request, clock, storage, ledger or view. No view calls it
-yet, and it has run only on the labeled synthetic fixtures in
+yet. It has run only on synthetic data: the labeled fixtures in
 [`binanceSpotReconciliation.test.ts`](../src/test/binanceSpotReconciliation.test.ts), which use the
-quantity portions of E1–E6, never their cost statuses.
+quantity portions of E1–E6, never their cost statuses, and the
+[pipeline acceptance](#synthetic-pipeline-acceptance-2026-11-12) below.
 
 **Inputs.**
 
@@ -390,3 +396,47 @@ coverage unverified (D3) and a provisional guard (D6).
 persistence, display and any Binance request. Before a result is compared with a real account, the
 owner check in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run and settle
 D3.
+
+### Synthetic pipeline acceptance (2026-11-12)
+
+[`binanceSpotReconciliationPipeline.test.ts`](../src/test/binanceSpotReconciliationPipeline.test.ts)
+runs the layers together on invented data, in one process: the browser client (`supabase-js`
+`functions.invoke` via `readSpotAccount` and `readSpotExecutions`) → the committed, unmodified
+`handler.ts` with its existing injected env, fetch and clock → a synthetic Binance answering the four
+documented GETs (`startTime`/`endTime`, inclusive `fromId`, `limit`, injected faults) → the
+handler's JSON, error bodies included → `parseSpotRead` / `parseSpotExecutionRead` →
+`nextExecutionEvidence` → `reconcileSpotQuantity`. No evidence object is built by hand. Supabase Auth
+is a stub with two invented users. Nothing waits; no network, credential or deployment is involved.
+
+Results, 12 tests, every figure worked by hand:
+
+- Two balance reads and a two-page, two-pair retrieval: `CONSISTENT` with exact figures. BTC fees
+  are subtracted; BNB and USDT fees stay in their own assets. An identical repeat within a page and
+  one across the page boundary collapse. Two spellings of one ETH fill stay a conflict that keeps
+  the retrieval incomplete without affecting BTC (E4).
+- Closing one satoshi short: `DISCREPANCY` of `-0.00000001`.
+- A failed BTC page, then ETH continued and ended: BTC `pair_failed` although the last page had no
+  failure and no continuation; ETH `CONSISTENT`.
+- A top-level continuation timeout, then an explicit retry of the same cursor (`fromId` 1101):
+  `continuation_failed` despite the successful retry.
+- Exactly 100 fills: `pair_incomplete` after the full page, `CONSISTENT` after the empty terminal one.
+- A fill at exactly O + g: `fill_near_boundary`. A first page read before C + g:
+  `executions_read_too_early`, still after a later page.
+- A rate-limited closing read: `closing_unavailable` (`rate_limited`). Reads served to two
+  configured owners through one synthetic key: `account_context_mismatch`.
+- The handler's `readAt` and `retrievedAt`, the per-pair terminal successes and the first page's time
+  survive parsing and accumulation unchanged.
+
+**Defect found and fixed.** `nextExecutionEvidence` merged any answer marked as continued. Through the
+real handler, continuing a BTC retrieval that began at O + 30 min with the continuation of a
+retrieval over [O − g, C + g] adopted the second window while missing ten fills, and reconciled to a
+`DISCREPANCY` of `+0.10000000`. A continuation page with nothing to continue reconciled 60 of 160
+fills to `+0.54970000`. Both are now refused as section 8 describes. The view continues only its own
+cursor, and a signed continuation carries its pairs and window, so valid retrievals are unchanged.
+One view fixture whose continuation answer named a pair its first page had not was corrected.
+
+**Limitations.** This shows that the layers agree with each other, not with Binance. The provider and
+Auth are synthetic. `accountContext` is the caller's label and the handler reports no Binance
+account identity, so matching labels do not prove that one Binance account answered. A continuation
+from another retrieval with the same pairs and window cannot be told apart by its answer. D3 and D6
+are not resolved. Real Binance: NOT RUN, and no view calls the function.

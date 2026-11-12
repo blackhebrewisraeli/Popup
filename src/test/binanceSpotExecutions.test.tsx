@@ -150,7 +150,7 @@ describe('Binance Spot execution view', () => {
       0,
       page(
         [execution('1', 'BTCUSDT', { orderId: '7' }), execution('2', 'BTCUSDT', { orderId: '7' })],
-        { continuation: 'opaque-page-token' },
+        { continuation: 'opaque-page-token', symbols: ['BTCUSDT', 'ETHUSDT'] },
       ),
     );
     const nextPage = screen.getByRole('button', { name: 'Load next page' });
@@ -159,11 +159,15 @@ describe('Binance Spot execution view', () => {
     expect(read).toHaveBeenLastCalledWith({ continuation: 'opaque-page-token' });
     await answer(
       1,
-      page([
-        execution('2', 'BTCUSDT', { orderId: '7' }),
-        execution('1', 'ETHUSDT', { orderId: '7' }),
-        execution('3', 'BTCUSDT', { orderId: '8' }),
-      ]),
+      page(
+        [
+          execution('2', 'BTCUSDT', { orderId: '7' }),
+          execution('1', 'ETHUSDT', { orderId: '7' }),
+          execution('3', 'BTCUSDT', { orderId: '8' }),
+        ],
+        // A continuation answer names the pairs and window of the page it continues.
+        { symbols: ['BTCUSDT', 'ETHUSDT'] },
+      ),
     );
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows).toHaveLength(5);
