@@ -15,8 +15,8 @@ specification at `62f4fbb`. Commit `ddb949b` was a later documentation correctio
 merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158) carried its corrected contract
 onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite from section 8
 merged in [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) at `e179bc2`. Quantity
-reconciliation (section 9) is a pure function checked on synthetic fixtures only; nothing calls it
-yet. Acquisition cost and P&L remain unimplemented.
+reconciliation (section 9) merged in [#160](https://github.com/blackhebrewisraeli/Popup/pull/160)
+at `e74fb6c`: a pure function checked on synthetic fixtures only, which nothing calls yet. Acquisition cost and P&L remain unimplemented.
 
 [p]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts
 

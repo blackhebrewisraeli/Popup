@@ -123,8 +123,8 @@ whether to act, and where; Popup places no orders.
   covers and whether USDT moves by exactly `quoteQty` before reconciliation work. Evidence: 1,544
   tests, typecheck, lint and build; synthetic browser checks at desktop and 375 px, light and dark,
   including keyboard continuation retry, visible conflict/failure warnings and no page overflow.
-- **Binance quantity reconciliation (2026-11-12):** draft
-  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160) adds `reconcileSpotQuantity`, a
+- **Binance quantity reconciliation (2026-11-12):**
+  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160) (merged `e74fb6c`) adds `reconcileSpotQuantity`, a
   pure function for the stage-D quantity check on one subject asset between two balance reads:
   `CONSISTENT` (numerical consistency only), `DISCREPANCY` (exact, signed, unattributed) or
   `INDETERMINATE` with every reason. Its evidence is the execution view's accumulated record, whose
@@ -133,6 +133,8 @@ whether to act, and where; Popup places no orders.
   only. No view, persistence, cost, P&L or Binance request. Do not compare a result with a real
   account until the owner's live check settles what `commission` covers (D3)
   ([section 9](BINANCE_SPOT_RECONCILIATION.md#9-quantity-reconciliation-function-implemented-synthetic-fixtures-only)).
+  Draft [#161](https://github.com/blackhebrewisraeli/Popup/pull/161) clears SonarCloud's three
+  new issues on it without changing any result.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -172,8 +174,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-12 · Binance Spot quantity reconciliation · Draft PR
-  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160).** Decision: implement only the
+- **2026-11-12 · Binance Spot quantity reconciliation · PR
+  [#160](https://github.com/blackhebrewisraeli/Popup/pull/160), merged `e74fb6c`.** Decision: implement only the
   quantity half of stage D, as a pure function over the evidence #159 already accumulates. To avoid
   a second implementation, the view's fold moved into `src/lib/binanceSpotEvidence.ts` and now also
   keeps when the first page was read, so "executions read after C + g" is checkable. Completion
@@ -184,7 +186,11 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   tests (the quantity portions of E1–E6 plus decimal, coverage, window, boundary and purity cases),
   each figure calculated by hand; deliberate mutations of the guard, coverage, fee, timing and
   comparison rules each fail at least one test. 1,612 tests, typecheck, lint and build pass. Real
-  Binance: NOT RUN; no view calls the function.
+  Binance: NOT RUN; no view calls the function. The SonarCloud follow-up, draft
+  [#161](https://github.com/blackhebrewisraeli/Popup/pull/161), splits `reconcileSpotQuantity` into
+  coverage, timing and fill helpers (cognitive complexity 28 → under 15), replaces two negated
+  comparisons with explicit finiteness checks, and adds two tests for an unparseable or earlier
+  latest-page time (1,614 tests). Results and reason order are unchanged.
 
 - **2026-11-12 · Binance Spot account-event and reconciliation contract (stage D) · PR
   [#157](https://github.com/blackhebrewisraeli/Popup/pull/157), merged `62f4fbb`, documentation only.** Decision:
