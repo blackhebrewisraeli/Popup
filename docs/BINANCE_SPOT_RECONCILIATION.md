@@ -309,7 +309,9 @@ and the [CHANGELOG](https://github.com/binance/binance-spot-api-docs/blob/master
 **Still unresolved.** The FAQ makes it plausible that one row's `commission` is the summed charge,
 but nothing says so. A rate is not a per-fill amount, so the rate endpoints cannot settle it either.
 The owner's 2026-11-13 live execution read returned no fills for its selection, which settles
-nothing.
+nothing. A later check matched one real TRXUSDT fill's recorded fields with Binance's own order
+view ([live check](BINANCE_SPOT_ACCOUNT.md#trxusdt-live-check-2026-11-13)). That check didn't
+compare the commission with the balance change it caused, so it doesn't settle D3 either.
 
 **Conservative clarification (2026-11-13).** Until a real fill's recorded `commission` has been
 compared with the balance change it caused, a view over real reads shows every quantity result as
@@ -370,10 +372,10 @@ retrieval. It remains display-only and in component memory:
 It adds no endpoint, storage, reconciliation, cost or P&L code, deployment or Binance request, and
 touches no paper, simulation or Live Tracking code. Quantity reconciliation (section 3) is section 9. Cost and P&L statuses (section 4) wait until D1 and D2 are decided and D3 and D4 are verified.
 
-**Live dependency.** Real Binance verification has not run. Before any reconciliation result is
-compared with a real account, the owner check in
-[BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run, and it must also settle
-D3 and D4 on one known fill.
+**Live dependency.** One real fill has been compared with Binance
+([TRXUSDT, 2026-11-13](BINANCE_SPOT_ACCOUNT.md#trxusdt-live-check-2026-11-13)). D3 and D4 are
+still unsettled. Before any reconciliation result is compared with a real account, an owner check
+on one known fill must settle both, from Binance's own balance change.
 
 ## 9. Quantity reconciliation function (implemented, synthetic fixtures only)
 

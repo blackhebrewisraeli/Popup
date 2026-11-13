@@ -26,7 +26,9 @@ TradingView remains the source for market analysis. Binance supplies account rec
   assets. It never logs which assets or how much.
 - **Separate from Popup's books.** The snapshot lives in the Account component's memory only. It is
   not cached, stored, or written to any table, and it never becomes a deposit, position or
-  transaction in paper trading, tracked holdings or simulations.
+  transaction in paper trading, tracked holdings or simulations. Separately,
+  [manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md) will store a copy of a fill only when the
+  owner explicitly links it. No UI does that yet.
 - **Recorded amounts only.** Values are the decimal strings Binance sent, never parsed to floats or
   rounded. A fill's commission amount stays attached to its recorded commission asset; BNB or
   another asset is not converted to USDT/USD. No valuation, total, P&L, cost basis or tax result is
@@ -211,8 +213,9 @@ To turn it off, unset `BINANCE_SPOT_READONLY_ENABLED` (the owner sees **Not conf
 
 ## Verification
 
-Four levels, kept apart. Agents ran the first two; the third is the owner's own observation; the
-fourth has not run.
+Four levels, kept apart. Agents ran the first two. The third is the owner's own observation. The
+fourth, one known fill compared with Binance, ran on 2026-11-13 for
+[one TRXUSDT fill](#trxusdt-live-check-2026-11-13).
 
 **Unit and fixture.** Synthetic responses and fake credentials in
 `src/test/binanceSpotAccountHandler.test.ts`, `src/test/binanceSpotBalances.test.tsx`,
@@ -327,26 +330,42 @@ is recorded here.
 - One execution request for one supported pair over the last 24 hours returned zero records, no
   continuation and complete coverage for that selection.
 
-**Still not verified against real Binance:** a non-empty execution page, commissions, pagination
-and continuation, and any quantity reconciliation. An empty page settles neither D3 (what
-`commission` covers) nor D4. A later owner check on one known fill must compare it with Binance's
-execution view character for character and settle D3 from Binance's own balance change. It must
-not widen the pair set or claim lifetime completeness. It need not be a new trade: an existing
-fill can be found with an explicit UTC range of at most 24 hours around it. One matching fill is
-evidence for that fill's fee case only; it does not establish what `commission` covers for every
+An empty page settles neither D3 (what `commission` covers) nor D4. The one-fill check that
+followed is [below](#trxusdt-live-check-2026-11-13).
+
+**Still not verified against real Binance:**
+
+- pagination and continuation;
+- any fee case other than that one fill's;
+- any quantity reconciliation;
+- D3, from Binance's own balance change;
+- D4.
+
+A further check must not widen the pair set or claim lifetime completeness. One matching fill is
+evidence for that fill's fee case only. It does not establish what `commission` covers for every
 fee type.
 
-### Pending: TRXUSDT live check
+### TRXUSDT live check (2026-11-13)
 
-The owner widened the pair set to `TRXUSDT` on purpose, by the change described above. It needs
-both halves deployed:
+The owner widened the pair set to `TRXUSDT` on purpose, by the change described above.
 
-- **Browser list:** ships with the hosted app's deployment of `main`.
-- **Function list:** needs `supabase functions deploy binance-spot-account --project-ref <project-ref>`.
+- **Deployed.** [#170](https://github.com/blackhebrewisraeli/Popup/pull/170) merged as `01dc3e1`.
+  The hosted app's production deployment of `01dc3e1` lists TRXUSDT.
+  - `binance-spot-account` was redeployed from a clean checkout of `01dc3e1`. Its downloaded source
+    matched that commit byte for byte, `verify_jwt` stayed on, and an unauthenticated request
+    returned 401.
+  - The function's secrets and every other function were unchanged.
+- **Compared.** In the owner's signed-in session, one known TRXUSDT fill was read in **Account**
+  with an explicit UTC range under 24 hours. The read returned one record, complete coverage and no
+  conflicts.
+  - Pair, side, order ID, time, price, executed and quote quantity, and commission amount and asset
+    all matched Binance's own order view.
+  - Binance's web view shows no trade ID. Popup's trade ID matched the only public `aggTrades`
+    entry for that pair at the same millisecond. That public cross-check needs no key.
+- **What it settles.** One real fill reads correctly, for one fee case: commission charged in the
+  received asset.
+  - It doesn't settle D3. The check compared recorded fields with Binance's order view, not the
+    commission with the balance change it caused.
+  - `commissionCoverage` stays `unverified`, and reconciliation results stay Indeterminate.
 
-Until the function is redeployed, choosing TRXUSDT in a deployed browser gets "invalid request"
-from the older function, and nothing reaches Binance. After both are live, the owner's check
-compares one known TRXUSDT fill in **Account** with Binance's own trade view, using an explicit
-UTC range of at most 24 hours. It compares pair, side, trade and order IDs, time, price, executed
-and quote quantity, and commission amount and asset. It has not run. Its account details stay out
-of this repository, and a match would be evidence for that fill's fee case only.
+The account details, the fill's values and the time window stay out of this repository.
