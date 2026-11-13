@@ -45,6 +45,7 @@ const page = (
     conflicts?: SpotExecutionConflict[];
     completedSymbols?: string[];
     symbols?: string[];
+    range?: { startTime: number; endTime: number };
   } = {},
 ): SpotExecutionRead => {
   const failures = options.failures ?? [];
@@ -64,7 +65,7 @@ const page = (
     conflicts: options.conflicts ?? [],
     coverage: {
       symbols,
-      ...RANGE,
+      ...(options.range ?? RANGE),
       returned: executions.length,
       retrievedAt: '2026-11-10T09:00:01.000Z',
       hasMore: options.continuation !== undefined,
@@ -359,6 +360,303 @@ describe('Binance Spot execution view', () => {
       'aria-disabled',
       'false',
     );
+  });
+});
+
+describe('Binance Spot execution view with an explicit UTC range', () => {
+  // The controlled clock: 2026-11-13 12:00 UTC.
+  const NOW = Date.parse('2026-11-13T12:00:00.000Z');
+  const HOUR = 60 * 60 * 1000;
+  const DAY = {
+    startTime: Date.parse('2026-11-01T00:00:00.000Z'),
+    endTime: Date.parse('2026-11-02T00:00:00.000Z'),
+  };
+  const DAY_TEXT = '2026-11-01 00:00:00 UTC – 2026-11-02 00:00:00 UTC';
+
+  const chooseCustom = (start: string, end: string) => {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Range' }), {
+      target: { value: 'custom' },
+    });
+    fireEvent.change(screen.getByLabelText('Start (UTC)'), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText('End (UTC)'), { target: { value: end } });
+  };
+  const load = () => fireEvent.click(screen.getByRole('button', { name: 'Load executions' }));
+  const coverage = (term: string) => screen.getByText(term).parentElement;
+
+  const originalTz = process.env['TZ'];
+  afterEach(() => {
+    if (originalTz === undefined) delete process.env['TZ'];
+    else process.env['TZ'] = originalTz;
+  });
+
+  it('sends nothing while the range is entered, then the exact UTC instants for exactly 24 hours', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Pair' }), {
+      target: { value: 'ETHUSDT' },
+    });
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+    expect(screen.getByLabelText('Start (UTC)')).toHaveAccessibleDescription(
+      /both times in UTC, not your local time/,
+    );
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(read).not.toHaveBeenCalled();
+
+    load();
+    expect(read).toHaveBeenCalledExactlyOnceWith({ symbols: ['ETHUSDT'], ...DAY });
+    await answer(0, page([execution('1', 'ETHUSDT')], { range: DAY, symbols: ['ETHUSDT'] }));
+    expect(coverage('Pairs')).toHaveTextContent('ETHUSDT');
+    expect(coverage('Requested range')).toHaveTextContent(DAY_TEXT);
+    expect(coverage('Retrieved')).toHaveTextContent('2026-11-10 09:00:01 UTC');
+    expect(coverage('Continuation')).toHaveTextContent('None');
+    expect(screen.getByRole('columnheader', { name: 'Local time' })).toBeVisible();
+  });
+
+  it('allows a range that ends exactly now', () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-13T11:00', '2026-11-13T12:00');
+    load();
+    expect(read).toHaveBeenCalledWith({
+      symbols: ['BTCUSDT'],
+      startTime: NOW - HOUR,
+      endTime: NOW,
+    });
+  });
+
+  it.each([
+    ['a missing start', '', '2026-11-13T10:00', 'Enter a complete start and end, in UTC.'],
+    ['a missing end', '2026-11-13T09:00', '', 'Enter a complete start and end, in UTC.'],
+    ['an impossible date', '2026-02-30T00:00', '2026-02-30T01:00', 'Enter a complete start'],
+    ['a time before 1970', '1969-12-31T23:00', '1970-01-01T01:00', 'valid UTC dates and times'],
+    ['a year Binance never saw', '0050-01-01T00:00', '0050-01-01T01:00', 'valid UTC dates'],
+    ['a reversed range', '2026-11-13T10:00', '2026-11-13T09:00', 'The end is before the start.'],
+    ['a zero-length range', '2026-11-13T10:00', '2026-11-13T10:00', 'are the same time'],
+    ['24 hours and a minute', '2026-11-12T09:00', '2026-11-13T09:01', 'longer than 24 hours'],
+    ['a future end', '2026-11-13T11:00', '2026-11-13T12:01', 'ends in the future'],
+    ['a future range', '2026-11-14T00:00', '2026-11-14T01:00', 'ends in the future'],
+  ])('refuses %s before any request', (_, start, end, message) => {
+    vi.useFakeTimers({ now: NOW });
+    const { read } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom(start, end);
+    load();
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('alert')).toHaveTextContent('Nothing was requested.');
+    expect(screen.getByRole('button', { name: 'Load executions' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+    // Correcting the range clears the refusal.
+    fireEvent.change(screen.getByLabelText('Start (UTC)'), {
+      target: { value: '2026-11-13T08:00' },
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each([
+    ['1', 1],
+    ['6', 6],
+    ['24', 24],
+  ])(
+    'keeps the rolling %s-hour preset ending at the clock, after a custom range',
+    (value, hours) => {
+      vi.useFakeTimers({ now: NOW });
+      const { read } = deferredReads();
+      render(<BinanceSpotExecutions read={read} />);
+      chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+      expect(screen.getByLabelText('Start (UTC)')).toBeVisible();
+      fireEvent.change(screen.getByRole('combobox', { name: 'Range' }), { target: { value } });
+      expect(screen.queryByLabelText('Start (UTC)')).toBeNull();
+      load();
+      expect(read).toHaveBeenCalledWith({
+        symbols: ['BTCUSDT'],
+        startTime: NOW - hours * HOUR,
+        endTime: NOW,
+      });
+    },
+  );
+
+  // Los Angeles leaves daylight saving time on 2026-11-01, so that local day lasts 25 hours: read
+  // as local time, this range would be refused or shifted.
+  it.each(['UTC', 'America/Los_Angeles', 'Asia/Kathmandu', 'Pacific/Kiritimati'])(
+    'sends the same UTC instants and summary when the browser runs in %s',
+    async (zone) => {
+      process.env['TZ'] = zone;
+      expect(new Date(DAY.startTime).getTimezoneOffset() === 0).toBe(zone === 'UTC');
+      vi.useFakeTimers({ now: NOW });
+      const { read, answer } = deferredReads();
+      render(<BinanceSpotExecutions read={read} />);
+      chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+      load();
+      expect(read).toHaveBeenCalledExactlyOnceWith({ symbols: ['BTCUSDT'], ...DAY });
+      await answer(0, page([], { range: DAY }));
+      expect(coverage('Requested range')).toHaveTextContent(DAY_TEXT);
+    },
+  );
+
+  it.each([
+    [
+      'pair',
+      () =>
+        fireEvent.change(screen.getByRole('combobox', { name: 'Pair' }), {
+          target: { value: 'SOLUSDT' },
+        }),
+    ],
+    [
+      'preset',
+      () =>
+        fireEvent.change(screen.getByRole('combobox', { name: 'Range' }), {
+          target: { value: '6' },
+        }),
+    ],
+    [
+      'start',
+      () =>
+        fireEvent.change(screen.getByLabelText('Start (UTC)'), {
+          target: { value: '2026-11-01T01:00' },
+        }),
+    ],
+    [
+      'end',
+      () =>
+        fireEvent.change(screen.getByLabelText('End (UTC)'), {
+          target: { value: '2026-11-01T23:00' },
+        }),
+    ],
+  ])('drops evidence and a late answer when the %s changes during a read', async (_, change) => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+    load();
+    await answer(0, page([execution('1')], { range: DAY, continuation: 'cursor-1' }));
+    expect(coverage('Records shown')).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    change();
+    expect(screen.queryByText('Records shown')).toBeNull();
+    await answer(1, page([execution('2')], { range: DAY }));
+    expect(screen.queryByText('Records shown')).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues with only the retrieval cursor and keeps the frozen pair, window and failures', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+    load();
+    await answer(0, page([execution('1')], { range: DAY, continuation: 'cursor-1' }));
+
+    // Time passes; the continuation still reads the frozen window through its cursor alone.
+    await act(async () => vi.advanceTimersByTime(30 * 60_000));
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    expect(read).toHaveBeenLastCalledWith({ continuation: 'cursor-1' });
+    await answer(1, { state: 'error', error: 'timeout' });
+    expect(screen.getByText(/Continuation failed\. Retaining/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    expect(read).toHaveBeenLastCalledWith({ continuation: 'cursor-1' });
+    await answer(2, page([execution('2')], { range: DAY, completedSymbols: ['BTCUSDT'] }));
+    expect(coverage('Records shown')).toHaveTextContent('2');
+    expect(coverage('Requested range')).toHaveTextContent(DAY_TEXT);
+    expect(screen.getByText(/Continuation failed earlier/)).toBeVisible();
+    expect(coverage('Requested coverage')).toHaveTextContent('Incomplete');
+  });
+
+  it('refuses a continued answer for another window instead of merging it', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+    load();
+    await answer(0, page([execution('1')], { range: DAY, continuation: 'cursor-1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, page([execution('2')]));
+    expect(coverage('Records shown')).toHaveTextContent('1');
+    expect(coverage('Requested range')).toHaveTextContent(DAY_TEXT);
+    expect(screen.getByText(/Continuation failed earlier/)).toBeVisible();
+  });
+
+  it('labels empty, partial, conflicted and failed answers for a historical range', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+
+    load();
+    await answer(0, page([], { range: DAY }));
+    expect(screen.getByText(/returned no executions/)).toHaveTextContent(
+      'That does not show the account had none: Binance does not state how long it keeps this history.',
+    );
+    expect(coverage('Requested coverage')).toHaveTextContent(
+      'Complete for requested pairs and window',
+    );
+    expect(document.body).toHaveTextContent('This is not complete account history');
+
+    load();
+    await answer(
+      1,
+      page([], {
+        range: DAY,
+        symbols: ['BTCUSDT'],
+        failures: [{ symbol: 'BTCUSDT', error: 'timeout' }],
+        completedSymbols: [],
+      }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Partial retrieval');
+    expect(screen.getByText(/No consistent executions/)).toBeVisible();
+    expect(coverage('Requested coverage')).toHaveTextContent('Incomplete');
+
+    load();
+    const variants = [
+      execution('1', 'BTCUSDT', { commission: '0.1' }),
+      execution('1', 'BTCUSDT', { commission: '0.10' }),
+    ];
+    await answer(
+      2,
+      page([], { range: DAY, conflicts: [{ symbol: 'BTCUSDT', tradeId: '1', variants }] }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Inconsistent execution evidence');
+    expect(coverage('Requested coverage')).toHaveTextContent('Incomplete');
+
+    load();
+    await answer(3, { state: 'error', error: 'provider_error' });
+    expect(screen.getByText(/Refresh failed/)).toHaveTextContent(
+      'Refresh failed. Retaining the previous result below unchanged. Binance reported an error.',
+    );
+    expect(coverage('Requested range')).toHaveTextContent(DAY_TEXT);
+    expect(coverage('Conflicting identities')).toHaveTextContent('1');
+  });
+
+  it('writes no browser storage while ranges are entered, refused, read and continued', async () => {
+    const writes = [
+      vi.spyOn(Storage.prototype, 'setItem'),
+      vi.spyOn(Storage.prototype, 'removeItem'),
+      vi.spyOn(Storage.prototype, 'clear'),
+    ];
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    chooseCustom('2026-11-02T00:00', '2026-11-01T00:00');
+    load();
+    chooseCustom('2026-11-01T00:00', '2026-11-02T00:00');
+    load();
+    await answer(0, page([execution('1')], { range: DAY, continuation: 'cursor-1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load next page' }));
+    await answer(1, page([], { range: DAY }));
+    for (const write of writes) expect(write).not.toHaveBeenCalled();
+    expect(localStorage).toHaveLength(0);
+    expect(sessionStorage).toHaveLength(0);
+    expect(read.mock.calls).toEqual([
+      [{ symbols: ['BTCUSDT'], ...DAY }],
+      [{ continuation: 'cursor-1' }],
+    ]);
   });
 });
 

@@ -142,15 +142,25 @@ whether to act, and where; Popup places no orders.
   synthetic data. It found that the fold merged a continued answer for other pairs or another window
   (or with nothing to continue) and now refuses it as a failed continuation. Real Binance: NOT RUN
   ([acceptance record](BINANCE_SPOT_RECONCILIATION.md#synthetic-pipeline-acceptance-2026-11-12)).
-- **Binance quantity reconciliation flow (2026-11-13):** draft
-  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163) adds a manual,
+- **Binance quantity reconciliation flow (2026-11-13):**
+  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163) (merged `836ba95`) adds a manual,
   owner-only flow to the Account card: pick one asset (never USDT or BNB), capture opening and
   closing balance reads, then retrieve that pair's guarded window page by page. D3 (what
   `commission` covers) is still unresolved after a fresh documentation check, so every result
   reads **Indeterminate — commission coverage unverified** with no figure
   ([section 10](BINANCE_SPOT_RECONCILIATION.md#10-manual-reconciliation-flow-implemented-gated-by-d3),
-  [D3 check](BINANCE_SPOT_RECONCILIATION.md#d3-check-2026-11-13)). Next on this track: the owner
-  settles D3 on one real fill from Binance's own views.
+  [D3 check](BINANCE_SPOT_RECONCILIATION.md#d3-check-2026-11-13)). Its verification is synthetic
+  only (view tests and a browser run with simulated answers). Separately, and not agent-checked, the
+  owner observed the live balance read matching Binance and one empty execution read on 2026-11-13;
+  no reconciliation has run against a real account.
+- **Historical execution range (2026-11-13):** draft
+  [#164](https://github.com/blackhebrewisraeli/Popup/pull/164) adds **Custom range (UTC)** to the
+  execution view beside the rolling presets: one pair, one explicit window of at most 24 hours,
+  read as UTC whatever the browser's zone, refused before any request when missing, invalid,
+  reversed, zero-length, over 24 hours or in the future. Same endpoint, page size, cursor and
+  evidence rules; synthetic verification only. Next on this track: the owner settles D3 from
+  Binance's own views on one real fill, which can now be an existing fill found by its UTC window
+  rather than a new trade. One fill covers its own fee case only.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -190,9 +200,27 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-13 · Manual Binance quantity reconciliation in Account · Draft PR
+- **2026-11-13 · Explicit historical range for Binance executions · Draft PR
+  [#164](https://github.com/blackhebrewisraeli/Popup/pull/164), from `836ba95`.** Decision: the
+  existing server contract already accepted any `startTime`/`endTime` up to 24 hours apart, so only
+  the view changed: **Custom range (UTC)** with two native `datetime-local` inputs whose values are
+  read as UTC (appending `Z`), so the browser's zone never shifts them. Missing, invalid, reversed,
+  zero-length, over-24-hour (exactly 24 is allowed) and future ranges are refused with the reason and
+  no request. Pair and window are fixed at the start; continuation sends only the cursor through
+  `nextExecutionEvidence`; any change of pair, range or time clears the evidence and drops late
+  answers. The summary shows the requested range and retrieval time in UTC; fill times are labeled
+  **Local time**. An empty answer is described as no records for that selection, never as proof
+  that the account had none. No endpoint, handler, reconciliation or D3 gate change; no storage.
+  Evidence: 27 new synthetic view tests with a controlled clock (four browser time zones, including
+  Los Angeles's 25-hour day), 14 view mutations each caught, and a Chromium run with simulated
+  answers in `Asia/Jerusalem`: keyboard only, exact UTC instants sent, cursor-only continuation,
+  refusals with no request, a dropped late answer, 1280 and 375 px, light and dark. Real Binance:
+  NOT RUN; D3, D4, D6, cost basis and P&L are unaffected. Next: the owner settles D3 on one real
+  fill from Binance's own views.
+
+- **2026-11-13 · Manual Binance quantity reconciliation in Account · PR
   [#163](https://github.com/blackhebrewisraeli/Popup/pull/163), from
-  `3efb2be`.** Decision: the owner can collect the evidence `reconcileSpotQuantity` needs without
+  `3efb2be`, merged `836ba95`.** Decision: the owner can collect the evidence `reconcileSpotQuantity` needs without
   any new endpoint, storage or arithmetic. A new section in the Spot card captures opening and
   closing reads only from successful explicit reads (server time and owner kept), requests exactly
   `[O − g, C + g]` once the clock passes C + g (a local countdown sends nothing), and folds pages

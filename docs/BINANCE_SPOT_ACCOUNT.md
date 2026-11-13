@@ -53,6 +53,14 @@ Popup deliberately narrows that contract:
   existing explicitly known crypto set mapped to USDT pairs, not every pair ever used by the
   account. At most four may be requested through the server contract; the first UI uses one at a
   time.
+- The window is a rolling preset (last hour, 6 hours or 24 hours, ending at the browser clock when
+  **Load executions** is pressed) or an explicit historical range typed in UTC. The two
+  `datetime-local` values are read as UTC, never as the browser's local time, so the browser's time
+  zone cannot shift the request. Before any request the view refuses a missing or invalid time, an
+  end equal to or before the start, a range longer than 24 hours (exactly 24 hours is allowed) and
+  an end later than the browser clock. Pair and window are fixed when a retrieval starts; later
+  pages send only that retrieval's cursor. Nothing iterates over dates or loads pages by itself, so
+  a longer period takes one explicit retrieval per window of at most 24 hours.
 - One first-page request covers at most 24 hours and asks for at most 100 fills per selected pair.
   A full page produces an opaque, HMAC-validated continuation. Later pages use the documented
   inclusive `fromId` contract with the previous last trade ID plus one, retain the original range,
@@ -76,8 +84,8 @@ Popup deliberately narrows that contract:
   so Popup makes none.
 - No execution read runs on mount or in the background. It is manual. A failed refresh retains and
   labels the prior in-memory result without changing its coverage status. A successful explicit new
-  retrieval starts a new evidence state. A changed selection clears it; a late answer cannot replace
-  a newer selection. Logout or account change unmounts and clears the private state.
+  retrieval starts a new evidence state. Changing the pair, the range, or either custom time
+  clears it; a late answer cannot replace a newer selection. Logout or account change unmounts and clears the private state.
 - Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
   Executions alone cannot reconstruct balances.
 
@@ -107,7 +115,10 @@ earlier, so overlapping refreshes cannot move the view backwards.
 
 The execution section starts with no provider request. **Load executions** shows the exact pair and
 range, consistent-record count, conflicting-identity count, retrieval time, continuation availability
-and requested-coverage status. Zero records says so for that selection. A failed page names the
+and requested-coverage status. The range and retrieval time are absolute UTC times; fill times in the
+tables are in the browser's local time and labeled **Local time**. A refused custom range names the
+reason and says that nothing was requested. Zero records says so for that selection only: it does
+not show that the account had no fills then, because Binance states no retention period. A failed page names the
 failure and retains prior records; partial pages name the failed pairs/pages. Conflicting variants
 are shown with their exact recorded fields in a separate evidence table. A failed continuation keeps
 the same cursor available for an explicit retry, but the failure remains visible and the retrieval
@@ -208,7 +219,28 @@ boundaries and signed continuations, accumulated pair/page and continuation fail
 terminal page, an exactly full page followed by an empty terminal page, fresh and failed refreshes,
 invalid symbol/range/continuation, refusal before Binance, rate limits, timeouts, malformed records,
 account switching/late responses, keyboard controls, no storage/ledger imports and the fixed
-four-GET allowlist.
+four-GET allowlist. The explicit UTC range adds, with a controlled clock: the exact instants sent
+for a historical day, exactly 24 hours and an end at the clock allowed, refusals with no request
+(missing, impossible date, before 1970, reversed, zero-length, 24 hours and a minute, future end,
+future range), the three rolling presets after a custom range, the same request and summary in four
+browser time zones (including Los Angeles on its 25-hour day), late answers dropped after a change
+of pair, preset, start or end, continuation with only the cursor (failure retained after a
+successful retry; another window's answer refused), empty, partial, conflicted and failed answers,
+and no storage writes. Fourteen deliberate mutations of the view (local-time parsing, each refusal,
+the 24-hour bound, the late-answer and selection checks, cursor-only continuation, preset hours, UTC
+labels) each fail at least one test.
+
+**Explicit range in a browser (2026-11-13, synthetic).** A local dev server pointed at an
+unreachable Supabase URL, the `?devAuth` stub, and the function's answers simulated by Playwright
+route interception; nothing reached Supabase or Binance. Chromium ran in `Asia/Jerusalem` with the
+`he-IL` locale. By keyboard only (type-ahead in both selects, Tab between date segments and the
+native picker button, Enter on the buttons), 1 Nov 08:00 to 2 Nov 08:00 sent exactly
+`2026-11-01T08:00:00.000Z` to `2026-11-02T08:00:00.000Z` for ETHUSDT, the summary showed that range
+in UTC, the next page sent only the cursor and focus stayed on the button. Reversed, zero-length,
+over-24-hour, future and missing ranges each showed a refusal and sent nothing. Changing the end
+while a delayed read was in flight left no records or summary. The 6-hour preset still requested
+six hours ending at the clock. 1280 and 375 px, light and dark: no page overflow, full-width inputs
+at 375 px, the native calendar icon visible in both themes.
 
 **Local runtime integration (2026-11-10).** Browser → edge function → Supabase Auth → account
 reader → card, on an isolated local Supabase stack (CLI 2.118, edge runtime 1.76.2) with two
@@ -277,4 +309,7 @@ is recorded here.
 and continuation, and any quantity reconciliation. An empty page settles neither D3 (what
 `commission` covers) nor D4. A later owner check on one known fill must compare it with Binance's
 execution view character for character and settle D3 from Binance's own balance change. It must
-not widen the pair set or claim lifetime completeness.
+not widen the pair set or claim lifetime completeness. It need not be a new trade: an existing
+fill can be found with an explicit UTC range of at most 24 hours around it. One matching fill is
+evidence for that fill's fee case only; it does not establish what `commission` covers for every
+fee type.

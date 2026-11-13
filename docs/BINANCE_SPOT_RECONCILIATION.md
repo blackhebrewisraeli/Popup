@@ -19,8 +19,12 @@ onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite
 merged in [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) at `e179bc2`. Quantity
 reconciliation (section 9) merged in [#160](https://github.com/blackhebrewisraeli/Popup/pull/160)
 at `e74fb6c`: a pure function checked on synthetic fixtures only. The manual Account flow in
-section 10 now calls it, and shows every result as Indeterminate while D3 is unverified.
-Acquisition cost and P&L remain unimplemented.
+section 10 ([#163](https://github.com/blackhebrewisraeli/Popup/pull/163), merged at `836ba95`) now
+calls it, and shows every result as Indeterminate while D3 is unverified. The execution view can
+also read an explicit historical UTC range of at most 24 hours
+([#164](https://github.com/blackhebrewisraeli/Popup/pull/164)), so an existing fill can be inspected
+without a new trade; that changes no rule here and does not settle D3, D4 or D6. Acquisition cost
+and P&L remain unimplemented.
 
 [p]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts
 
