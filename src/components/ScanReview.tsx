@@ -490,10 +490,11 @@ function Candidates({
 
   let longNote: string | null = null;
   if (candidates.length > 0 && !candidates.some((result) => result.setups?.long)) {
+    const lower = longs === 1 ? 'asset does' : 'assets do';
     longNote =
       longs === 0
         ? `None holds ZC LONG: no evaluated ${noun} met it in this scan. These are the highest ranks only, not model-qualified Long setups.`
-        : `None of these holds ZC LONG; ${longs} lower-ranked ${longs === 1 ? 'asset does' : 'assets do'} (Long setups).`;
+        : `None of these holds ZC LONG; ${longs} lower-ranked ${lower} (Long setups).`;
   }
 
   return (
