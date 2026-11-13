@@ -122,3 +122,42 @@ Keep the recording trigger: it still guards every other path. A dismissal record
 
 - Frontend: Instant Rollback to an earlier deployment is safe until the contract step. The older bundle's dismissals keep being recorded, without reasons.
 - Database: forward-only. Never drop `trading_signal_dismissals` or delete its rows. They are the only record of those dismissals. To withdraw the RPC, revoke its `EXECUTE` in a new migration (and roll the frontend back first, since the gate requires the function). Recorded rows stay readable in the journal.
+
+## Manual Spot experiments (20261114120000)
+
+Storage for [manual Spot experiments](./MANUAL_SPOT_EXPERIMENTS.md). The migration only expands:
+
+- It adds four tables (`binance_spot_owner`, `spot_experiments`, `spot_experiment_entries`,
+  `spot_experiment_fills`), one function (`is_binance_spot_owner()`), and their indexes,
+  policies and grants.
+- It changes no existing table, policy, grant, function or row, and backfills nothing.
+
+No frontend uses it yet, and `DB_CONTRACT` is unchanged. The gate still requires every migration in
+the commit to be applied, so the database goes first.
+
+**Order: database, then merge.**
+
+1. From a checkout of the PR's final head, run `supabase db push --dry-run`. It should list only
+   `20261114120000`. Then run `supabase db push`.
+2. From the same checkout, run the contract check above. It must report every migration applied.
+3. Merge. The production build passes the gate. Nothing in the app changes.
+
+Until the configuration below is set, no signed-in user can read or add an experiment, the owner
+included. The service role can read but never write.
+
+**Owner configuration (a separate step).** It is needed only once a UI uses these tables. In the
+SQL editor, name the owner: the same Popup user ID the `binance-spot-account` function has in
+`BINANCE_SPOT_OWNER_USER_ID`. Keep that ID out of the repository.
+
+```sql
+insert into public.binance_spot_owner (user_id) values ('<owner user ID>');
+```
+
+To revoke all access, run `delete from public.binance_spot_owner;`. To name another owner, update
+the row. The previous owner's experiments stay stored but become invisible.
+
+**Rollback.**
+
+- Frontend: nothing to roll back. No frontend depends on these tables yet.
+- Database: forward-only. Never drop the tables or delete their rows to undo this. To withdraw
+  access, revoke the `authenticated` grants in a new migration. The stored evidence stays.
