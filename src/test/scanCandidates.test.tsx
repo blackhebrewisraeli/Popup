@@ -342,6 +342,46 @@ describe('Candidates to review first', () => {
     expect(candidate('CALM-USDT')).toHaveFocus();
   });
 
+  it('keeps Tab inside the evidence sheet with the scenario closed, open and closed again', () => {
+    renderScan(MIXED);
+    candidate('CALM-USDT').focus();
+    fireEvent.click(candidate('CALM-USDT'));
+    const sheet = screen.getByRole('dialog', { name: 'CALM-USDT explanation' });
+    const close = within(sheet).getByRole('button', { name: 'Close' });
+    const summary = within(sheet).getByText('Plan a hypothetical scenario', {
+      selector: 'summary',
+    });
+    const press = (shiftKey = false) =>
+      fireEvent.keyDown(window, { key: 'Tab', shiftKey, cancelable: true });
+    expect(close).toHaveFocus();
+
+    // Closed: the summary is the last control; the hidden fields are not.
+    expect(press(true)).toBe(false); // fireEvent returns false once the default is prevented
+    expect(summary).toHaveFocus();
+    expect(press()).toBe(false);
+    expect(close).toHaveFocus();
+
+    // Open: Tab leaves the summary for the fields, and wraps after the last of them.
+    fireEvent.click(summary);
+    const clear = within(sheet).getByRole('button', { name: 'Clear scenario' });
+    summary.focus();
+    expect(press()).toBe(true);
+    close.focus();
+    expect(press(true)).toBe(false);
+    expect(clear).toHaveFocus();
+    expect(press()).toBe(false);
+    expect(close).toHaveFocus();
+
+    // Closed again: the boundary returns to the summary.
+    fireEvent.click(summary);
+    expect(press(true)).toBe(false);
+    expect(summary).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(candidate('CALM-USDT')).toHaveFocus();
+  });
+
   it('switches with the scan: candidates, selection and evidence come from the scan shown', () => {
     wideScreen();
     const first = scanOf(MIXED);
