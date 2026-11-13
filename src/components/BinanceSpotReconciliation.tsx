@@ -260,23 +260,76 @@ const ReadTime = ({ at }: Readonly<{ at: string | number }>) => (
   <time dateTime={new Date(at).toISOString()}>{new Date(at).toLocaleString()}</time>
 );
 
-export function BinanceSpotReconciliation({
-  accountContext,
-  readBalances = readSpotAccount,
-  readExecutions = readSpotExecutions,
-  commissionCoverage = QUANTITY_LIMITS.commissionCoverage,
-}: Readonly<{
-  /** Whose reads these are: the signed-in owner. Not a Binance account identity. */
-  accountContext: string;
-  readBalances?: () => Promise<SpotRead>;
-  readExecutions?: (request: ExecutionRequest) => Promise<SpotExecutionRead>;
-  /**
-   * D3. Only a contract change that settles what `commission` covers may pass `verified`; no
-   * owner control sets it. While unverified, no figure or consistency result is shown.
-   */
-  commissionCoverage?: 'unverified' | 'verified';
-}>) {
-  const [session, setSession] = useState<Session>(() => emptySession('BTC'));
+const ACCESS_LOST =
+  'Access to the Binance connection ended, so this reconciliation session was cleared.';
+
+/** A click handler only while the action is available (aria-disabled keeps the focus). */
+const when = (enabled: boolean, action: () => void) => (enabled ? action : undefined);
+
+/** The session with a successful read captured; any other answer leaves it unchanged. */
+function withCapture(
+  session: Session,
+  which: 'opening' | 'closing',
+  accountContext: string,
+  read: SpotRead,
+): Session {
+  return read.state === 'connected' ? { ...session, [which]: { accountContext, read } } : session;
+}
+
+function captureNotice(which: 'opening' | 'closing', read: SpotRead): string | null {
+  if (read.state === 'connected') return null;
+  const reason = read.state === 'error' ? ` ${failureText(read)}` : '';
+  return `The ${which} balance was not captured.${reason}`;
+}
+
+function retrievalNotice(
+  answer: SpotExecutionRead,
+  continued: boolean,
+  hadEvidence: boolean,
+): string | null {
+  if (answer.state !== 'error') return null;
+  if (continued) {
+    return `The next page was not retrieved. The evidence so far and its cursor are kept, and this failure stays recorded. ${failureText(answer)}`;
+  }
+  const kept = hadEvidence ? ' The earlier evidence is unchanged.' : '';
+  return `The retrieval failed.${kept} ${failureText(answer)}`;
+}
+
+/** The guarded window once it is eligible, or the evidence's own cursor; null when neither. */
+function executionRequest(
+  session: Session,
+  now: number,
+  kind: 'fresh' | 'next',
+): ExecutionRequest | null {
+  if (kind === 'next') {
+    const continuation = session.evidence?.continuation ?? null;
+    return continuation === null ? null : { continuation };
+  }
+  return notYetEligible(session, now) === null ? guardedWindow(session) : null;
+}
+
+function reconcile(session: Session, accountContext: string): QuantityReconciliation | null {
+  const { subject, opening, closing, evidence } = session;
+  if (!opening || !closing || !evidence) return null;
+  return reconcileSpotQuantity({
+    subject,
+    opening,
+    closing,
+    executions: { accountContext, evidence },
+  });
+}
+
+/** When requests may resume: later after a rate limit, otherwise unchanged. */
+function resumeAt(answer: SpotRead | SpotExecutionRead, pausedUntil: number): number {
+  const backoff = backoffSeconds(answer);
+  return backoff === null ? pausedUntil : Date.now() + backoff * 1000;
+}
+
+/**
+ * One explicit request at a time. A rate limit pauses every request here, and an answer is
+ * dropped if `cancel` ran or the component unmounted after it was sent.
+ */
+function useExplicitRequests(onAccessLost: () => void) {
   const [busy, setBusy] = useState<Step | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pausedUntil, setPausedUntil] = useState(0);
@@ -296,39 +349,18 @@ export function BinanceSpotReconciliation({
     };
   }, []);
 
-  const { subject, opening, closing, evidence } = session;
-  const symbol = `${subject}${QUOTE}`;
-  const paused = now < pausedUntil;
-  const guarded = guardedWindow(session);
-  const waiting = notYetEligible(session, now);
-
-  const result = useMemo(
-    () =>
-      opening && closing && evidence
-        ? reconcileSpotQuantity({
-            subject,
-            opening,
-            closing,
-            executions: { accountContext, evidence },
-          })
-        : null,
-    [accountContext, closing, evidence, opening, subject],
-  );
-
-  /** Clears the session; an answer still in flight is dropped when it arrives. */
-  const reset = (nextSubject: string) => {
+  const cancel = () => {
     seqRef.current += 1;
     busyRef.current = false;
     setBusy(null);
     setNotice(null);
-    setSession(emptySession(nextSubject));
   };
 
-  /** One explicit request. `apply` returns the failure notice to show, or null. */
+  /** `apply` folds the answer in and returns the failure notice to show, or null. */
   function send<T extends SpotRead | SpotExecutionRead>(
     step: Step,
     call: () => Promise<T>,
-    apply: (result: T | SpotFailure) => string | null,
+    apply: (answer: T | SpotFailure) => string | null,
   ) {
     if (busyRef.current || Date.now() < pausedUntil) return;
     const seq = ++seqRef.current;
@@ -342,58 +374,157 @@ export function BinanceSpotReconciliation({
         busyRef.current = false;
         setBusy(null);
         setNow(Date.now());
-        const backoff = backoffSeconds(answer);
-        if (backoff !== null) setPausedUntil(Date.now() + backoff * 1000);
+        setPausedUntil((until) => resumeAt(answer, until));
         if (accessLost(answer)) {
-          setSession((current) => emptySession(current.subject));
-          setNotice(
-            'Access to the Binance connection ended, so this reconciliation session was cleared.',
-          );
-          return;
+          onAccessLost();
+          setNotice(ACCESS_LOST);
+        } else {
+          setNotice(apply(answer));
         }
-        setNotice(apply(answer));
       });
   }
 
+  return { busy, notice, now, pausedUntil, paused: now < pausedUntil, send, cancel };
+}
+
+function RequestStatus({
+  busy,
+  pausedUntil,
+}: Readonly<{ busy: Step | null; pausedUntil: number | null }>) {
+  return (
+    <p className="spot-status" aria-live="polite">
+      {busy && BUSY_TEXT[busy]}
+      {pausedUntil !== null && (
+        <>
+          Binance rate limit: requests here are paused until <ReadTime at={pausedUntil} />.
+        </>
+      )}
+    </p>
+  );
+}
+
+function SessionSummary({ session }: Readonly<{ session: Session }>) {
+  const { subject, opening, closing, evidence } = session;
+  const guarded = guardedWindow(session);
+  return (
+    <dl className="spot-coverage" aria-label="Reconciliation session">
+      <div>
+        <dt>Subject</dt>
+        <dd>
+          {subject} on {`${subject}${QUOTE}`}
+        </dd>
+      </div>
+      <div>
+        <dt>Opening read</dt>
+        <dd>{opening ? <ReadTime at={opening.read.readAt} /> : 'Not captured'}</dd>
+      </div>
+      <div>
+        <dt>Closing read</dt>
+        <dd>{closing ? <ReadTime at={closing.read.readAt} /> : 'Not captured'}</dd>
+      </div>
+      <div>
+        <dt>Guarded execution window</dt>
+        <dd>
+          {guarded ? (
+            <>
+              <ReadTime at={guarded.startTime} /> – <ReadTime at={guarded.endTime} />
+            </>
+          ) : (
+            'Set by both reads'
+          )}
+        </dd>
+      </div>
+      {evidence && (
+        <>
+          <div>
+            <dt>Fills retrieved</dt>
+            <dd>{evidence.executions.length}</dd>
+          </div>
+          <div>
+            <dt>Conflicting identities</dt>
+            <dd>{evidence.conflicts.length}</dd>
+          </div>
+          <div>
+            <dt>Continuation</dt>
+            <dd>{evidence.continuation ? 'Available' : 'None'}</dd>
+          </div>
+          <div>
+            <dt>Requested coverage</dt>
+            <dd>
+              {requestedCoverageComplete(evidence)
+                ? 'Complete for the requested pair and window'
+                : 'Incomplete'}
+            </dd>
+          </div>
+        </>
+      )}
+    </dl>
+  );
+}
+
+export function BinanceSpotReconciliation({
+  accountContext,
+  readBalances = readSpotAccount,
+  readExecutions = readSpotExecutions,
+  commissionCoverage = QUANTITY_LIMITS.commissionCoverage,
+}: Readonly<{
+  /** Whose reads these are: the signed-in owner. Not a Binance account identity. */
+  accountContext: string;
+  readBalances?: () => Promise<SpotRead>;
+  readExecutions?: (request: ExecutionRequest) => Promise<SpotExecutionRead>;
+  /**
+   * D3. Only a contract change that settles what `commission` covers may pass `verified`; no
+   * owner control sets it. While unverified, no figure or consistency result is shown.
+   */
+  commissionCoverage?: 'unverified' | 'verified';
+}>) {
+  const [session, setSession] = useState<Session>(() => emptySession('BTC'));
+  const requests = useExplicitRequests(() =>
+    setSession((current) => emptySession(current.subject)),
+  );
+  const { busy, now, paused } = requests;
+  const { subject, opening, closing, evidence } = session;
+  const symbol = `${subject}${QUOTE}`;
+  const waiting = notYetEligible(session, now);
+  const result = useMemo(() => reconcile(session, accountContext), [accountContext, session]);
+
+  /** Clears the session; an answer still in flight is dropped when it arrives. */
+  const reset = (nextSubject: string) => {
+    requests.cancel();
+    setSession(emptySession(nextSubject));
+  };
+
   const capture = (which: 'opening' | 'closing') =>
-    send(which, readBalances, (read) => {
-      if (read.state !== 'connected') {
-        const reason = read.state === 'error' ? ` ${failureText(read)}` : '';
-        return `The ${which} balance was not captured.${reason}`;
-      }
-      setSession((current) => ({ ...current, [which]: { accountContext, read } }));
-      return null;
+    requests.send(which, readBalances, (read) => {
+      setSession((current) => withCapture(current, which, accountContext, read));
+      return captureNotice(which, read);
     });
 
-  /** A null continuation starts a new retrieval of the guarded window. */
-  const retrieve = (continuation: string | null) => {
-    const request = continuation === null ? guarded : { continuation };
-    if (request === null || (continuation === null && waiting !== null)) return;
+  /** `fresh` starts a new retrieval of the guarded window; `next` continues this one. */
+  const retrieve = (kind: 'fresh' | 'next') => {
+    const request = executionRequest(session, now, kind);
+    if (request === null) return;
     const hadEvidence = evidence !== null;
-    send(
+    requests.send(
       'executions',
       () => readExecutions(request),
       (answer) => {
         setSession((current) => ({
           ...current,
-          evidence: nextExecutionEvidence(current.evidence, answer, continuation !== null),
+          evidence: nextExecutionEvidence(current.evidence, answer, kind === 'next'),
         }));
-        if (answer.state !== 'error') return null;
-        if (continuation !== null) {
-          return `The next page was not retrieved. The evidence so far and its cursor are kept, and this failure stays recorded. ${failureText(answer)}`;
-        }
-        const kept = hadEvidence ? ' The earlier evidence is unchanged.' : '';
-        return `The retrieval failed.${kept} ${failureText(answer)}`;
+        return retrievalNotice(answer, kind === 'next', hadEvidence);
       },
     );
   };
 
   const idle = busy === null && !paused;
-  const canOpen = idle && opening === null;
-  const canClose = idle && opening !== null && closing === null;
-  const canRetrieve = idle && waiting === null;
-  const next = evidence?.continuation ?? null;
-  const canContinue = idle && next !== null;
+  const enabled = {
+    opening: idle && opening === null,
+    closing: idle && opening !== null && closing === null,
+    fresh: idle && executionRequest(session, now, 'fresh') !== null,
+    next: idle && executionRequest(session, now, 'next') !== null,
+  };
 
   return (
     <section className="spot-executions" aria-labelledby="spot-reconcile-title">
@@ -427,32 +558,32 @@ export function BinanceSpotReconciliation({
           <button
             type="button"
             className="portfolio-cash-btn"
-            aria-disabled={!canOpen}
-            onClick={canOpen ? () => capture('opening') : undefined}
+            aria-disabled={!enabled.opening}
+            onClick={when(enabled.opening, () => capture('opening'))}
           >
             Capture opening balance
           </button>
           <button
             type="button"
             className="portfolio-cash-btn"
-            aria-disabled={!canClose}
-            onClick={canClose ? () => capture('closing') : undefined}
+            aria-disabled={!enabled.closing}
+            onClick={when(enabled.closing, () => capture('closing'))}
           >
             Capture closing balance
           </button>
           <button
             type="button"
             className="portfolio-cash-btn"
-            aria-disabled={!canRetrieve}
-            onClick={canRetrieve ? () => retrieve(null) : undefined}
+            aria-disabled={!enabled.fresh}
+            onClick={when(enabled.fresh, () => retrieve('fresh'))}
           >
             {evidence ? 'Retrieve again from the start' : 'Retrieve executions'}
           </button>
           <button
             type="button"
             className="portfolio-cash-btn"
-            aria-disabled={!canContinue}
-            onClick={canContinue && next ? () => retrieve(next) : undefined}
+            aria-disabled={!enabled.next}
+            onClick={when(enabled.next, () => retrieve('next'))}
           >
             Load next page
           </button>
@@ -462,73 +593,15 @@ export function BinanceSpotReconciliation({
         </div>
       </div>
 
-      <p className="spot-status" aria-live="polite">
-        {busy && BUSY_TEXT[busy]}
-        {paused && (
-          <>
-            Binance rate limit: requests here are paused until <ReadTime at={pausedUntil} />.
-          </>
-        )}
-      </p>
+      <RequestStatus busy={busy} pausedUntil={paused ? requests.pausedUntil : null} />
 
-      {notice && (
+      {requests.notice && (
         <p className="spot-failed" role="alert">
-          {notice}
+          {requests.notice}
         </p>
       )}
 
-      <dl className="spot-coverage" aria-label="Reconciliation session">
-        <div>
-          <dt>Subject</dt>
-          <dd>
-            {subject} on {symbol}
-          </dd>
-        </div>
-        <div>
-          <dt>Opening read</dt>
-          <dd>{opening ? <ReadTime at={opening.read.readAt} /> : 'Not captured'}</dd>
-        </div>
-        <div>
-          <dt>Closing read</dt>
-          <dd>{closing ? <ReadTime at={closing.read.readAt} /> : 'Not captured'}</dd>
-        </div>
-        <div>
-          <dt>Guarded execution window</dt>
-          <dd>
-            {guarded ? (
-              <>
-                <ReadTime at={guarded.startTime} /> – <ReadTime at={guarded.endTime} />
-              </>
-            ) : (
-              'Set by both reads'
-            )}
-          </dd>
-        </div>
-        {evidence && (
-          <>
-            <div>
-              <dt>Fills retrieved</dt>
-              <dd>{evidence.executions.length}</dd>
-            </div>
-            <div>
-              <dt>Conflicting identities</dt>
-              <dd>{evidence.conflicts.length}</dd>
-            </div>
-            <div>
-              <dt>Continuation</dt>
-              <dd>{next ? 'Available' : 'None'}</dd>
-            </div>
-            <div>
-              <dt>Requested coverage</dt>
-              <dd>
-                {requestedCoverageComplete(evidence)
-                  ? 'Complete for the requested pair and window'
-                  : 'Incomplete'}
-              </dd>
-            </div>
-          </>
-        )}
-      </dl>
+      <SessionSummary session={session} />
 
       <ResultView
         result={result}

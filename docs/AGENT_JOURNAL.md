@@ -153,8 +153,10 @@ whether to act, and where; Popup places no orders.
   only (view tests and a browser run with simulated answers). Separately, and not agent-checked, the
   owner observed the live balance read matching Binance and one empty execution read on 2026-11-13;
   no reconciliation has run against a real account.
-- **Historical execution range (2026-11-13):** draft
-  [#164](https://github.com/blackhebrewisraeli/Popup/pull/164) adds **Custom range (UTC)** to the
+  [#165](https://github.com/blackhebrewisraeli/Popup/pull/165) clears SonarCloud's complexity issue
+  on its view without changing behavior (the fix was pushed after #163 merged and is recovered here).
+- **Historical execution range (2026-11-13):**
+  [#164](https://github.com/blackhebrewisraeli/Popup/pull/164) (merged `7cf01c5`) adds **Custom range (UTC)** to the
   execution view beside the rolling presets: one pair, one explicit window of at most 24 hours,
   read as UTC whatever the browser's zone, refused before any request when missing, invalid,
   reversed, zero-length, over 24 hours or in the future. Same endpoint, page size, cursor and
