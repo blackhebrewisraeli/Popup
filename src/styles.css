@@ -3823,7 +3823,8 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.spot-execution-controls select {
+.spot-execution-controls select,
+.spot-execution-controls input {
   min-height: 34px;
   padding: 0 30px 0 10px;
   border: 1px solid var(--border);
@@ -3834,7 +3835,11 @@ body {
     500 12px 'JetBrains Mono',
     monospace;
 }
-.spot-execution-controls select:focus-visible {
+.spot-execution-controls input {
+  padding: 0 10px;
+}
+.spot-execution-controls select:focus-visible,
+.spot-execution-controls input:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
@@ -3912,7 +3917,8 @@ body {
   .spot-execution-controls .portfolio-cash-btn {
     flex: 1 1 100%;
   }
-  .spot-execution-controls select {
+  .spot-execution-controls select,
+  .spot-execution-controls input {
     width: 100%;
   }
 }
