@@ -114,7 +114,7 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
       </div>
 
       {/* Keyed by user so one account's snapshot can never render for another. */}
-      {user && <BinanceSpotBalances key={user.id} />}
+      {user && <BinanceSpotBalances key={user.id} accountContext={user.id} />}
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />

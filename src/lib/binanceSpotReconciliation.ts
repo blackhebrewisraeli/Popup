@@ -26,7 +26,7 @@ const DECIMAL = /^\d+(\.\d+)?$/;
 const INTEGER = /^\d+$/;
 const SUPPORTED_SYMBOLS = new Set<string>(SPOT_EXECUTION_SYMBOLS);
 /** USDT moves on every pair; BNB pays fees on pairs that are not read. */
-const EXCLUDED_SUBJECTS = new Set(['USDT', 'BNB']);
+export const EXCLUDED_SUBJECTS: ReadonlySet<string> = new Set(['USDT', 'BNB']);
 
 /** One balance read and the account it was made for (e.g. the signed-in owner's user ID). */
 export interface SpotBalanceObservation {
