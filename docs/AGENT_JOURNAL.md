@@ -21,6 +21,20 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-14 · Manual Spot experiment storage · Draft PR [#171](https://github.com/blackhebrewisraeli/Popup/pull/171), from `01dc3e1`.**
+  - **Changed:** migration `20261114120000` adds owner-only, append-only tables for one real Binance Spot experiment, with no UI yet ([contract](MANUAL_SPOT_EXPERIMENTS.md)). An experiment holds the source scan and evidence, the owner's decision, stated rules, client-submitted fill copies, dated observations and an explicit close.
+    - Access needs both row ownership and the configured owner in `binance_spot_owner`. With no configuration, nobody has access.
+    - No application role can update, delete or truncate.
+    - Nothing references paper trading, tracked holdings, simulations or signals.
+    - The TRXUSDT live-check statements now record the completed check. D3 stays unverified.
+  - **Evidence:** local scratch stack only.
+    - 235 pgTAP assertions, 75 of them new.
+    - Upgrade checks from `origin/main` and from the pre-#79 base.
+    - 19 concurrency checks.
+    - 13 weakened protections, each caught by named assertions.
+    - Typecheck, lint and 1,715 unit tests pass.
+  - **Next:** the owner approves the production migration (`supabase db push` before merge, as the gate requires), then merge. The owner configuration row and the Account UI come later.
+
 - **2026-11-13 · TRXUSDT in Binance Spot executions · Merged in [#170](https://github.com/blackhebrewisraeli/Popup/pull/170) as `01dc3e1`.**
   - **Changed:** `TRXUSDT` joins the function's `SUPPORTED_EXECUTION_SYMBOLS` and the browser's `SPOT_EXECUTION_SYMBOLS`. That makes 13 pairs, still a finite allowlist, and a test now keeps the two lists equal. The reconciliation view builds its assets from that list, so it now offers TRX. No endpoint, field, storage, ledger, P&L or order path changed. `src/lib/ticker.ts`, scans, rankings and paper trading are untouched. The D3 gate (`commissionCoverage: 'unverified'`) is unchanged.
   - **Evidence:** synthetic only. One run goes handler → client parser → evidence fold → reconcile for TRXUSDT, with fees in TRX, USDT and BNB, a collapsed repeat and a commission conflict. `TRXBTC` and `trxusdt` are refused before Binance. The view requests a 10-minute UTC window. Removing TRXUSDT from either list fails four tests. Details are in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification).
