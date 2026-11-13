@@ -205,8 +205,10 @@ describe('MarketScanSummary', () => {
     for (const scope of [panel, screen.getByRole('dialog')]) {
       expect(within(scope).queryByRole('link')).not.toBeInTheDocument();
       for (const button of within(scope).queryAllByRole('button')) {
-        // A row opens its own evidence; the rest are Close, Reset and Clear.
-        expect(button).toHaveAccessibleName(/^(Close|Reset|Clear|BTC-USD, rank 1, score \d+)/);
+        // A row or a candidate opens its own evidence; the rest are Close, Reset and Clear.
+        expect(button).toHaveAccessibleName(
+          /^(Close|Reset|Clear|BTC-USD, rank 1, score \d+|Open evidence: BTC-USD, rank 1 of 1, score \d+)/,
+        );
       }
       expect(scope.textContent).not.toMatch(/trade now|buy now|place order|broker/i);
     }
@@ -682,7 +684,11 @@ describe('Scan review: views, explanation and comparison', () => {
       const model = scan.results.find((result) => result.ticker === ticker)!.model!;
       expect(evidence).toHaveTextContent(model.rationale);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(within(panel).getAllByRole('button', { current: true })).toEqual([row(ticker)]);
+      // The candidate and its ranked row both mark the asset shown.
+      expect(within(panel).getAllByRole('button', { current: true })).toEqual([
+        within(panel).getByRole('button', { name: new RegExp(`^Open evidence: ${ticker},`) }),
+        row(ticker),
+      ]);
       expect(row(ticker)).toHaveAttribute('aria-controls', evidence.id);
     }
     // The asset's own data; the scan's source, model and time stay in the header.

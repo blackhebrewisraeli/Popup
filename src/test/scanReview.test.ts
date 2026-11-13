@@ -11,6 +11,7 @@ import {
 } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanAssetResult, type ScanInput } from '@/lib/marketScanner';
 import {
+  candidateNotes,
   cohortFreshness,
   explainResult,
   matchesFilters,
@@ -21,6 +22,7 @@ import {
   riskClauses,
   riskLabel,
   rowReason,
+  shortlist,
   symbolEvidence,
   viewResults,
 } from '@/lib/scanReview';
@@ -417,5 +419,178 @@ describe('pineAlertNote and symbolEvidence', () => {
       'Not recorded in this scan’s evidence. The view lists NASDAQ:AAPL, unverified.',
     );
     expect(symbolEvidence(reading('MSFT'), source)).toBe('Not recorded in this scan’s evidence.');
+  });
+});
+
+describe('shortlist (candidates to review first)', () => {
+  /** Labeled synthetic daily candles: 199 closed (or `count`) UTC days before NOW; not market data. */
+  const DAY = 86_400_000;
+  const TODAY = Date.UTC(2026, 9, 28);
+  const NOW = TODAY + 17 * 3_600_000;
+  const daily = (
+    path: (i: number) => number,
+    spread = 0.01,
+    count = 199,
+  ): NonNullable<ScanInput['candles']> =>
+    Array.from({ length: count }, (_, i) => {
+      const close = path(i);
+      const timestamp = TODAY - (count - i) * DAY;
+      return {
+        timestamp,
+        closeTime: timestamp + DAY - 1,
+        open: close,
+        high: close * (1 + spread),
+        low: close * (1 - spread),
+        close,
+      };
+    });
+  const pair = (ticker: string, candles: NonNullable<ScanInput['candles']>): ScanInput => ({
+    ticker,
+    instrument: `BINANCE:${ticker.replace('-USD', 'USDT')}`,
+    candles,
+  });
+  const waveOf = (period: number, amplitude: number) => (i: number) =>
+    100 + Math.sin(i / period) * amplitude;
+  const scan = (inputs: ScanInput[]) =>
+    evaluateScan(inputs, { evaluationTime: NOW, universeSource: 'assets_status' });
+
+  const seven = [
+    pair('AAA-USD', daily(waveOf(6, 8))),
+    pair('BBB-USD', daily(waveOf(9, 3))),
+    pair('CCC-USD', daily(waveOf(4, 12), 0.03)),
+    pair('DDD-USD', daily(waveOf(14, 5))),
+    pair('EEE-USD', daily(waveOf(6, 8))), // same candles as AAA: a tie broken by ticker
+    pair('FFF-USD', daily(waveOf(20, 9), 0.05)),
+    pair('GGG-USD', daily(waveOf(3, 2))),
+  ];
+
+  it('takes the first five by recorded rank, ties by ticker, whatever the array order', () => {
+    const { results } = scan(seven);
+    const ranked = viewResults(results, 'crypto', 'all');
+    expect(ranked).toHaveLength(7);
+    const list = shortlist(results, 'crypto');
+    expect(list.map((result) => result.rank)).toEqual([1, 2, 3, 4, 5]);
+    expect(list).toEqual(ranked.slice(0, 5));
+    // The canonical order: score descending, then ticker in code-unit order.
+    for (const [a, b] of list.slice(1).map((result, i) => [list[i]!, result] as const)) {
+      const [sa, sb] = [a.model!.signal_score, b.model!.signal_score];
+      expect(sa > sb || (sa === sb && a.ticker < b.ticker)).toBe(true);
+    }
+    const aaa = results.find((result) => result.ticker === 'AAA-USD')!;
+    const eee = results.find((result) => result.ticker === 'EEE-USD')!;
+    expect(aaa.model!.signal_score).toBe(eee.model!.signal_score);
+    expect(aaa.rank! + 1).toBe(eee.rank);
+    // Recorded ranks decide, not where a result sits in the array.
+    expect(shortlist([...results].reverse(), 'crypto')).toEqual(list);
+  });
+
+  it('lists fewer when fewer were evaluated, and none when none was', () => {
+    expect(shortlist(scan(seven.slice(0, 3)).results, 'crypto').map((r) => r.rank)).toEqual([
+      1, 2, 3,
+    ]);
+    const failed = scan([
+      {
+        ticker: 'AAA-USD',
+        instrument: 'BINANCE:AAAUSDT',
+        error: { code: 'FETCH_FAILED', detail: 'HTTP 503' },
+      },
+    ]);
+    expect(failed.status).toBe('FAILED');
+    expect(shortlist(failed.results, 'crypto')).toEqual([]);
+  });
+
+  it('excludes failed, invalid and short-history members, and other asset classes', () => {
+    const { results } = scan([
+      ...seven.slice(0, 4),
+      pair('YNG-USD', daily(waveOf(6, 8), 0.01, 120)),
+      {
+        ticker: 'ERR-USD',
+        instrument: 'BINANCE:ERRUSDT',
+        error: { code: 'DATA_INVALID', detail: 'gap' },
+      },
+      { ticker: 'AAPL', instrument: null },
+    ]);
+    const statuses = Object.fromEntries(results.map((result) => [result.ticker, result.status]));
+    expect(statuses).toMatchObject({
+      'YNG-USD': 'INSUFFICIENT_HISTORY',
+      'ERR-USD': 'DATA_INVALID',
+      AAPL: 'UNSUPPORTED',
+    });
+    const list = shortlist(results, 'crypto');
+    expect(list.map((result) => result.status)).toEqual(Array(4).fill('EVALUATED'));
+    expect(list.map((result) => result.ticker)).not.toContain('YNG-USD');
+    expect(shortlist(results, 'equity')).toEqual([]);
+    expect(shortlist(fixtureScan(), 'crypto')).toEqual([]);
+  });
+
+  it('keeps a top rank without Long or with Risk: no setup admits or excludes a candidate', () => {
+    const withSetups = (ticker: string, rank: number, inputs: FactorInputs, score?: number) => {
+      const { model: m, setups } = recorded(inputs, score);
+      return { ...fixtureScan()[0]!, ticker, rank, model: m, setups } satisfies ScanAssetResult;
+    };
+    const results = [
+      withSetups('BOTH', 1, READINGS.both, 90),
+      withSetups('HV', 2, READINGS.highVolatilityOnly),
+      withSetups('NONE', 3, READINGS.neither),
+    ];
+    const list = shortlist(results, 'equity');
+    expect(list.map((result) => result.ticker)).toEqual(['BOTH', 'HV', 'NONE']);
+    expect(list.map((result) => riskLabel(result))).toEqual([
+      'Risk: high volatility',
+      'Risk: high volatility',
+      null,
+    ]);
+    expect(list.some((result) => result.setups!.long)).toBe(false);
+  });
+});
+
+describe('candidateNotes', () => {
+  const notes = (inputs: FactorInputs, score?: number) => {
+    const { model: m, setups } = recorded(inputs, score);
+    return { m, ...candidateNotes(explainResult(m, setups)) };
+  };
+  const largestTerm = (m: CanonicalScore) => {
+    const c = m.components;
+    const terms = [
+      ['Mean Reversion', c.weights.rsi * c.rsiScore],
+      ['Momentum', c.weights.momentum * c.momentumScore],
+      ['Volatility Regime', c.weights.volatility * c.volatilityScore],
+    ] as const;
+    return [...terms].sort((a, b) => b[1] - a[1])[0]![0];
+  };
+
+  it('names the largest term of the recorded blend with its reading', () => {
+    for (const inputs of Object.values(READINGS)) {
+      const { m, largest } = notes(inputs);
+      expect(largest.startsWith(`${largestTerm(m)} (`)).toBe(true);
+      expect(largest).toMatch(/\): \d+ × \d+%$/);
+    }
+    // The term, not the component: volatility scores 90 here but carries 20%.
+    expect(notes(READINGS.neither).largest).toBe('Momentum (MACD hist +0.20% of price): 60 × 40%');
+  });
+
+  it('puts a high-volatility Risk and the Long shortfall against a candidate without Long', () => {
+    expect(notes(READINGS.highVolatilityOnly).against).toBe(
+      'ZC RISK holds: High volatility (ATR 5.00%). Short of ZC LONG: Score 43, needs ≥ 78',
+    );
+  });
+
+  it('names both Risk clauses when both hold', () => {
+    expect(notes(READINGS.both).against).toMatch(
+      /^ZC RISK holds: High volatility \(ATR 6\.00%\), Low score \(Score 4\)\. Short of ZC LONG: Score 4, needs ≥ 78; MACD momentum -1\.00%, needs ≥ \+0\.05% of price$/,
+    );
+  });
+
+  it('keeps a Risk clause beside a Long setup, and names no Long shortfall', () => {
+    expect(notes(READINGS.longAndHighVolatility).against).toBe(
+      'ZC RISK holds: High volatility (ATR 4.03%)',
+    );
+  });
+
+  it('falls back to the smallest term only for a Long setup with no Risk warning', () => {
+    const { m, against } = notes({ ...calm, momentumPercent: 0.002 }, 80);
+    expect(modelSetups(m)).toEqual({ long: true, risk: false });
+    expect(against).toMatch(/^Smallest term (Mean Reversion|Momentum|Volatility Regime) \(/);
+    expect(notes(READINGS.neither).against).toBe('Short of ZC LONG: Score 64, needs ≥ 78');
   });
 });

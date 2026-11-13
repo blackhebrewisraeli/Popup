@@ -431,6 +431,55 @@ export function rowReason({ long, risk }: ScanExplanation): string {
   return `Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`;
 }
 
+/** Candidates listed per asset class (docs/MARKET_SCANNER.md#candidates-to-review-first). */
+export const SHORTLIST_SIZE = 5;
+
+/**
+ * The candidates to review first in one asset class: its evaluated results in their
+ * recorded rank, the first five. Drawn from the whole scan, never from a view or filters,
+ * and gated by no setup: a result without ZC LONG stays, Risk warnings and all.
+ */
+export function shortlist(
+  results: readonly ScanAssetResult[],
+  assetClass: TickerKind,
+): ScanAssetResult[] {
+  return viewResults(results, assetClass, 'all')
+    .filter((result) => result.rank !== null && result.model && result.setups)
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
+    .slice(0, SHORTLIST_SIZE);
+}
+
+/** A factor's term in the recorded blend: its applied weight × its component score. */
+const blendTerm = (factor: FactorLine) => factor.weight * factor.score;
+
+function termLine(factor: FactorLine): string {
+  return `${factor.label} (${factor.reading}): ${Math.round(factor.score)} × ${Math.round(factor.weight * 100)}%`;
+}
+
+/**
+ * A candidate's two lines, from its recorded explanation only: the largest term of its
+ * score's blend, and what stands against it (each Risk clause that holds, each ZC LONG
+ * clause not met; for a Long setup with no Risk warning, the smallest term).
+ */
+export function candidateNotes(explanation: ScanExplanation): { largest: string; against: string } {
+  const { long, risk } = explanation;
+  // Stable sort: equal terms keep the factors' display order.
+  const byTerm = [...explanation.factors].sort((a, b) => blendTerm(b) - blendTerm(a));
+  const against: string[] = [];
+  const held = risk.holds ? risk.clauses.filter((clause) => clause.met) : [];
+  if (held.length > 0) against.push(`ZC RISK holds: ${held.map(clauseValue).join(', ')}`);
+  if (!long.holds) {
+    const unmet = long.clauses.filter((clause) => !clause.met);
+    against.push(`Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`);
+  }
+  const smallest = byTerm.at(-1);
+  if (against.length === 0 && smallest) against.push(`Smallest term ${termLine(smallest)}`);
+  return {
+    largest: byTerm[0] ? termLine(byTerm[0]) : 'Not recorded',
+    against: against.join('. '),
+  };
+}
+
 export interface Freshness {
   stale: boolean;
   detail: string;
