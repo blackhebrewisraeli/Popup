@@ -180,7 +180,9 @@ following UTC day and **finished before the next UTC midnight**; the snapshot mu
 The evidence of an evaluated pair in a TradingView crypto scan (beside the list, or in the sheet
 at phone width) ends with **Manual Spot scenario**. **Plan a hypothetical scenario** opens your own
 arithmetic for that pair. Popup reads no balance, quote or exchange filter, sends and saves
-nothing, and offers no order: you decide, and act in Binance yourself if you choose to.
+nothing, and offers no order: you decide, and act in Binance yourself if you choose to. **Open
+evidence** on one of the [candidates to review first](MARKET_SCANNER.md#candidates-to-review-first)
+reaches the same panel, under the same rules and with empty inputs.
 
 - **Evidence first.** The panel repeats what it rests on: the exact TradingView symbol, Binance
   Spot as venue, the scan ID, model and timeframe, the evaluated UTC day, the technical rank,

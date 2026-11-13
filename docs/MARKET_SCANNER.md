@@ -175,6 +175,56 @@ session, window and fetch time. Assets from different asset classes cannot be se
 
 Neither view offers an order, a size or a broker link.
 
+### Candidates to review first
+
+At the top of the results, before the ranked list, each ranked asset class lists up to five
+**candidates**: the assets model `1.0.0` ranks highest in the scan shown, so the owner sees where
+to start without choosing a symbol first. A candidate is _prioritized for review by this model, relative to this universe and
+this scan_. It is not a buy recommendation, a calibrated probability of profit, a verified
+investment opportunity, or an executable or affordable order. Nothing has shown that a higher rank
+predicts a better outcome ([SCANNER_RESEARCH.md](SCANNER_RESEARCH.md)); the list says so.
+
+Selection contract (`shortlist` in `src/lib/scanReview.ts`):
+
+- **Eligible:** the class's `EVALUATED` results, the existing eligibility rule. Failed, rate
+  limited, invalid, stale, short-history and unsupported members never appear.
+- **Order:** their recorded rank (score descending, then ticker in code-unit order), the first
+  five, or fewer when fewer were evaluated. Ranks never cross asset classes.
+- **Universe:** the whole evaluated class of the scan shown. The view tab, search and filters
+  narrow the ranked list below, never the candidates.
+- **No setup gate:** an asset without ZC LONG stays a candidate, and every Risk clause that holds
+  stays named on it; a high rank does not resolve a Risk warning.
+- **Nothing new:** no score, threshold, weight, composite, allocation or recommendation is
+  computed. The owner's budget plays no part.
+
+Each candidate shows its exact instrument (the TradingView symbol requested and confirmed by the
+response, otherwise the recorded instrument), rank of the evaluated count, score, setup tags with
+named Risk clauses, and two lines from its recorded values only:
+
+- **Largest term:** the factor with the largest weight × component score in the recorded blend,
+  with its reading.
+- **Against:** each Risk clause that holds and each ZC LONG clause not met, with the recorded
+  value; for a Long setup with no Risk warning, the factor with the smallest term.
+
+**Open evidence** selects the asset as a ranked row does: the existing evidence opens beside the
+list or in the sheet, and for an evaluated TradingView crypto pair that evidence ends with the
+[Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) under its current rules,
+with empty inputs.
+
+Scan state comes from the existing rules:
+
+- The list names the scan ID (TradingView imports) and the evaluated day it was ranked on. Source,
+  data time and freshness stay stated once, in the scan header; freshness is the scan's own rule
+  (`cohortFreshness`).
+- **Stale:** titled **Historical top ranks**, marked **Historical**, with the reason; never
+  presented as a current shortlist.
+- **Nothing evaluated:** no list; it says no asset of the class was evaluated.
+- **Incomplete:** it says how many members were not evaluated and that they cannot appear.
+- **No Long:** when no candidate holds ZC LONG it says so, and whether a lower-ranked asset does.
+- **Switching** scan, universe or source starts the review over, so candidates, evidence and any
+  scenario come from the scan shown only. A Market data rescan recomputes the list from the new
+  scan.
+
 ## Evaluating the scanner
 
 One scan proves nothing about quality. A future evaluation has to cover every scanned asset, not

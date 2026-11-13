@@ -991,7 +991,8 @@ body {
 .market-scan-cohort-setups .market-scan-label {
   margin: 0;
 }
-.scan-asof {
+.scan-asof,
+.scan-candidates-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1000,7 +1001,8 @@ body {
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.scan-asof .market-scan-status {
+.scan-asof .market-scan-status,
+.scan-candidates-meta .market-scan-status {
   font-size: 12px;
 }
 .scan-stale {
@@ -1212,7 +1214,8 @@ body {
   margin-bottom: 12px;
 }
 /* Changes since previous scan: two recorded TradingView imports side by side, never a timeline. */
-.scan-changes {
+.scan-changes,
+.scan-candidates {
   margin-bottom: 18px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
@@ -1255,6 +1258,19 @@ body {
 .scan-changes-row:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+/* Candidates to review first: the changes row, with its two evidence lines on their own row. */
+.scan-candidates-meta {
+  margin: 0 0 8px;
+}
+.scan-candidate-notes {
+  flex-basis: 100%;
+}
+.scan-candidate-open {
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .scan-guide {
   display: grid;

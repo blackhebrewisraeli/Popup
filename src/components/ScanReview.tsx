@@ -23,10 +23,11 @@ import {
   type ModelSetups,
 } from '@/lib/canonicalModel';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
-import type { ScanComparison } from '@/lib/scanChanges';
+import { exactSymbol, type ScanComparison } from '@/lib/scanChanges';
 import { RISK_PROFILE_POLICIES, type RiskProfile } from '@/lib/portfolioBuilder';
 import {
   ageLabel,
+  candidateNotes,
   CLASS_LABEL,
   clauseShortfall,
   clauseValue,
@@ -44,6 +45,7 @@ import {
   resultAsOfLabel,
   riskLabel,
   rowReason,
+  shortlist,
   symbolEvidence,
   UTC_TIME,
   viewResults,
@@ -398,6 +400,165 @@ function Comparison({
         {scan.modelVersion}. The scores order these assets within this scan; their gaps are not
         probabilities or expected returns.
       </p>
+    </section>
+  );
+}
+
+/** One candidate: the row opens its existing evidence, as a ranked row does. */
+function Candidate({
+  result,
+  evaluated,
+  selected,
+  wide,
+  evidenceId,
+  onSelect,
+}: Readonly<{
+  result: ScanAssetResult;
+  evaluated: number;
+  selected: boolean;
+  wide: boolean;
+  evidenceId: string;
+  onSelect: (ticker: string, opener: HTMLElement) => void;
+}>) {
+  const notesId = useId();
+  if (!result.model || !result.setups) return null;
+  const { largest, against } = candidateNotes(explainResult(result.model, result.setups));
+  const setup = result.setups.long || result.setups.risk;
+  return (
+    <li>
+      <button
+        type="button"
+        className={cn('scan-changes-row', selected && 'is-selected')}
+        aria-label={`Open evidence: ${result.ticker}, rank ${result.rank} of ${evaluated}, score ${result.model.signal_score}, ${setupWords(result)}`}
+        aria-describedby={notesId}
+        aria-current={selected ? 'true' : undefined}
+        aria-controls={wide ? evidenceId : undefined}
+        aria-haspopup={wide ? undefined : 'dialog'}
+        onClick={(event) => onSelect(result.ticker, event.currentTarget)}
+      >
+        <span className="market-scan-rank">
+          #{result.rank} of {evaluated}
+        </span>
+        <span className="market-scan-ticker">{result.ticker}</span>
+        <span className="scan-row-symbol">
+          {exactSymbol(result) ?? result.instrument ?? 'Instrument not recorded'}
+        </span>
+        <span className="market-scan-fit">Score {result.model.signal_score}</span>
+        {setup ? <SetupTags result={result} /> : <span className="market-scan-tag">No setup</span>}
+        <span id={notesId} className="market-scan-fit scan-candidate-notes">
+          <span className="block">Largest term: {largest}</span>
+          <span className="block">Against: {against}</span>
+        </span>
+        <span className="scan-candidate-open">Open evidence</span>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * The candidates to review first in one asset class: up to five of its evaluated assets in
+ * recorded rank, from the whole scan (docs/MARKET_SCANNER.md#candidates-to-review-first).
+ * Prioritized for review by this model, relative to this universe and scan; never a
+ * recommendation, and never narrowed by the view or filters.
+ */
+function Candidates({
+  cohort,
+  scan,
+  scanId,
+  selected,
+  wide,
+  evidenceId,
+  onSelect,
+}: Readonly<{
+  cohort: ScanCohort;
+  scan: MarketScan;
+  scanId: string | undefined;
+  selected: string | null;
+  wide: boolean;
+  evidenceId: string;
+  onSelect: (ticker: string, opener: HTMLElement) => void;
+}>) {
+  const titleId = useId();
+  const label = CLASS_LABEL[cohort.assetClass];
+  const noun = label.toLowerCase();
+  const { coverage } = cohort;
+  const candidates = shortlist(scan.results, cohort.assetClass);
+  const freshness = cohortFreshness(cohort, Date.now());
+  const stale = freshness?.stale === true;
+  const longs = viewResults(scan.results, cohort.assetClass, 'long').length;
+  const risks = candidates.filter((result) => result.setups?.risk).length;
+
+  let longNote: string | null = null;
+  if (candidates.length > 0 && !candidates.some((result) => result.setups?.long)) {
+    const lower = longs === 1 ? 'asset does' : 'assets do';
+    longNote =
+      longs === 0
+        ? `None holds ZC LONG: no evaluated ${noun} met it in this scan. These are the highest ranks only, not model-qualified Long setups.`
+        : `None of these holds ZC LONG; ${longs} lower-ranked ${lower} (Long setups).`;
+  }
+
+  return (
+    <section className="scan-candidates" aria-labelledby={titleId}>
+      <h3 id={titleId} className="market-scan-label">
+        {stale ? 'Historical top ranks' : 'Candidates to review first'}{' '}
+        <span className="market-scan-rule">
+          {label}, prioritized by model {scan.modelVersion} in this scan
+        </span>
+      </h3>
+      {/* Source, data time and freshness are the scan header's; only a stale verdict repeats. */}
+      {(stale || scanId) && (
+        <p className="scan-candidates-meta">
+          {stale && <span className="market-scan-status market-scan-partial">Historical</span>}
+          {scanId && (
+            <span>
+              Scan <code>{scanId}</code>
+            </span>
+          )}
+          {stale && <span className="scan-stale">{freshness?.detail}</span>}
+        </p>
+      )}
+      {candidates.length === 0 ? (
+        <p className="market-scan-empty">
+          No candidates: no {noun} asset was evaluated in this scan, so there is nothing to rank.
+        </p>
+      ) : (
+        <>
+          <p className="market-scan-fit scan-changes-note">
+            {stale &&
+              `Historical, not a current shortlist: these were the top ranks of their evaluated day, and the data no longer passes this scan's freshness rule. `}
+            Ranked on {dataAsOfLabel(cohort)}: the top {candidates.length} of {coverage.evaluated}{' '}
+            evaluated, relative to this universe and scan. Not a buy recommendation, a probability
+            of profit or an executable order, and research has not shown that a higher rank predicts
+            a better outcome. The view and filters do not change this list.
+          </p>
+          <ul className="market-scan-list scan-changes-list" aria-label={`${label} candidates`}>
+            {candidates.map((result) => (
+              <Candidate
+                key={result.ticker}
+                result={result}
+                evaluated={coverage.evaluated}
+                selected={selected === result.ticker}
+                wide={wide}
+                evidenceId={evidenceId}
+                onSelect={onSelect}
+              />
+            ))}
+          </ul>
+          {longNote && <p className="market-scan-fit">{longNote}</p>}
+          {risks > 0 && (
+            <p className="market-scan-fit">
+              {risks} of {candidates.length} carry a Risk warning, named on each; a high rank does
+              not resolve it.
+            </p>
+          )}
+        </>
+      )}
+      {coverage.notEvaluated > 0 && (
+        <p className="market-scan-fit">
+          {coverage.notEvaluated} of {coverage.supported} supported {noun} were not evaluated this
+          scan and cannot appear here.
+        </p>
+      )}
     </section>
   );
 }
@@ -1174,6 +1335,18 @@ export function ScanReview({
       </p>
       <div className={cn('scan-desk', wide && 'is-wide')}>
         <div className="scan-desk-list">
+          {cohorts.map((cohort) => (
+            <Candidates
+              key={cohort.assetClass}
+              cohort={cohort}
+              scan={scan}
+              scanId={scanId}
+              selected={selected}
+              wide={wide}
+              evidenceId={evidenceId}
+              onSelect={select}
+            />
+          ))}
           {changes && (
             <ScanChanges
               comparison={changes}
