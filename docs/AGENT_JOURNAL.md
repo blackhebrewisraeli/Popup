@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-14 · Manual Spot experiment storage · Draft PR [#171](https://github.com/blackhebrewisraeli/Popup/pull/171), from `01dc3e1`.**
+- **2026-11-14 · Manual Spot experiment storage · Merged in [#171](https://github.com/blackhebrewisraeli/Popup/pull/171) as `14894a8`.**
   - **Changed:** migration `20261114120000` adds owner-only, append-only tables for one real Binance Spot experiment, with no UI yet ([contract](MANUAL_SPOT_EXPERIMENTS.md)). An experiment holds the source scan and evidence, the owner's decision, stated rules, client-submitted fill copies, dated observations and an explicit close.
     - Access needs both row ownership and the configured owner in `binance_spot_owner`. With no configuration, nobody has access.
     - No application role can update, delete or truncate.
@@ -33,7 +33,12 @@ whether to act, and where; Popup places no orders.
     - 19 concurrency checks.
     - 13 weakened protections, each caught by named assertions.
     - Typecheck, lint and 1,715 unit tests pass.
-  - **Next:** the owner approves the production migration (`supabase db push` before merge, as the gate requires), then merge. The owner configuration row and the Account UI come later.
+  - **Released 2026-11-13 (UTC)** ([release record](MANUAL_SPOT_EXPERIMENTS.md#production-release-2026-11-13)):
+    - **Failed build:** #171 was merged before its migration. The first production build of `14894a8` failed at the release gate: `migration 20261114120000 is not applied`. Nothing went live, and production kept serving `01dc3e1`.
+    - **Migration:** `20261114120000` was then applied from a clean checkout of `14894a8`. Production's tables, RLS, policies and grants matched a fresh local build of the same files. The release contract passed: all 31 migrations and every RPC this frontend calls.
+    - **Successful retry:** a redeploy of the failed deployment built `14894a8` again, passed the gate and went live.
+    - **Not set up yet:** the owner configuration (`binance_spot_owner`) is empty, so nobody can read or add an experiment. No UI exists, and the experiment tables were empty at release.
+  - **Next:** the Account UI, then the [owner configuration step](RELEASE.md#manual-spot-experiments-20261114120000).
 
 - **2026-11-13 · TRXUSDT in Binance Spot executions · Merged in [#170](https://github.com/blackhebrewisraeli/Popup/pull/170) as `01dc3e1`.**
   - **Changed:** `TRXUSDT` joins the function's `SUPPORTED_EXECUTION_SYMBOLS` and the browser's `SPOT_EXECUTION_SYMBOLS`. That makes 13 pairs, still a finite allowlist, and a test now keeps the two lists equal. The reconciliation view builds its assets from that list, so it now offers TRX. No endpoint, field, storage, ledger, P&L or order path changed. `src/lib/ticker.ts`, scans, rankings and paper trading are untouched. The D3 gate (`commissionCoverage: 'unverified'`) is unchanged.

@@ -142,6 +142,12 @@ the commit to be applied, so the database goes first.
 2. From the same checkout, run the contract check above. It must report every migration applied.
 3. Merge. The production build passes the gate. Nothing in the app changes.
 
+**What happened (2026-11-13, UTC).** #171 was merged first, so its first production build failed at
+the gate. The migration was then pushed from the merge commit, and the failed deployment was
+redeployed, as in [Delayed migrations](#delayed-migrations). The retry passed the gate and went
+live. The [release record](./MANUAL_SPOT_EXPERIMENTS.md#production-release-2026-11-13) has the
+checks.
+
 Until the configuration below is set, no signed-in user can read or add an experiment, the owner
 included. The service role can read but never write.
 

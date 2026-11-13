@@ -8,8 +8,11 @@ was observed afterwards. It records:
 - the fills the owner links;
 - dated observations, and the owner's explicit close.
 
-**Stage: storage only.** Migration `20261114120000` adds the tables, the access rule and their
-validation. Nothing in the app reads or writes them yet. A later increment adds the views in
+**Stage: storage only, in production.** Migration `20261114120000` adds the tables, the access rule
+and their validation. It was applied to production on 2026-11-13 (UTC)
+([release record](#production-release-2026-11-13)). The owner configuration is empty, so nobody can
+read or add an experiment, and nothing in the app reads or writes the tables yet. A later increment
+adds the views in
 **Account**, separate from the paper Signal Journal: recording from the
 [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) and linking fills from the
 [execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage).
@@ -184,3 +187,20 @@ weakening made named assertions fail:
 | Configuration readable by every signed-in user               | 1                                         |
 | A rule may replace any entry                                 | 3                                         |
 | A fill references `paper_transactions`                       | 1                                         |
+
+## Production release (2026-11-13)
+
+All times are UTC. #171 was merged as `14894a8` before its migration reached production, so it
+was released by the [delayed-migration path](RELEASE.md#delayed-migrations).
+
+| Step                     | Result                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First production build   | **Failed** at the release gate: `migration 20261114120000 is not applied`. That was the only gap it reported. Nothing went live, and production kept serving `01dc3e1`                                                                                                                                                              |
+| Pre-checks               | A clean checkout of `14894a8`. The migration file's SHA-256 matched the reviewed file. Production's history and catalog showed the migration not applied and none of its objects present. The dry run listed only `20261114120000`                                                                                                  |
+| Migration                | `supabase db push` applied `20261114120000` only, with no seeds or roles                                                                                                                                                                                                                                                            |
+| Verification             | Production matched a fresh local build of the same files: RLS on all four tables, the 7 policies, table and column grants, the function's security mode, source and execute rights, constraints, indexes and triggers. All four tables were empty. The release contract passed: all 31 migrations and every RPC this frontend calls |
+| Retried production build | **Succeeded.** A redeploy of the failed deployment built `14894a8` again, passed the gate and went live                                                                                                                                                                                                                             |
+
+At release, the owner configuration was empty, so nobody could read or add an experiment. No UI
+existed, and no experiment had been recorded. Configuring the owner is a separate step
+([Release](RELEASE.md#manual-spot-experiments-20261114120000)).
