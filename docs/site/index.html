@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Popup — Explainable market research and paper trading</title>
+    <meta
+      name="description"
+      content="Review market scans, inspect the evidence behind each signal, and test hypothetical decisions with Popup. An open-source research and paper-trading workspace in private testing."
+    />
+    <meta name="theme-color" content="#101114" />
+    <meta property="og:title" content="Popup — Understand the signal" />
+    <meta
+      property="og:description"
+      content="Explainable market research, reproducible scans, and paper trading. Currently in private testing."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="shell nav">
+      <a class="brand" href="#" aria-label="Popup home"
+        ><img src="favicon.svg" width="34" height="34" alt="" />Popup</a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#workflow">Workflow</a><a href="#engineering">Engineering</a
+        ><a href="https://github.com/blackhebrewisraeli/Popup">GitHub ↗</a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="shell hero" aria-labelledby="hero-title">
+        <div class="intro">
+          <p class="eyebrow">
+            <span class="dot" aria-hidden="true"></span> OPEN SOURCE · PRIVATE TESTING
+          </p>
+          <h1 id="hero-title">Understand<br />the signal<span class="coral">.</span></h1>
+          <p class="lede">Inspect the evidence. Test the decision.</p>
+          <p class="muted">
+            A focused workspace for market research, scan comparison, backtesting, and paper
+            trading. From a ranked result to the reasons behind it.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="https://popup-signals.vercel.app"
+              >Explore the workspace ↗</a
+            ><a class="button" href="https://github.com/blackhebrewisraeli/Popup#readme"
+              >Read the documentation</a
+            >
+          </div>
+          <p class="small muted">Pre-beta. Simulated trading. No real order execution.</p>
+        </div>
+        <aside class="evidence" aria-label="Illustrative workflow, no market data">
+          <div class="panel-top">
+            <span>POPUP / RESEARCH</span><span class="pill">Workflow illustration</span>
+          </div>
+          <h2>Evidence before action.</h2>
+          <p class="muted">Every result deserves context.</p>
+          <div class="evidence-row">
+            <span class="step">01</span>
+            <div>
+              <h3>Source &amp; coverage</h3>
+              <p>Know what was observed and what is missing.</p>
+            </div>
+            <span aria-hidden="true">↗</span>
+          </div>
+          <div class="evidence-row">
+            <span class="step">02</span>
+            <div>
+              <h3>Factors &amp; regime</h3>
+              <p>See the conditions behind the model score.</p>
+            </div>
+            <span aria-hidden="true">↗</span>
+          </div>
+          <div class="evidence-row">
+            <span class="step">03</span>
+            <div>
+              <h3>Compare &amp; simulate</h3>
+              <p>Review changes and explore a hypothetical plan.</p>
+            </div>
+            <span aria-hidden="true">↗</span>
+          </div>
+          <div class="panel-bottom">
+            Illustration only · No prices, signals, or performance claims
+          </div>
+        </aside>
+      </section>
+      <div class="strip">
+        <div class="shell">
+          RESEARCH WITH CONTEXT <span aria-hidden="true">/</span> REPRODUCIBLE INPUTS
+          <span aria-hidden="true">/</span> SEPARATE PAPER LEDGERS
+        </div>
+      </div>
+      <section class="shell section" id="workflow" aria-labelledby="workflow-title">
+        <p class="eyebrow">THE WORKSPACE</p>
+        <h2 id="workflow-title">One question. A clearer path to evidence.</h2>
+        <div class="cards">
+          <article>
+            <span class="index">01 / RESEARCH</span>
+            <h3>See what changed.</h3>
+            <p>
+              Review bounded stock, ETF, and crypto universes. Compare compatible snapshots and
+              inspect factors, Risk clauses, session, and coverage.
+            </p>
+            <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/MARKET_SCANNER.md"
+              >Scanner workflow →</a
+            >
+          </article>
+          <article>
+            <span class="index">02 / PAPER DESK</span>
+            <h3>Test a hypothesis.</h3>
+            <p>
+              Explore allocations and backtests, then record simulated trades with cash, positions,
+              fees, and transaction history kept together.
+            </p>
+            <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/WORKSPACE_GUIDE.md"
+              >Technical guide →</a
+            >
+          </article>
+          <article>
+            <span class="index">03 / ACCOUNT</span>
+            <h3>Keep the boundary clear.</h3>
+            <p>
+              Separate real holdings from simulated money. The owner-only Binance Spot connection
+              reads balances and finite execution history without placing orders.
+            </p>
+            <a
+              href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/BINANCE_SPOT_ACCOUNT.md"
+              >Read-only account scope →</a
+            >
+          </article>
+        </div>
+        <p class="scope">
+          TradingView development scans run locally through an authenticated agent at the owner's
+          request. They are not an unattended hosted scanner. The hosted app, market-data streams,
+          alerts, and account reads have separate capabilities.
+        </p>
+      </section>
+      <section
+        class="shell section engineering"
+        id="engineering"
+        aria-labelledby="engineering-title"
+      >
+        <div>
+          <p class="eyebrow">BUILT FOR INSPECTION</p>
+          <h2 id="engineering-title">The implementation<br />is part of the story.</h2>
+          <p class="muted">TypeScript · React · TanStack Start · Supabase · TradingView</p>
+          <a
+            class="text-link"
+            href="https://github.com/blackhebrewisraeli/Popup/blob/main/ARCHITECTURE.md"
+            >Explore the architecture ↗</a
+          >
+        </div>
+        <ul class="principles">
+          <li>
+            <h3>Explainable calculations</h3>
+            <p>
+              Canonical factor scoring with explicit insufficient-data states and a documented Pine
+              comparison contract.
+            </p>
+          </li>
+          <li>
+            <h3>Reproducible research</h3>
+            <p>Versioned input contracts, saved evidence, and offline scan reproduction.</p>
+          </li>
+          <li>
+            <h3>Accounting with invariants</h3>
+            <p>Atomic ledger transitions, FIFO lots, and isolated real and simulated holdings.</p>
+          </li>
+          <li>
+            <h3>Checks in the repository</h3>
+            <p>Typecheck, build, lint, tests with coverage, and independent reference fixtures.</p>
+          </li>
+        </ul>
+      </section>
+      <section class="shell section status" aria-labelledby="status-title">
+        <p class="eyebrow">CURRENT STAGE</p>
+        <h2 id="status-title">Private testing. Measured progress.</h2>
+        <p>
+          Popup is in pre-beta development. Current work prioritizes the owner's workflow, reliable
+          evidence, and clear limits. Investment performance has not been established; model scores
+          are not probabilities of profit.
+        </p>
+        <a
+          class="button"
+          href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/PRODUCT_STATUS.md"
+          >Capabilities &amp; current priorities →</a
+        >
+      </section>
+    </main>
+    <footer class="shell">
+      <div class="brand"><img src="favicon.svg" width="28" height="28" alt="" />Popup</div>
+      <p>
+        Built by
+        <a href="https://github.com/blackhebrewisraeli">Shimon Esterkin</a> ·
+        <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/LICENSE">MIT License</a>
+      </p>
+      <p class="small muted">
+        Research software. Paper trades are simulated. Informational use, not financial advice.
+      </p>
+    </footer>
+  </body>
+</html>
