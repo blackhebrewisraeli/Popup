@@ -14,7 +14,7 @@ and exploring decisions through backtesting and paper trading.
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[**Open workspace**](https://popup-signals.vercel.app) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
+[**Product overview**](https://blackhebrewisraeli.github.io/Popup/) · [**Hosted app**](https://popup-signals.vercel.app) · [Screenshots](#screenshots) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
 
 </div>
 
@@ -43,6 +43,23 @@ hypothetical actions in a separate paper ledger.
 **Availability matters:** TradingView development scans are local and owner-initiated through an
 authenticated agent. They are not an unattended scanner in the hosted app. Binance live market
 data, TradingView alerts, and the read-only account connection are separate flows.
+
+## Screenshots
+
+Captured from the running application. Both show only the app's built-in synthetic or sample data
+([how they were made](docs/PAGES.md#readme-screenshots)).
+
+![Popup's example scan: five synthetic assets, DEMO1 to DEMO5, ranked with score, setup and reason, beside the evidence for DEMO5: score 80, mean-reverting regime, and which Long and Risk conditions are met or not met](docs/screenshots/research-example-scan.png)
+
+**Research: each result beside its evidence.** The app's built-in example scan, labeled
+_Illustrative_: made-up readings for five made-up assets, scored by Popup's own model and setup
+rules. The selected result shows why a score of 80 still meets no setup. No market data.
+
+![Popup's Paper Desk in Simulation Mode with Sample data: 100,000 dollars of paper cash and an order ticket previewing a simulated 2,500 dollar BTC buy at the sample price](docs/screenshots/paper-desk-order-ticket.png)
+
+**Paper Desk: a simulated order.** A $2,500 paper buy previewed in the order ticket of a fresh
+$100,000 paper account. Prices are the app's labeled _Sample data_, the order was not submitted,
+and paper fills never reach a broker.
 
 ## Engineering highlights
 
@@ -169,7 +186,7 @@ reference fixtures. Production builds check the database contract before deploym
 | [TradingView setup](docs/TRADINGVIEW_NOTIFICATIONS.md)                                                       | Phone and webhook alerts, provenance, and secure setup                    |
 | [Strategy validation](docs/STRATEGY_VALIDATION.md)                                                           | Private decision replay and observation contracts                         |
 | [Releases](docs/RELEASE.md) / [contributing](CONTRIBUTING.md)                                                | Development checks, migrations, and review process                        |
-| [Pages setup](docs/PAGES.md)                                                                                 | Standalone product page and publication steps                             |
+| [Product page](docs/PAGES.md)                                                                                | Published overview, README screenshots, and Social Preview assets         |
 
 ## Contributing and feedback
 
