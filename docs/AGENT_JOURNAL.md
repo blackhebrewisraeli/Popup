@@ -21,6 +21,8 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-13 · Repository product presentation · Review branch `docs/professional-product-presentation`.** Decision: make the README a concise product entry point, preserve implementation detail in `WORKSPACE_GUIDE.md`, and add an isolated static product page under `docs/site`. Public copy states private testing, local owner-initiated TradingView scans, simulated trades, and read-only account scope. Repository About/topics were updated and Pages source set to GitHub Actions. Evidence: formatting, HTML/asset/anchor checks and repository-relative link validation; no model, app, account, or research behavior changes. Browser layout verification and the first Pages deployment remain unverified. Next: review the PR, check its CI, then verify the deployed page at desktop and phone widths after merge.
+
 - **Research and landing:** [#132](https://github.com/blackhebrewisraeli/Popup/pull/132) put results
   and evidence side by side. [#133](https://github.com/blackhebrewisraeli/Popup/pull/133) added a
   labeled synthetic example.
