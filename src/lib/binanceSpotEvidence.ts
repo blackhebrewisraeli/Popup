@@ -11,7 +11,10 @@ import type {
   SpotExecutionFailure,
 } from '../../supabase/functions/binance-spot-account/handler';
 
-/** Mirrors the explicit server allowlist, sourced from the app's known crypto set. */
+/**
+ * Mirrors the explicit server allowlist: the app's known crypto set plus TRXUSDT. Only this
+ * list changes; TRX does not join the app-wide crypto set in src/lib/ticker.ts.
+ */
 export const SPOT_EXECUTION_SYMBOLS = [
   'BTCUSDT',
   'ETHUSDT',
@@ -25,6 +28,7 @@ export const SPOT_EXECUTION_SYMBOLS = [
   'DOTUSDT',
   'MATICUSDT',
   'LTCUSDT',
+  'TRXUSDT',
 ] as const;
 
 export interface SpotExecutionEvidence {

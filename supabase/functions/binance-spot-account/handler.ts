@@ -35,9 +35,10 @@ const REQUEST_TIMEOUT_MS = 4000;
 
 /**
  * The account-history surface is deliberately smaller than Binance's symbol
- * catalogue. This is the app's existing explicitly-known crypto set, mapped
- * through src/lib/ticker.ts to Spot USDT pairs. It is not complete account
- * coverage and must never be described that way.
+ * catalogue. It is the app's existing explicitly-known crypto set, mapped
+ * through src/lib/ticker.ts to Spot USDT pairs, plus TRXUSDT, added for the
+ * owner's manual Spot use. It is a finite allowlist, not complete account
+ * coverage, and must never be described that way.
  */
 export const SUPPORTED_EXECUTION_SYMBOLS = [
   'BTCUSDT',
@@ -52,6 +53,7 @@ export const SUPPORTED_EXECUTION_SYMBOLS = [
   'DOTUSDT',
   'MATICUSDT',
   'LTCUSDT',
+  'TRXUSDT',
 ] as const;
 const SUPPORTED_EXECUTION_SYMBOL_SET = new Set<string>(SUPPORTED_EXECUTION_SYMBOLS);
 export const EXECUTION_PAGE_LIMIT = 100;

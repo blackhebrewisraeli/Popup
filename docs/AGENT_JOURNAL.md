@@ -21,7 +21,12 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-13 · Tab stays inside the evidence sheet · Draft PR [#169](https://github.com/blackhebrewisraeli/Popup/pull/169), from `8bd2f55`.**
+- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR [#170](https://github.com/blackhebrewisraeli/Popup/pull/170), from `c4e1c46`.**
+  - **Changed:** `TRXUSDT` joins the function's `SUPPORTED_EXECUTION_SYMBOLS` and the browser's `SPOT_EXECUTION_SYMBOLS`. That makes 13 pairs, still a finite allowlist, and a test now keeps the two lists equal. The reconciliation view builds its assets from that list, so it now offers TRX. No endpoint, field, storage, ledger, P&L or order path changed. `src/lib/ticker.ts`, scans, rankings and paper trading are untouched. The D3 gate (`commissionCoverage: 'unverified'`) is unchanged.
+  - **Evidence:** synthetic only. One run goes handler → client parser → evidence fold → reconcile for TRXUSDT, with fees in TRX, USDT and BNB, a collapsed repeat and a commission conflict. `TRXBTC` and `trxusdt` are refused before Binance. The view requests a 10-minute UTC window. Removing TRXUSDT from either list fails four tests. Details are in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification).
+  - **Next:** merge, then redeploy `binance-spot-account` from the merged commit. Until then the old function refuses TRXUSDT. After that, the owner's live check of one known TRXUSDT fill against Binance can run ([pending](BINANCE_SPOT_ACCOUNT.md#pending-trxusdt-live-check)). It has not run.
+
+- **2026-11-13 · Tab stays inside the evidence sheet · Merged in [#169](https://github.com/blackhebrewisraeli/Popup/pull/169) as `c4e1c46`.**
   - **Found:** a real-scan acceptance of **Candidates to review first** on `main` `8bd2f55`. In the 375 px evidence sheet, with **Plan a hypothetical scenario** closed, Tab from its summary left the modal for the header behind it. Shift+Tab from **Close** did nothing. Both date from the scenario disclosure (#151).
   - **Changed:** `containDialogTab` (`src/lib/dialogFocus.ts`) now counts a disclosure's summary. It skips controls inside a closed `<details>`, a `hidden` or `inert` subtree, or with `tabindex="-1"`. `aria-disabled` controls stay reachable, and `aria-hidden` still counts only on the control itself. Escape, initial focus and focus return are unchanged, and no dialog was rebuilt.
   - **Evidence:** 8 helper tests and one sheet test through a candidate; 4 of the helper tests and the sheet test fail against the old helper. A native keyboard run in Chromium at 375 px on a labeled synthetic scan went closed → open → closed with Tab and Shift+Tab, then Escape back to the candidate. All 21 focus moves stayed inside the dialog, and the old helper reproduced the escape in the same setup. Typecheck, lint, build and 1,709 tests pass.
@@ -218,6 +223,13 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR [#170](https://github.com/blackhebrewisraeli/Popup/pull/170), from `c4e1c46`.** Decision: add
+  one pair, at the owner's request, to the two execution allowlists only. TRX does not join the
+  app-wide crypto set, and the reconciliation gate stays unverified: a fee charged in TRX, synthetic
+  or real, settles nothing about what `commission` covers. Evidence: synthetic pipeline, handler,
+  view and reconciliation-view tests, plus two allowlist mutations, each caught by four tests.
+  Next: merge, redeploy the function, then the owner's live check (not run).
 
 - **2026-11-13 · Candidates to review first in Research · Draft PR
   [#166](https://github.com/blackhebrewisraeli/Popup/pull/166), from `378760b`.** Decision: answer

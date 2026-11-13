@@ -175,6 +175,7 @@ describe('quantity reconciliation flow: reads', () => {
       'DOT',
       'MATIC',
       'LTC',
+      'TRX',
     ]);
     expect(title()).toHaveTextContent('Result: Indeterminate — commission coverage unverified');
     expect(reasons()).toContain('Capture an opening balance read.');
