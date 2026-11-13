@@ -168,3 +168,41 @@ were byte-identical (330 files) before and after. Unit tests use labeled synthet
 | F15 | Console and server                             | PASS    | `BROWSER`        | Only the expected 404s for the missing scan ID; no React or hydration warning; no server error                                                                                                                                                                                | Earlier `AuthModal` import errors came from stopping the previous dev server   |
 | F16 | Repository checks                              | PASS    | `TEST`           | `npx tsc --noEmit`, `npm run build`, `npm run lint`, `npx vitest run` (112 files, 1,529 tests)                                                                                                                                                                                | —                                                                              |
 | F17 | CI                                             | NOT RUN | `CI`             | Runs on the follow-up PR; its result is there                                                                                                                                                                                                                                 | —                                                                              |
+
+## Follow-up, 2026-11-13: Tab stays inside the evidence sheet
+
+A real-scan acceptance of **Candidates to review first** on `main` `8bd2f55` (scan
+`20261113T134509Z-dc217757`; no market value is recorded here) found a gap that C18 did not cover.
+C18 checked Enter, Escape and focus return, not Tab containment. In the 375 px evidence sheet,
+with **Plan a hypothetical scenario** closed, Tab from the summary moved focus to the header
+controls behind the overlay, and Shift+Tab from **Close** did nothing. The shared
+`containDialogTab` (`src/lib/dialogFocus.ts`) omitted the summary and counted the fields inside
+the closed `<details>`, so its last control was one Tab could not reach.
+[#169](https://github.com/blackhebrewisraeli/Popup/pull/169) counts a disclosure's summary and skips
+controls inside a closed `<details>`, a `hidden` or `inert` subtree, or with `tabindex="-1"`.
+`aria-disabled` controls stay reachable, and `aria-hidden` still counts only on the control
+itself.
+
+Browser checks used a labeled synthetic six-pair TradingView crypto scan with invented candles, in
+a throwaway git-ignored worktree store. They ran under `vite dev` with Supabase pointed at an
+unused local port, in the desktop app's Chromium at 375×812 in the light theme. Each key was a
+native press, and focus was logged with a `focusin` listener. jsdom does not move focus on Tab, so
+the unit tests check only the helper's wrap decisions.
+
+| ID  | Check                          | Result  | Env              | Evidence                                                                                                                                                                                                               | Limitation                                       |
+| --- | ------------------------------ | ------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| G1  | Scenario closed                | PASS    | `BROWSER` `TEST` | The sheet opens with focus on **Close**. Tab → summary; Tab → **Close**; Shift+Tab from **Close** → summary                                                                                                            | —                                                |
+| G2  | Scenario open                  | PASS    | `BROWSER` `TEST` | Enter on the summary opens it. 7 Tabs: allocation, maximum loss, entry, **Use it as the entry**, stop, fee, **Clear scenario**. Tab → **Close**; Shift+Tab from **Close** → **Clear scenario**                         | —                                                |
+| G3  | Closed again                   | PASS    | `BROWSER` `TEST` | 7 Shift+Tabs back to the summary, Enter closes it; Tab → **Close**; Shift+Tab → summary                                                                                                                                | —                                                |
+| G4  | Escape and focus return        | PASS    | `BROWSER` `TEST` | Escape closes the sheet; visible focus returns to the candidate that opened it                                                                                                                                         | —                                                |
+| G5  | Nothing escapes                | PASS    | `BROWSER`        | 21 focus moves across G1–G3, every one inside the dialog; the only one outside is G4's return                                                                                                                          | —                                                |
+| G6  | Old helper, same environment   | FAIL    | `BROWSER`        | Negative control: with `main`'s helper swapped into the worktree, Shift+Tab from **Close** stayed on **Close**, and Tab from the summary went to "Popup home" with the sheet still open                                | Expected: reproduces the defect                  |
+| G7  | Helper unit tests              | PASS    | `TEST`           | `dialogFocus.test.ts`, 8 tests: closed, open and reclosed disclosure; nested closed disclosure; hidden, inert, `tabindex="-1"` and disabled skipped; `aria-disabled` kept; no-op cases. 4 fail against `main`'s helper | jsdom: wrap decisions only                       |
+| G8  | Sheet test through a candidate | PASS    | `TEST`           | `scanCandidates.test.tsx`: closed → open → closed, Tab and Shift+Tab, Escape back to the candidate. Fails against `main`'s helper                                                                                      | As G7                                            |
+| G9  | Other callers                  | PASS    | `TEST`           | Asset details and Robo dialogs: existing tests pass. Neither holds a `<details>`, `hidden` or `inert` subtree, and their locked Pro content is `aria-hidden` on a container, which is still counted as before          | Browser NOT RUN: their data needs a live backend |
+| G10 | Repository checks              | PASS    | `TEST`           | `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npx vitest run` (116 files, 1,709 tests)                                                                                                                         | —                                                |
+| G11 | CI                             | NOT RUN | `CI`             | Runs on #169; its result is there                                                                                                                                                                                      | —                                                |
+
+Not run: a physical phone, Safari or Firefox, a screen reader, the dark theme for this check. The
+wide layout has no dialog and is unchanged; reaching its evidence panel from a candidate still
+takes about 50 Tab stops, which this change leaves as it is.
