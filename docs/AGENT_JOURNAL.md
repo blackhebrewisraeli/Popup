@@ -142,7 +142,8 @@ whether to act, and where; Popup places no orders.
   synthetic data. It found that the fold merged a continued answer for other pairs or another window
   (or with nothing to continue) and now refuses it as a failed continuation. Real Binance: NOT RUN
   ([acceptance record](BINANCE_SPOT_RECONCILIATION.md#synthetic-pipeline-acceptance-2026-11-12)).
-- **Binance quantity reconciliation flow (2026-11-13):** draft PR (this change) adds a manual,
+- **Binance quantity reconciliation flow (2026-11-13):** draft
+  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163) adds a manual,
   owner-only flow to the Account card: pick one asset (never USDT or BNB), capture opening and
   closing balance reads, then retrieve that pair's guarded window page by page. D3 (what
   `commission` covers) is still unresolved after a fresh documentation check, so every result
@@ -189,7 +190,8 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-13 · Manual Binance quantity reconciliation in Account · Draft PR (this change), from
+- **2026-11-13 · Manual Binance quantity reconciliation in Account · Draft PR
+  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163), from
   `3efb2be`.** Decision: the owner can collect the evidence `reconcileSpotQuantity` needs without
   any new endpoint, storage or arithmetic. A new section in the Spot card captures opening and
   closing reads only from successful explicit reads (server time and owner kept), requests exactly
