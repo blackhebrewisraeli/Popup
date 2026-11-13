@@ -49,10 +49,15 @@ invented conversion.
 Popup deliberately narrows that contract:
 
 - The supported set is exactly `BTCUSDT`, `ETHUSDT`, `SOLUSDT`, `AVAXUSDT`, `LINKUSDT`,
-  `BNBUSDT`, `XRPUSDT`, `ADAUSDT`, `DOGEUSDT`, `DOTUSDT`, `MATICUSDT`, `LTCUSDT`. It is the app's
-  existing explicitly known crypto set mapped to USDT pairs, not every pair ever used by the
-  account. At most four may be requested through the server contract; the first UI uses one at a
-  time.
+  `BNBUSDT`, `XRPUSDT`, `ADAUSDT`, `DOGEUSDT`, `DOTUSDT`, `MATICUSDT`, `LTCUSDT`, `TRXUSDT`. The
+  first twelve are the app's existing explicitly known crypto set mapped to USDT pairs.
+  `TRXUSDT` was added on 2026-11-13 at the owner's request, for manual Spot use. It is listed only
+  in the two execution allowlists: the function's `SUPPORTED_EXECUTION_SYMBOLS` and the browser's
+  `SPOT_EXECUTION_SYMBOLS`, which a test keeps equal. TRX is not added to the app-wide crypto set
+  in `src/lib/ticker.ts`, so scans, markets, rankings and paper trading are unchanged. The set is
+  still finite and is not every pair ever used by the account. Only exact upper-case symbols on
+  the list are accepted (`TRXBTC` and `trxusdt` are refused before Binance). At most four may be
+  requested through the server contract; the first UI uses one at a time.
 - The window is a rolling preset (last hour, 6 hours or 24 hours, ending at the browser clock when
   **Load executions** is pressed) or an explicit historical range typed in UTC. The two
   `datetime-local` values are read as UTC, never as the browser's local time, so the browser's time
@@ -230,6 +235,23 @@ and no storage writes. Fourteen deliberate mutations of the view (local-time par
 the 24-hour bound, the late-answer and selection checks, cursor-only continuation, preset hours, UTC
 labels) each fail at least one test.
 
+**TRXUSDT (2026-11-13, synthetic).** `src/test/binanceSpotReconciliationPipeline.test.ts` runs
+invented TRXUSDT fills through the committed handler, the browser parser and the evidence fold:
+
+- **Request:** one signed request for that pair only.
+- **Commission:** charged in TRX (the received asset), in USDT and in BNB, each kept with its own
+  asset and recorded string.
+- **Duplicates:** an identical repeat collapses, and a respelled TRX commission becomes a conflict
+  that leaves coverage incomplete.
+- **Reconciliation:** TRX as the subject counts the TRX commission. `QUANTITY_LIMITS.commissionCoverage`
+  stays `unverified`, so the view still shows every result as Indeterminate. A synthetic fee in TRX
+  settles nothing about what `commission` covers (D3).
+
+The view test selects TRXUSDT, requests a 10-minute UTC window and shows `0.04000000 TRX` as
+recorded. The handler test refuses `TRXBTC` and `trxusdt` before Binance and requires the browser
+list to equal the server list. The reconciliation view offers TRX as an asset. Removing TRXUSDT
+from either list fails four tests.
+
 **Explicit range in a browser (2026-11-13, synthetic).** A local dev server pointed at an
 unreachable Supabase URL, the `?devAuth` stub, and the function's answers simulated by Playwright
 route interception; nothing reached Supabase or Binance. Chromium ran in `Asia/Jerusalem` with the
@@ -313,3 +335,18 @@ not widen the pair set or claim lifetime completeness. It need not be a new trad
 fill can be found with an explicit UTC range of at most 24 hours around it. One matching fill is
 evidence for that fill's fee case only; it does not establish what `commission` covers for every
 fee type.
+
+### Pending: TRXUSDT live check
+
+The owner widened the pair set to `TRXUSDT` on purpose, by the change described above. It needs
+both halves deployed:
+
+- **Browser list:** ships with the hosted app's deployment of `main`.
+- **Function list:** needs `supabase functions deploy binance-spot-account --project-ref <project-ref>`.
+
+Until the function is redeployed, choosing TRXUSDT in a deployed browser gets "invalid request"
+from the older function, and nothing reaches Binance. After both are live, the owner's check
+compares one known TRXUSDT fill in **Account** with Binance's own trade view, using an explicit
+UTC range of at most 24 hours. It compares pair, side, trade and order IDs, time, price, executed
+and quote quantity, and commission amount and asset. It has not run. Its account details stay out
+of this repository, and a match would be evidence for that fill's fee case only.

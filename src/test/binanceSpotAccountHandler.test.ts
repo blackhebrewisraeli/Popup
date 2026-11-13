@@ -11,6 +11,7 @@ import {
   RECV_WINDOW_MS,
   SUPPORTED_EXECUTION_SYMBOLS,
 } from '../../supabase/functions/binance-spot-account/handler';
+import { SPOT_EXECUTION_SYMBOLS } from '@/lib/binanceSpotEvidence';
 
 // Everything below is synthetic: fake users, fake credentials, invented balances.
 const OWNER = '11111111-1111-4111-8111-111111111111';
@@ -625,6 +626,9 @@ describe('binance-spot-account: execution history', () => {
 
   it.each([
     ['an unsupported symbol', { symbols: ['FAKEUSDT'], ...range }],
+    // TRX is supported only against USDT; other quotes stay outside the allowlist.
+    ['a TRX pair with another quote', { symbols: ['TRXBTC'], ...range }],
+    ['a lower-case spelling of a supported pair', { symbols: ['trxusdt'], ...range }],
     ['a duplicate symbol', { symbols: ['BTCUSDT', 'BTCUSDT'], ...range }],
     ['an empty symbol list', { symbols: [], ...range }],
     [
@@ -693,7 +697,10 @@ describe('binance-spot-account: execution history', () => {
       'DOTUSDT',
       'MATICUSDT',
       'LTCUSDT',
+      'TRXUSDT',
     ]);
+    // The browser's list is a separate copy; it must name exactly the same pairs.
+    expect(SPOT_EXECUTION_SYMBOLS).toEqual(SUPPORTED_EXECUTION_SYMBOLS);
   });
 });
 

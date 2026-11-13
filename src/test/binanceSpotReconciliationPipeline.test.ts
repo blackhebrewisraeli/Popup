@@ -46,6 +46,7 @@ import {
   type SpotExecutionEvidence,
 } from '@/lib/binanceSpotEvidence';
 import {
+  QUANTITY_LIMITS,
   RECONCILIATION_GUARD_MS,
   reconcileSpotQuantity,
   type QuantityReconciliation,
@@ -733,5 +734,171 @@ describe('retrieval isolation: a continued answer must belong to the retrieval i
       expected: '1.14950000',
       difference: '0.00000000',
     });
+  });
+});
+
+describe('TRXUSDT through handler → client parser → evidence fold (synthetic)', () => {
+  /** An invented TRXUSDT fill: `trade` with its own price and quote quantity. */
+  const trx = (
+    id: number,
+    time: number,
+    side: 'buy' | 'sell',
+    [qty, price, quoteQty]: [string, string, string],
+    fee: [string, string],
+  ): BinanceTrade => ({ ...trade('TRXUSDT', id, time, side, qty, fee), price, quoteQty });
+
+  /**
+   * Three invented fills between O and C, one per commission asset:
+   * buy 40 TRX at 0.28 paying 0.04 TRX (the received asset), sell 15 TRX at 0.29 paying
+   * 0.00435 USDT, buy 25 TRX at 0.27 paying 0.00002 BNB.
+   */
+  const TRX_FILLS = [
+    trx(
+      8001,
+      O + 2 * HOUR,
+      'buy',
+      ['40.00000000', '0.28000000', '11.20000000'],
+      ['0.04000000', 'TRX'],
+    ),
+    trx(
+      8002,
+      O + 3 * HOUR,
+      'sell',
+      ['15.00000000', '0.29000000', '4.35000000'],
+      ['0.00435000', 'USDT'],
+    ),
+    trx(
+      8003,
+      O + 4 * HOUR,
+      'buy',
+      ['25.00000000', '0.27000000', '6.75000000'],
+      ['0.00002000', 'BNB'],
+    ),
+  ];
+
+  it('requests only TRXUSDT and keeps each commission with its own asset, exactly as Binance wrote it', async () => {
+    provider.trades = [...TRX_FILLS, ...btcFills(1001, 1003)];
+    const answer = await executionPage(T1, { symbols: ['TRXUSDT'], ...WINDOW });
+
+    // One signed myTrades request for the pair, with the window unchanged and the key attached.
+    expect(tradeRequests()).toEqual([
+      { symbol: 'TRXUSDT', startTime: String(O - G), endTime: String(C + G), limit: '100' },
+    ]);
+    expect(
+      provider.requests
+        .filter((request) => request.path === ENDPOINTS.trades)
+        .every((request) => request.apiKey === API_KEY && request.params.has('signature')),
+    ).toBe(true);
+    expect(answer).toMatchObject({
+      state: 'executions',
+      conflicts: [],
+      coverage: {
+        symbols: ['TRXUSDT'],
+        ...WINDOW,
+        returned: 3,
+        retrievedAt: iso(T1),
+        hasMore: false,
+        partial: false,
+        failures: [],
+        completedSymbols: ['TRXUSDT'],
+      },
+    });
+    expect(answer).not.toHaveProperty('continuation');
+
+    const evidence = fold(answer);
+    // The BTC fills Binance also holds were never asked for.
+    expect(evidence.executions).toEqual([
+      {
+        symbol: 'TRXUSDT',
+        tradeId: '8001',
+        orderId: '908001',
+        time: O + 2 * HOUR,
+        side: 'buy',
+        quantity: '40.00000000',
+        price: '0.28000000',
+        quoteQuantity: '11.20000000',
+        commission: '0.04000000',
+        commissionAsset: 'TRX',
+      },
+      {
+        symbol: 'TRXUSDT',
+        tradeId: '8002',
+        orderId: '908002',
+        time: O + 3 * HOUR,
+        side: 'sell',
+        quantity: '15.00000000',
+        price: '0.29000000',
+        quoteQuantity: '4.35000000',
+        commission: '0.00435000',
+        commissionAsset: 'USDT',
+      },
+      {
+        symbol: 'TRXUSDT',
+        tradeId: '8003',
+        orderId: '908003',
+        time: O + 4 * HOUR,
+        side: 'buy',
+        quantity: '25.00000000',
+        price: '0.27000000',
+        quoteQuantity: '6.75000000',
+        commission: '0.00002000',
+        commissionAsset: 'BNB',
+      },
+    ]);
+    expect(evidence).toMatchObject({ conflicts: [], completedSymbols: ['TRXUSDT'] });
+    expect(requestedCoverageComplete(evidence)).toBe(true);
+  });
+
+  it('a repeated TRX fill collapses, and a respelled TRX commission becomes a conflict', async () => {
+    provider.trades = TRX_FILLS;
+    provider.page = (rows) => {
+      const [first, second, third] = rows as [BinanceTrade, BinanceTrade, BinanceTrade];
+      return [first, { ...first, commission: '0.04' }, second, second, third];
+    };
+    const evidence = fold(await executionPage(T1, { symbols: ['TRXUSDT'], ...WINDOW }));
+    expect(evidence.executions.map((item) => item.tradeId)).toEqual(['8002', '8003']);
+    expect(evidence.conflicts).toEqual([
+      {
+        symbol: 'TRXUSDT',
+        tradeId: '8001',
+        variants: [
+          expect.objectContaining({ commission: '0.04000000', commissionAsset: 'TRX' }),
+          expect.objectContaining({ commission: '0.04', commissionAsset: 'TRX' }),
+        ],
+      },
+    ]);
+    expect(requestedCoverageComplete(evidence)).toBe(false);
+  });
+
+  it('reconciles TRX as a subject, counting the TRX commission, while the commission gate stays unverified', async () => {
+    provider.trades = TRX_FILLS;
+    // opening 10; movement 40 + 25 − 15 − 0.04 (the TRX commission) = 49.96; expected 59.96.
+    const opening = await balanceRead(O, [
+      { asset: 'TRX', free: '10.00000000', locked: '0.00000000' },
+    ]);
+    const closing = await balanceRead(C, [
+      { asset: 'TRX', free: '59.96000000', locked: '0.00000000' },
+    ]);
+    const evidence = fold(await executionPage(T1, { symbols: ['TRXUSDT'], ...WINDOW }));
+    expect(reconcile(opening, closing, evidence, 'TRX')).toMatchObject({
+      status: 'CONSISTENT',
+      subject: 'TRX',
+      symbol: 'TRXUSDT',
+      opening: '10.00000000',
+      buys: '65.00000000',
+      sells: '15.00000000',
+      subjectFees: '0.04000000',
+      movement: '49.96000000',
+      expected: '59.96000000',
+      closing: '59.96000000',
+      difference: '0.00000000',
+      feesInOtherAssets: [
+        { asset: 'BNB', amount: '0.00002000' },
+        { asset: 'USDT', amount: '0.00435000' },
+      ],
+    });
+    // This arithmetic is the documented hypothesis only. Adding a pair settles nothing about what
+    // `commission` covers, so the view keeps every result Indeterminate (D3).
+    expect(QUANTITY_LIMITS.commissionCoverage).toBe('unverified');
   });
 });

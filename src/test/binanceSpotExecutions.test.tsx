@@ -413,6 +413,50 @@ describe('Binance Spot execution view with an explicit UTC range', () => {
     expect(screen.getByRole('columnheader', { name: 'Local time' })).toBeVisible();
   });
 
+  it('offers TRXUSDT and shows a commission charged in TRX exactly as recorded', async () => {
+    vi.useFakeTimers({ now: NOW });
+    const { read, answer } = deferredReads();
+    render(<BinanceSpotExecutions read={read} />);
+    const pair = screen.getByRole('combobox', { name: 'Pair' });
+    expect(within(pair).getByRole('option', { name: 'TRXUSDT' })).toBeInTheDocument();
+    fireEvent.change(pair, { target: { value: 'TRXUSDT' } });
+    chooseCustom('2026-11-01T10:00', '2026-11-01T10:10');
+    load();
+    const window = {
+      startTime: Date.parse('2026-11-01T10:00:00.000Z'),
+      endTime: Date.parse('2026-11-01T10:10:00.000Z'),
+    };
+    expect(read).toHaveBeenCalledExactlyOnceWith({ symbols: ['TRXUSDT'], ...window });
+    // Invented figures: 40 TRX bought at 0.28 with 0.1% kept back in TRX, the received asset.
+    await answer(
+      0,
+      page(
+        [
+          execution('7', 'TRXUSDT', {
+            orderId: '700',
+            time: window.startTime + 61_000,
+            quantity: '40.00000000',
+            price: '0.28000000',
+            quoteQuantity: '11.20000000',
+            commission: '0.04000000',
+            commissionAsset: 'TRX',
+          }),
+        ],
+        { range: window, symbols: ['TRXUSDT'] },
+      ),
+    );
+    const table = screen.getByRole('table', { name: 'Binance Spot execution history' });
+    const row = within(table).getByRole('row', { name: /TRXUSDT/ });
+    for (const text of ['buy', '7', '700', '40.00000000', '0.28000000', '11.20000000']) {
+      expect(within(row).getByText(text)).toBeVisible();
+    }
+    expect(within(row).getByText('0.04000000 TRX')).toBeVisible();
+    expect(coverage('Pairs')).toHaveTextContent('TRXUSDT');
+    expect(coverage('Requested range')).toHaveTextContent(
+      '2026-11-01 10:00:00 UTC – 2026-11-01 10:10:00 UTC',
+    );
+  });
+
   it('allows a range that ends exactly now', () => {
     vi.useFakeTimers({ now: NOW });
     const { read } = deferredReads();
