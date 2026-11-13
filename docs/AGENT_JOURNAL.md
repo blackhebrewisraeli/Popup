@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR (this branch, `feat/trxusdt-spot-executions`), from `c4e1c46`.**
+- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR [#170](https://github.com/blackhebrewisraeli/Popup/pull/170), from `c4e1c46`.**
   - **Changed:** `TRXUSDT` joins the function's `SUPPORTED_EXECUTION_SYMBOLS` and the browser's `SPOT_EXECUTION_SYMBOLS`. That makes 13 pairs, still a finite allowlist, and a test now keeps the two lists equal. The reconciliation view builds its assets from that list, so it now offers TRX. No endpoint, field, storage, ledger, P&L or order path changed. `src/lib/ticker.ts`, scans, rankings and paper trading are untouched. The D3 gate (`commissionCoverage: 'unverified'`) is unchanged.
   - **Evidence:** synthetic only. One run goes handler → client parser → evidence fold → reconcile for TRXUSDT, with fees in TRX, USDT and BNB, a collapsed repeat and a commission conflict. `TRXBTC` and `trxusdt` are refused before Binance. The view requests a 10-minute UTC window. Removing TRXUSDT from either list fails four tests. Details are in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification).
   - **Next:** merge, then redeploy `binance-spot-account` from the merged commit. Until then the old function refuses TRXUSDT. After that, the owner's live check of one known TRXUSDT fill against Binance can run ([pending](BINANCE_SPOT_ACCOUNT.md#pending-trxusdt-live-check)). It has not run.
@@ -224,7 +224,7 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
-- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR, from `c4e1c46`.** Decision: add
+- **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR [#170](https://github.com/blackhebrewisraeli/Popup/pull/170), from `c4e1c46`.** Decision: add
   one pair, at the owner's request, to the two execution allowlists only. TRX does not join the
   app-wide crypto set, and the reconciliation gate stays unverified: a fee charged in TRX, synthetic
   or real, settles nothing about what `commission` covers. Evidence: synthetic pipeline, handler,
