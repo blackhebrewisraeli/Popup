@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">Popup</title>
+  <desc id="desc">Explainable market research and paper trading. Open source, in private testing.</desc>
+  <rect width="1280" height="640" fill="#101114"/>
+  <path d="M1000 0v640M1090 0v640M1180 0v640M1000 100h280M1000 220h280M1000 340h280M1000 460h280M1000 580h280" stroke="#25272d" stroke-width="2"/>
+  <g transform="translate(96 104) scale(4)">
+    <rect width="32" height="32" rx="7" fill="#ff7a5c"/>
+    <path fill="#101114" fill-rule="evenodd" d="M7 28V13a8 8 0 0 1 8-8h5a7 7 0 0 1 0 14h-8v4a5 5 0 0 1-5 5Zm5-15v1h8a2 2 0 0 0 0-4h-5a3 3 0 0 0-3 3Z"/>
+  </g>
+  <text x="258" y="211" fill="#faf9f6" font-family="Arial, Helvetica, sans-serif" font-size="116" font-weight="700">Popup</text>
+  <text x="96" y="366" fill="#faf9f6" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700">Explainable market research</text>
+  <text x="96" y="442" fill="#faf9f6" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700"><tspan fill="#ff7a5c">&amp;</tspan> paper trading</text>
+  <rect x="96" y="508" width="56" height="6" rx="3" fill="#ff7a5c"/>
+  <text x="96" y="560" fill="#ffab95" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="4">OPEN SOURCE · PRIVATE TESTING</text>
+</svg>
