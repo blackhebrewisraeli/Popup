@@ -100,6 +100,15 @@ whether to act, and where; Popup places no orders.
   decisions on the two open rows: a full page reload now restores the source and **Scan shown**
   (C7), and an in-app reload of an unchanged file keeps scenario inputs while changed content,
   even under the same scan ID, resets them (C12, revised).
+- **Candidates to review first (2026-11-13):** draft
+  [#166](https://github.com/blackhebrewisraeli/Popup/pull/166) opens each ranked class of a Research
+  scan with up to five candidates: its evaluated assets in recorded rank, from the whole scan (never
+  the view or filters), gated by no setup, each with exact instrument, rank, score, named Risk
+  clauses, the largest term of its blend and what stands against it. **Open evidence** is the same
+  selection as a row, so a TradingView crypto pair reaches the Manual Spot scenario with empty
+  inputs. A candidate is prioritized for review by this model in this scan, never a recommendation;
+  a stale scan reads as historical top ranks
+  ([contract](MARKET_SCANNER.md#candidates-to-review-first)). Synthetic verification only.
 - **Binance outcome tracking, stage D (2026-11-12):**
   [#157](https://github.com/blackhebrewisraeli/Popup/pull/157) (merged `62f4fbb`), documentation only.
   The later `ddb949b` correction was not in that merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158)
@@ -201,6 +210,23 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-13 · Candidates to review first in Research · Draft PR
+  [#166](https://github.com/blackhebrewisraeli/Popup/pull/166), from `378760b`.** Decision: answer
+  "where do I start?" with what the scan already recorded. `shortlist` takes a class's `EVALUATED`
+  results by recorded rank (score, then ticker), the first five, from the whole scan; no setup
+  gate and no new score, threshold or weight. `candidateNotes` gives two lines from the recorded
+  blend: the largest weight × component term, then every held Risk clause and unmet ZC LONG clause
+  (the smallest term only for a Long with no Risk). Source, data time and freshness stay once in
+  the scan header; the list names the scan ID and the evaluated day, a stale scan is titled
+  **Historical top ranks** with the reason, a class with nothing evaluated says so, and "None holds
+  ZC LONG" is said outright. Evidence: 9 helper and 13 view tests on synthetic candles (ranks and
+  ties, fewer and none, exclusions, top rank without Long and with one or both Risk clauses, no
+  Long anywhere, a Long ranked sixth, stale, filters, scan switch, Market data rescan, scenario
+  reset, no request or storage write); six mutations each caught; a Chromium run on a
+  synthetic-only scan store at 1280 and 375 px, light and dark, selection by keyboard: candidate →
+  evidence → Manual Spot with empty inputs, reset on another candidate, switch to a stale saved
+  scan of another universe. Not run: any real scan, the live Market data scan in a browser.
 
 - **2026-11-13 · Explicit historical range for Binance executions · Draft PR
   [#164](https://github.com/blackhebrewisraeli/Popup/pull/164), from `836ba95`.** Decision: the
