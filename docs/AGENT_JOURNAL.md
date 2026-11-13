@@ -58,9 +58,10 @@ whether to act, and where; Popup places no orders.
 - **Binance Spot balances:** [#145](https://github.com/blackhebrewisraeli/Popup/pull/145) (merged
   `c054ffd`) adds an owner-only, read-only balance card to Account, served by a new
   `binance-spot-account` edge function. [#146](https://github.com/blackhebrewisraeli/Popup/pull/146) (merged `1f9c65e`) fixes the duplicate first read and
-  records a local runtime check with throwaway users and a synthetic provider. No credential is
-  configured and no read against Binance has run
-  ([setup, boundaries and verification](BINANCE_SPOT_ACCOUNT.md)).
+  records a local runtime check with throwaway users and a synthetic provider. On 2026-11-13 the
+  owner deployed the function from `3efb2be`, configured the key and saw balances matching
+  Binance's own view; one execution read returned no fills
+  ([owner-observed, not agent-verified](BINANCE_SPOT_ACCOUNT.md#owner-observed-live-evidence-2026-11-13)).
 - **TradingView crypto scan:** [#150](https://github.com/blackhebrewisraeli/Popup/pull/150)
   (merged `7f0f40c`) freezes `crypto-usdt-v1` (25 Binance Spot USDT pairs, rule and resolution in
   [TRADINGVIEW_CRYPTO_SCAN.md](TRADINGVIEW_CRYPTO_SCAN.md)), adds the `tradingview-crypto-daily-v1`
@@ -135,12 +136,21 @@ whether to act, and where; Popup places no orders.
   ([section 9](BINANCE_SPOT_RECONCILIATION.md#9-quantity-reconciliation-function-implemented-synthetic-fixtures-only)).
   [#161](https://github.com/blackhebrewisraeli/Popup/pull/161) (merged `50d2d75`) cleared
   SonarCloud's three new issues on it without changing any result.
-- **Binance reconciliation pipeline acceptance (2026-11-12):** draft
-  [#162](https://github.com/blackhebrewisraeli/Popup/pull/162) runs browser client → committed
+- **Binance reconciliation pipeline acceptance (2026-11-12):**
+  [#162](https://github.com/blackhebrewisraeli/Popup/pull/162) (merged `3efb2be`) runs browser client → committed
   handler → synthetic Binance → client parsers → evidence fold → `reconcileSpotQuantity` on
   synthetic data. It found that the fold merged a continued answer for other pairs or another window
   (or with nothing to continue) and now refuses it as a failed continuation. Real Binance: NOT RUN
   ([acceptance record](BINANCE_SPOT_RECONCILIATION.md#synthetic-pipeline-acceptance-2026-11-12)).
+- **Binance quantity reconciliation flow (2026-11-13):** draft
+  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163) adds a manual,
+  owner-only flow to the Account card: pick one asset (never USDT or BNB), capture opening and
+  closing balance reads, then retrieve that pair's guarded window page by page. D3 (what
+  `commission` covers) is still unresolved after a fresh documentation check, so every result
+  reads **Indeterminate — commission coverage unverified** with no figure
+  ([section 10](BINANCE_SPOT_RECONCILIATION.md#10-manual-reconciliation-flow-implemented-gated-by-d3),
+  [D3 check](BINANCE_SPOT_RECONCILIATION.md#d3-check-2026-11-13)). Next on this track: the owner
+  settles D3 on one real fill from Binance's own views.
 - **Model decision (2026-11-12):** keep canonical model `1.0.0` as a descriptive technical tool.
   Nothing has validated its predictive value, and nothing here authorizes a change. The annual
   prospective study is not a prerequisite for ongoing development. Any future model change needs
@@ -179,6 +189,26 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-13 · Manual Binance quantity reconciliation in Account · Draft PR
+  [#163](https://github.com/blackhebrewisraeli/Popup/pull/163), from
+  `3efb2be`.** Decision: the owner can collect the evidence `reconcileSpotQuantity` needs without
+  any new endpoint, storage or arithmetic. A new section in the Spot card captures opening and
+  closing reads only from successful explicit reads (server time and owner kept), requests exactly
+  `[O − g, C + g]` once the clock passes C + g (a local countdown sends nothing), and folds pages
+  with `nextExecutionEvidence`, so a failed continuation stays recorded after a successful retry.
+  One request at a time; rate limits pause it; reset, owner change, logout and lost access clear
+  it, and late answers are dropped. Binance's documentation, read again, still does not say
+  whether a trade-list `commission` includes tax and special commission, and the parser omits no
+  commission field. So the contract now gates display: every result is Indeterminate with
+  actionable reasons and no figure, while the pure function is unchanged. Evidence: 26 synthetic
+  view tests with a mocked clock (including consistent and one-satoshi evidence hidden by the gate
+  but shown exactly when tests lift it), nine view mutations each caught, and a browser run with
+  simulated function answers at 1280 and 375 px, light, dark and keyboard. Owner-observed on
+  2026-11-13, not agent-checked: deployment, 401 when unauthenticated, read-only key verified,
+  balances matching Binance, one empty execution read. Not verified: any non-empty fill,
+  commissions, pagination or reconciliation against a real account. Next: the owner settles D3 on
+  one real fill from Binance's own views.
 
 - **2026-11-12 · Binance quantity-reconciliation pipeline acceptance · Draft PR
   [#162](https://github.com/blackhebrewisraeli/Popup/pull/162), from `50d2d75`.** Decision: verify the

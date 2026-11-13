@@ -1,10 +1,12 @@
 # Binance Spot outcome tracking: account-event and reconciliation contract
 
-**Stage D specification.** Sections 8 and 9 record the parts implemented since; everything else
-is specification only. It adds no endpoint, storage, ledger, valuation, P&L, display, scheduler or
-Binance request. It does not show that a live
-Binance connection works (none has run), that account history is complete, or that outcomes
-measured this way are economically useful. Canonical model `1.0.0` stays descriptive.
+**Stage D specification.** Sections 8, 9 and 10 record the parts implemented since; everything
+else is specification only. It adds no endpoint, storage, ledger, valuation, P&L, scheduler or
+Binance request. It does not show that account history is complete, that any reconciliation result
+matches a real account (none has been compared), or that outcomes measured this way are
+economically useful. The owner's first live read-only checks are recorded in
+[BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification). Canonical model `1.0.0` stays
+descriptive.
 
 It builds on the read-only integration in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md) and
 does not repeat the provider contract recorded there. Code links in the historical gap analysis
@@ -16,7 +18,9 @@ merge; [#158](https://github.com/blackhebrewisraeli/Popup/pull/158) carried its 
 onto main at `bfea2e6`. The reliable accumulated-execution-evidence prerequisite from section 8
 merged in [#159](https://github.com/blackhebrewisraeli/Popup/pull/159) at `e179bc2`. Quantity
 reconciliation (section 9) merged in [#160](https://github.com/blackhebrewisraeli/Popup/pull/160)
-at `e74fb6c`: a pure function checked on synthetic fixtures only, which nothing calls yet. Acquisition cost and P&L remain unimplemented.
+at `e74fb6c`: a pure function checked on synthetic fixtures only. The manual Account flow in
+section 10 now calls it, and shows every result as Indeterminate while D3 is unverified.
+Acquisition cost and P&L remain unimplemented.
 
 [p]: https://github.com/blackhebrewisraeli/Popup/blob/56366db9be11d4d2896b4a6dfbec69c07b732d5a/src/lib/portfolioAccounting.ts
 
@@ -260,7 +264,8 @@ Giving the opening inventory zero cost would claim, fees included, that the 0.3 
   attach acquisition fees to lots pro rata.
 - **D3. What `commission` covers.** Whether it is the whole amount debited for the fill (standard,
   tax and special commission together). Binance does not say; the live check must compare one
-  fill's commission with the balance change.
+  fill's commission with the balance change. **Still unresolved on 2026-11-13**; see
+  [the documentation check](#d3-check-2026-11-13) and the conservative clarification below it.
 - **D4. Quote movement.** Whether the USDT balance moves by exactly `quoteQty`, rather than
   `price × qty` rounded. Popup always uses `quoteQty` as recorded and never recomputes it; the live
   check confirms it.
@@ -272,6 +277,44 @@ Giving the opening inventory zero cost would claim, fees included, that the 0.3 
   the function already fetches would narrow it, but even then no read becomes an atomic snapshot.
 - **D7. Boundary inclusivity.** Popup keeps both window ends; Binance does not say. It only
   produces duplicates, which identity handles.
+
+### D3 check (2026-11-13)
+
+Read on 2026-11-13 in Binance's Spot API documentation source: the
+[account trade list](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md#account-trade-list-user_data),
+the [account endpoints](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints)
+page, the [commission FAQ](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/commission_faq.md)
+and the [CHANGELOG](https://github.com/binance/binance-spot-api-docs/blob/master/CHANGELOG.md)
+(last updated 2026-11-11).
+
+- **Trade-list row.** Thirteen fields: `symbol`, `id`, `orderId`, `orderListId`, `price`, `qty`,
+  `quoteQty`, `commission`, `commissionAsset`, `time`, `isBuyer`, `isMaker`, `isBestMatch`.
+  `commission` has an example value and no description. The parser drops only `orderListId`,
+  `isMaker` and `isBestMatch`, none of which is a charge, so it omits no commission field.
+- **Commission kinds exist only as rates.** `GET /api/v3/account/commission` returns
+  `standardCommission`, `taxCommission`, `specialCommission` (maker, taker, buyer, seller) and a
+  BNB `discount`; a test order with `computeCommissionRates` returns the same kinds per order; the
+  account response carries `commissionRates`. A full order response's fills carry only `commission`
+  and `commissionAsset`. `specialCommission` joined the rate responses on 2025-08-12. No CHANGELOG
+  entry adds a commission field to the trade list or to fills.
+- **The FAQ** computes tax and special commission like standard commission. Without BNB, the
+  commissions "are summed up and deducted" from the received asset; with BNB, the discount applies
+  to standard commission only; with too little BNB, the full commission comes out of the received
+  asset. It describes what an order's trades are charged and never mentions the trade list.
+
+**Still unresolved.** The FAQ makes it plausible that one row's `commission` is the summed charge,
+but nothing says so. A rate is not a per-fill amount, so the rate endpoints cannot settle it either.
+The owner's 2026-11-13 live execution read returned no fills for its selection, which settles
+nothing.
+
+**Conservative clarification (2026-11-13).** Until a real fill's recorded `commission` has been
+compared with the balance change it caused, a view over real reads shows every quantity result as
+**Indeterminate — commission coverage unverified**: no figure, no difference and no Consistent or
+Discrepancy wording. The pure function, its arithmetic and its result are unchanged; only the
+display is gated. No owner control lifts the gate, and no provider field or endpoint is added for
+it. The comparison must come from Binance's own balance and trade-history views for a fill whose
+fee was paid in the subject or USDT, not from this view: a gated view cannot be the evidence for
+lifting its own gate. Resolving D3 is a change to this contract, recorded here.
 
 ## 7. Reuse and separation
 
@@ -331,8 +374,8 @@ D3 and D4 on one known fill.
 ## 9. Quantity reconciliation function (implemented, synthetic fixtures only)
 
 [`reconcileSpotQuantity`](../src/lib/binanceSpotReconciliation.ts) applies section 3 to quantities
-and nothing else. It is pure: no provider request, clock, storage, ledger or view. No view calls it
-yet. It has run only on synthetic data: the labeled fixtures in
+and nothing else. It is pure: no provider request, clock, storage, ledger or view. The manual flow
+in [section 10](#10-manual-reconciliation-flow-implemented-gated-by-d3) calls it. It has run only on synthetic data: the labeled fixtures in
 [`binanceSpotReconciliation.test.ts`](../src/test/binanceSpotReconciliation.test.ts), which use the
 quantity portions of E1–E6, never their cost statuses, and the
 [pipeline acceptance](#synthetic-pipeline-acceptance-2026-11-12) below.
@@ -393,9 +436,8 @@ not established, unseen events not excluded (6b), acquisition cost not evaluated
 coverage unverified (D3) and a provisional guard (D6).
 
 **Not implemented.** Acquisition cost, P&L, any choice on D1–D4, USDT or BNB reconciliation,
-persistence, display and any Binance request. Before a result is compared with a real account, the
-owner check in [BINANCE_SPOT_ACCOUNT.md](BINANCE_SPOT_ACCOUNT.md#verification) must run and settle
-D3.
+persistence and any Binance request. Display is section 10. Before a result is compared with a real
+account, a live check on a real fill must settle D3.
 
 ### Synthetic pipeline acceptance (2026-11-12)
 
@@ -440,3 +482,74 @@ Auth are synthetic. `accountContext` is the caller's label and the handler repor
 account identity, so matching labels do not prove that one Binance account answered. A continuation
 from another retrieval with the same pairs and window cannot be told apart by its answer. D3 and D6
 are not resolved. Real Binance: NOT RUN, and no view calls the function.
+
+## 10. Manual reconciliation flow (implemented, gated by D3)
+
+[`BinanceSpotReconciliation`](../src/components/BinanceSpotReconciliation.tsx) sits in the owner's
+Binance Spot card in Account, below the execution view. It composes `readSpotAccount`,
+`readSpotExecutions`, `nextExecutionEvidence` and `reconcileSpotQuantity` and adds no arithmetic,
+evidence rule, endpoint, provider field or storage.
+
+- **Subject.** One base asset of the supported pairs. USDT and BNB are not offered: the view reads
+  the pure module's `EXCLUDED_SUBJECTS`, now exported. The subject is fixed once the opening read
+  is captured; Reset changes it.
+- **Observations.** **Capture opening balance** and **Capture closing balance** each send one
+  balance read (weight 22) and keep it only if it succeeded, with the function's `readAt` and the
+  signed-in owner's ID as `accountContext`. A failed read captures nothing. The card's own refresh
+  is a separate read and never replaces a captured one. Each is captured once per session.
+- **Guarded window.** With both captured, **Retrieve executions** requests exactly `[O − g, C + g]`
+  for `<SUBJECT>USDT`, and only once the browser clock has reached C + g. Until then the view says
+  when, with a local countdown that never sends a request. Reads out of order or more than
+  24 h − 2g apart are explained and never requested (the function would refuse a range over
+  24 hours). The pure function still checks the first page's server time against C + g.
+- **Continuation.** **Load next page** sends only the evidence's own cursor. A failed page keeps
+  the cursor for an explicit retry and stays recorded (`continuation_failed`) after a successful
+  retry. **Retrieve again from the start** is the only way to a new evidence state; when it fails,
+  the earlier evidence stays unchanged.
+- **One request at a time.** A double click sends one request. A rate limit, on the whole read or
+  one pair, pauses every request in this flow for Binance's `Retry-After` (60 s without one).
+- **Session boundaries.** **Reset** clears the session, and an answer still in flight is then
+  dropped. The flow is keyed by owner inside the owner-keyed card, so an owner change or logout
+  unmounts it and a late answer changes nothing. An answer that shows lost access
+  (unauthenticated, forbidden, not configured, unrecognized) clears the session.
+- **Memory only.** No browser storage, query cache or table, and no order, transfer or ledger code.
+
+**Presentation.**
+
+- While D3 is unverified (`QUANTITY_LIMITS.commissionCoverage`), the result always reads
+  **Indeterminate — commission coverage unverified**. Its reasons list the D3 statement first,
+  then one of: the next step (capture, wait, retrieve); the pure function's Indeterminate reasons
+  as actions (load the next page; retrieve again from the start after a failed page, failed
+  continuation or conflict; capture reads away from trading for a fill near a read); or, when the
+  pure result is determinate, only that nothing else blocks the evidence. No quantity, difference,
+  Consistent or Discrepancy wording reaches the page.
+- The component's `commissionCoverage` prop defaults to that statement. Only tests pass `verified`,
+  to exercise what a resolved D3 would allow: **Consistent within this scope** (numerical
+  consistency only, offsetting unseen events not excluded) or **Discrepancy** with the exact signed
+  difference (`+` or `-`), unattributed, beside every figure as the pure function formats it.
+  Without D3, Indeterminate shows its reasons and no figure. No owner control sets the prop.
+- A fixed note always states the scope: one asset, pair and window; account history not
+  established; deposits, withdrawals, transfers, conversions and other pairs unseen; a provisional
+  guard and no atomic snapshot; commission coverage unverified; no acquisition cost, valuation,
+  profit or loss; no order or ledger change.
+
+**Evidence, synthetic only.**
+[`binanceSpotReconciliationView.test.tsx`](../src/test/binanceSpotReconciliationView.test.tsx), 26
+tests with a mocked clock: no request on mount or as time passes; subject list; capture through
+successful reads only, with server times; the countdown and the exact `[O − g, C + g]` request; reads
+too far apart; consistent and one-satoshi-short evidence gated with no figure in the page while the
+same evidence gives `CONSISTENT` and `-0.00000001` from the pure function; exact figures, including
+`+0.00000001`, only with `verified`; pages, a retained continuation failure, conflicts, a failed
+pair, a fill near a read, a first page read too early, a failed fresh retrieval; failed and thrown
+reads, rate limits, double clicks; reset and owner change with late answers, logout, lost access;
+the card's refresh leaving a captured read; no storage writes and only the expected requests. Nine
+mutations of the view (gate off, no stale-answer check, no wait, failed reads captured, no
+access-loss reset, no backoff, unguarded window, continuation not merged, unsigned difference) each
+fail at least one test. In the browser, a local dev server pointed at an unreachable Supabase URL
+with the function's answers simulated by Playwright route interception and the `?devAuth` stub:
+keyboard capture, the countdown with no request, the exact window, a full page, a timed-out
+continuation and its retry, a fresh complete retrieval held Indeterminate with no figure, a card
+refresh leaving both captured reads, a double click, a late answer after reset, a rate-limit pause,
+unchanged browser storage, 1280 and 375 px without page overflow, light and dark.
+
+**Not verified.** Any reconciliation against a real account, D3, D4 and D6.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { BinanceSpotExecutions } from '@/components/BinanceSpotExecutions';
+import { BinanceSpotReconciliation } from '@/components/BinanceSpotReconciliation';
 import {
   applySpotRead,
   INITIAL_SPOT_VIEW,
@@ -41,8 +42,13 @@ function failureText(failure: SpotFailure): string {
  * transaction in any Popup ledger.
  */
 export function BinanceSpotBalances({
+  accountContext,
   read = readSpotAccount,
-}: Readonly<{ read?: () => Promise<SpotRead> }>) {
+}: Readonly<{
+  /** The signed-in owner, so a reconciliation never mixes reads made for different owners. */
+  accountContext: string;
+  read?: () => Promise<SpotRead>;
+}>) {
   const [view, setView] = useState(INITIAL_SPOT_VIEW);
   const [reading, setReading] = useState(false);
   const [pausedUntil, setPausedUntil] = useState(0);
@@ -168,6 +174,7 @@ export function BinanceSpotBalances({
         ))}
 
       <BinanceSpotExecutions />
+      <BinanceSpotReconciliation key={accountContext} accountContext={accountContext} />
     </section>
   );
 }

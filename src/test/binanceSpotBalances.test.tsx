@@ -50,7 +50,9 @@ describe('Binance Spot balance view', () => {
       { state: 'unavailable' } as const,
     ]) {
       const { read, answer } = deferredReads();
-      const { container, unmount } = render(<BinanceSpotBalances read={read} />);
+      const { container, unmount } = render(
+        <BinanceSpotBalances accountContext="owner-a" read={read} />,
+      );
       expect(container).toBeEmptyDOMElement();
       await answer(0, result);
       expect(container).toBeEmptyDOMElement();
@@ -61,7 +63,7 @@ describe('Binance Spot balance view', () => {
 
   it('says when the connection is not configured', async () => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, { state: 'not_configured' });
     expect(screen.getByRole('status')).toHaveTextContent(/^Not configured\./);
     expect(screen.queryByRole('table')).toBeNull();
@@ -70,7 +72,7 @@ describe('Binance Spot balance view', () => {
 
   it('shows asset, available and locked quantities exactly as read', async () => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(
       0,
       connected(new Date().toISOString(), [
@@ -97,7 +99,7 @@ describe('Binance Spot balance view', () => {
 
   it('distinguishes a connected account with zero balances', async () => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, connected(new Date().toISOString(), []));
     expect(screen.getByText('Binance reports no non-zero Spot balances.')).toBeVisible();
     expect(screen.getByRole('status')).toHaveTextContent(/Connected\./);
@@ -119,7 +121,7 @@ describe('Binance Spot balance view', () => {
     ['provider_error', {}, /reported an error/],
   ])('names a %s failure and claims no connection', async (error, extra, message) => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, failed(error, extra));
     expect(screen.getByRole('alert')).toHaveTextContent(message);
     expect(screen.getByRole('status')).not.toHaveTextContent(/Connected|verified/);
@@ -128,7 +130,7 @@ describe('Binance Spot balance view', () => {
 
   it('keeps the earlier balances, labeled as not current, when a refresh fails', async () => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, connected('2026-11-10T08:00:00.000Z'));
     fireEvent.click(refreshButton());
     expect(refreshButton()).toHaveAttribute('aria-disabled', 'true');
@@ -158,7 +160,7 @@ describe('Binance Spot balance view', () => {
   it('labels a read older than five minutes as stale without another request', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-11-10T08:00:00.000Z') });
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, connected('2026-11-10T08:00:00.000Z'));
     expect(screen.getByRole('status')).not.toHaveTextContent('Stale');
     await act(async () => vi.advanceTimersByTime(SPOT_STALE_AFTER_MS + 5_000));
@@ -169,7 +171,7 @@ describe('Binance Spot balance view', () => {
   it('pauses refresh for as long as Binance asks after a rate limit', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-11-10T08:00:00.000Z') });
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, failed('rate_limited', { retryAfterSeconds: 37 }));
     expect(refreshButton()).toHaveAttribute('aria-disabled', 'true');
     await act(async () => vi.advanceTimersByTime(30_000));
@@ -181,7 +183,7 @@ describe('Binance Spot balance view', () => {
 
   it('refreshes from the keyboard through a real button', async () => {
     const { read, answer } = deferredReads();
-    render(<BinanceSpotBalances read={read} />);
+    render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, connected(new Date().toISOString()));
     const button = refreshButton();
     expect(button.tagName).toBe('BUTTON');
@@ -202,7 +204,7 @@ describe('Binance Spot balance view', () => {
     const { read, answer } = deferredReads();
     render(
       <StrictMode>
-        <BinanceSpotBalances read={read} />
+        <BinanceSpotBalances accountContext="owner-a" read={read} />
       </StrictMode>,
     );
     // StrictMode runs the mount effect, its cleanup, and the effect again.
@@ -219,12 +221,12 @@ describe('Binance Spot balance view', () => {
     const second = deferredReads();
     const { container, rerender } = render(
       <StrictMode>
-        <BinanceSpotBalances key="user-a" read={first.read} />
+        <BinanceSpotBalances key="user-a" accountContext="user-a" read={first.read} />
       </StrictMode>,
     );
     rerender(
       <StrictMode>
-        <BinanceSpotBalances key="user-b" read={second.read} />
+        <BinanceSpotBalances key="user-b" accountContext="user-b" read={second.read} />
       </StrictMode>,
     );
     await first.answer(0, connected(new Date().toISOString()));
@@ -236,7 +238,12 @@ describe('Binance Spot balance view', () => {
   });
 
   it('survives a read that throws', async () => {
-    render(<BinanceSpotBalances read={() => Promise.reject(new Error('boom'))} />);
+    render(
+      <BinanceSpotBalances
+        accountContext="owner-a"
+        read={() => Promise.reject(new Error('boom'))}
+      />,
+    );
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach');
   });
 });
@@ -380,6 +387,7 @@ describe('separation from Popup ledgers', () => {
       'src/lib/binanceSpotReconciliation.ts',
       'src/components/BinanceSpotBalances.tsx',
       'src/components/BinanceSpotExecutions.tsx',
+      'src/components/BinanceSpotReconciliation.tsx',
     ]) {
       const source = readFileSync(file, 'utf8');
       const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);

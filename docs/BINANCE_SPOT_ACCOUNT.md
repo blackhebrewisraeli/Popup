@@ -1,7 +1,8 @@
 # Binance Spot account view (owner-only, read-only)
 
-The Account zone can show the owner's Binance Spot balances and a manually requested, symbol-scoped
-list of executed Spot fills. It reads; it does nothing else.
+The Account zone can show the owner's Binance Spot balances, a manually requested, symbol-scoped
+list of executed Spot fills, and a manual quantity check of one asset between two balance reads. It
+reads; it does nothing else.
 
 TradingView remains the source for market analysis. Binance supplies account records only.
 
@@ -80,8 +81,8 @@ Popup deliberately narrows that contract:
 - Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
   Executions alone cannot reconstruct balances.
 
-Outcome tracking is specified, and only its quantity reconciliation is built, as a pure function
-that no view calls yet:
+Outcome tracking is specified, and only its quantity reconciliation is built: a pure function and
+the manual flow below, which shows every result as Indeterminate until D3 is resolved.
 [BINANCE_SPOT_RECONCILIATION.md](BINANCE_SPOT_RECONCILIATION.md) maps which account events these
 reads can and cannot evidence, defines one bounded reconciliation scope with separate quantity,
 cost and P&L statuses, and works through synthetic examples.
@@ -114,6 +115,15 @@ remains unresolved even if that retry succeeds. Invalid selections/continuations
 rate limits, timeouts and malformed provider records remain distinct. A rate limit pauses both load
 buttons for Binance's `Retry-After` duration (60 seconds when none is usable).
 
+**Quantity reconciliation** sits below the execution view and also starts with no provider request.
+The owner picks one asset (never USDT or BNB), captures an opening and a closing balance read (each
+kept only if it succeeded, with its server time), and retrieves that asset's USDT pair over the
+guarded window once it is eligible, page by page. The result reads **Indeterminate — commission
+coverage unverified** with its reasons, and shows no quantity figure, until D3 is resolved
+([section 10](BINANCE_SPOT_RECONCILIATION.md#10-manual-reconciliation-flow-implemented-gated-by-d3)).
+Refreshing the balances never replaces a captured read; **Reset**, an owner change or logout clears
+the session.
+
 ## Binance documentation used
 
 Read on 2026-11-10.
@@ -142,17 +152,18 @@ How they are applied (`supabase/functions/binance-spot-account/handler.ts`):
   since that answer, so local clock skew does not matter and the stamp is never ahead of Binance.
   `recvWindow` is fixed at 5000 ms and never widened. A rejected timestamp is reported, not retried.
 - One balance refresh costs weight 22. One execution page costs 22 plus 20 per selected pair. The
-  UI selects one pair, so it costs 42. Nothing retries automatically. After a 429 or 418 the view
+  UI selects one pair, so it costs 42. Each reconciliation capture is one more balance read (22),
+  and its execution pages cost 42 each. Nothing retries automatically. After a 429 or 418 the view
   reports the rate limit and the balance view disables refresh for the time Binance names (60 s if
   it names none).
 - Each request has a 4 s timeout; redirects are refused.
 
 ## Owner setup
 
-Not done yet. The code is merged ([#145](https://github.com/blackhebrewisraeli/Popup/pull/145)), but
-no credential has been configured and the function has not been deployed by any agent. Until then
-the Account zone shows nothing new. Do these yourself; never paste a key or secret into a chat,
-issue, commit or screenshot.
+Done by the owner on 2026-11-13 ([owner-observed](#owner-observed-live-evidence-2026-11-13)); no
+agent configured a credential or deployed the function. The steps stay here for a rotation or a
+fresh project. Do these yourself; never paste a key or secret into a chat, issue, commit or
+screenshot.
 
 1. In Binance, create an API key with **Enable Reading** only. Leave trading, margin, futures,
    withdrawals, internal transfer and universal transfer off. Supabase edge functions have no fixed
@@ -184,11 +195,12 @@ To turn it off, unset `BINANCE_SPOT_READONLY_ENABLED` (the owner sees **Not conf
 
 ## Verification
 
-Three levels, kept apart. Only the first two have been run.
+Four levels, kept apart. Agents ran the first two; the third is the owner's own observation; the
+fourth has not run.
 
 **Unit and fixture.** Synthetic responses and fake credentials in
-`src/test/binanceSpotAccountHandler.test.ts`, `src/test/binanceSpotBalances.test.tsx` and
-`src/test/binanceSpotExecutions.test.tsx`. Balance coverage includes one initial read under React
+`src/test/binanceSpotAccountHandler.test.ts`, `src/test/binanceSpotBalances.test.tsx`,
+`src/test/binanceSpotExecutions.test.tsx` and `src/test/binanceSpotReconciliationView.test.tsx`. Balance coverage includes one initial read under React
 StrictMode and an answer that arrives after the account changed being ignored. Execution coverage
 includes multiple fills with one order ID, identical and conflicting duplicates within and across
 pages, the same trade ID on different symbols, exact decimal-representation conflicts, pagination
@@ -246,9 +258,23 @@ production test switch, provider URL or authentication bypass.
 - The disposable database contained the two Auth users and zero public tables, so no Popup ledger
   or other application row could be written. The stack was stopped without a backup.
 
-**Real Binance: NOT RUN.** No Binance credential is configured for this project, none was
-requested, and whether the function is deployed was not checked. A later authorized owner check
-must confirm that the deployed function's region can reach Binance signed endpoints, Binance still
-returns key permissions in the documented shape, and one known pair/range plus one continuation
-(if available) matches the owner's Binance execution UI character for character. It must not widen
-the pair set or claim lifetime completeness.
+### Owner-observed live evidence (2026-11-13)
+
+Reported by the owner, not checked by an agent. No account identifier, balance, trade or screenshot
+is recorded here.
+
+- The `binance-spot-account` function was deployed from `3efb2be` to the production Supabase
+  project as version 1 with `verify_jwt` on, and its deployed source matched the files at that
+  commit exactly. An unauthenticated request returned 401.
+- The owner set the credentials and flag directly as function secrets in Supabase.
+- Popup showed **Connected. Key verified read-only**, and every displayed Spot available balance
+  matched Binance's own Spot view. So the hosted function's region reached Binance's signed
+  endpoints, and Binance returned key permissions in the documented shape.
+- One execution request for one supported pair over the last 24 hours returned zero records, no
+  continuation and complete coverage for that selection.
+
+**Still not verified against real Binance:** a non-empty execution page, commissions, pagination
+and continuation, and any quantity reconciliation. An empty page settles neither D3 (what
+`commission` covers) nor D4. A later owner check on one known fill must compare it with Binance's
+execution view character for character and settle D3 from Binance's own balance change. It must
+not widen the pair set or claim lifetime completeness.
