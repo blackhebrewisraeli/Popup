@@ -21,11 +21,17 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-14 · Close a Manual Spot experiment record in Account · Draft PR, branch `feat/spot-experiment-close`.**
+- **2026-11-14 · Offline perpetual long scenario engine · Draft PR, branch `feat/perpetual-scenario-engine`.**
+  - **Changed:** `src/lib/perpetualScenario.ts` works out one isolated USDT-margined perpetual long from owner-typed inputs only: quantity, notional, fees, a signed carrying cost, equity at a hypothetical exit fill, net result and change against starting collateral. It also gives a simplified liquidation reference, both zero-cost and after costs, only when the inputs and the entered bracket hold together ([contract, derivations and limits](LEVERAGE_SIMULATION.md)). No UI, storage, network, scanner change or Spot integration.
+  - **Evidence:** 43 tests cover the module fully. Fixture values were cross-checked with an independent exact-fraction computation. Typecheck, lint, build and the full suite pass. No Binance request and no production access.
+  - **Not done:** no UI, no Isolated Margin model, no market data. Outputs are not Binance-verified liquidation prices or achievable executions.
+  - **Next:** owner review of the draft PR.
+
+- **2026-11-14 · Close a Manual Spot experiment record in Account · Merged in [#177](https://github.com/blackhebrewisraeli/Popup/pull/177) as `ce65b84`.**
   - **Changed:** **Close experiment record** stores the owner's one append-only close (reason, optional UTC stated time) after a review that repeats a factual record summary and says closing places no order and does not show the Binance position is closed ([closing](MANUAL_SPOT_EXPERIMENTS.md#closing-in-account)). Account shows that summary for every experiment. Rules, observations and fills recorded after a close stay visible and are marked so. The rule, observation and close forms share one save hook. Existing schema; no migration.
   - **Evidence:** 7 new tests; typecheck, lint, build and the full suite pass. A scratch `zcclose` stack checked refusal, triple Confirm, a concurrent close, a dropped response, later evidence, reload, keyboard, 375 px and both themes with `ZCT*` fixtures ([verification](MANUAL_SPOT_EXPERIMENTS.md#verification-of-closing--2026-11-14)). Nothing touched production or Binance.
-  - **Not done:** no correction or reopening of a close. Production has not been checked, and no real experiment was closed.
-  - **Next:** owner review of the draft PR.
+  - **Not done:** no correction or reopening of a close. No real experiment was closed.
+  - **Production (2026-11-14, read-only):** the deployment of `ce65b84` is live. TRXUSDT · main still shows two approved rules, one observation, one linked buy and no close, and the close form shows its warning. Nothing was saved.
 
 - **2026-11-14 · Record Manual Spot experiments and view them in Account · Draft PR, branch `feat/record-spot-experiments`.**
   - **Changed:** the saved-scan route reports the snapshot file's SHA-256 from the bytes it reproduced. **Record experiment** in the Manual Spot scenario stores the owner's decision, account label and optional stated time with the copied evidence, after an explicit review ([recording](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan)). Account's Binance card lists experiments read-only ([viewing](MANUAL_SPOT_EXPERIMENTS.md#viewing-in-account)). `DB_CONTRACT` now requires `is_binance_spot_owner()`. No migration.
