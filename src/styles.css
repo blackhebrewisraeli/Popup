@@ -4013,6 +4013,38 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Public TRXUSDT perpetual facts beside the simulation (docs/LEVERAGE_SIMULATION.md). */
+.perp-facts-card .portfolio-cash-btn[aria-disabled='true'] {
+  cursor: progress;
+  opacity: 0.55;
+}
+.perp-facts-groups {
+  display: grid;
+  gap: 12px;
+}
+.perp-facts-group {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.perp-facts-group .scan-facts {
+  margin: 0;
+}
+.perp-facts-source dd {
+  color: var(--muted-foreground);
+  font:
+    500 11.5px 'JetBrains Mono',
+    monospace;
+}
+.perp-facts-problems {
+  margin: 6px 0;
+  padding-left: 16px;
+  list-style: disc;
+}
 .spot-table {
   width: 100%;
   border-collapse: collapse;

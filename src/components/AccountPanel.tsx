@@ -8,6 +8,7 @@ import { downloadCsv, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { loadWalkForward, walkForwardCsv } from '@/lib/engine/walkForwardLogger';
 import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
 import { LeverageSimulation } from '@/components/LeverageSimulation';
+import { PerpetualContractFacts } from '@/components/PerpetualContractFacts';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
@@ -124,6 +125,9 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
 
       {/* Offline arithmetic, outside the Binance card; keyed so typed numbers never cross accounts. */}
       <LeverageSimulation key={`leverage-${user?.id ?? 'signed-out'}`} />
+
+      {/* Public TRXUSDT perpetual facts, read only on request; never fills the simulation. */}
+      <PerpetualContractFacts key={`perp-facts-${user?.id ?? 'signed-out'}`} />
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />
