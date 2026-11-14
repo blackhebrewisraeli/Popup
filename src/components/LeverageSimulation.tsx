@@ -507,12 +507,14 @@ export function LeverageSimulation() {
       </div>
 
       <div className="spot-result">
-        <p
-          role="status"
-          className={cn('market-scan-fit', !check.ok && errors.form && 'spot-field-error')}
+        <output
+          className={cn(
+            'market-scan-fit spot-record-status',
+            !check.ok && errors.form && 'spot-field-error',
+          )}
         >
           {status}
-        </p>
+        </output>
         {check.ok && (
           <Results id={id} scenario={check.scenario} sizing={inputs.sizing} warnings={warnings} />
         )}

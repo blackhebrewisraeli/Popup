@@ -161,9 +161,9 @@ reads nothing, so it needs no owner check.
   amount, bracket floor and cap). They stay open, so a validation message is never hidden. Each
   field names its unit. Rates say they are percentages, and leverage says it is a multiple of
   collateral. The carrying cost says positive is paid and negative is received.
-- **Status.** A `role="status"` line lists what is missing, asks for corrections or counts the
-  warnings. Each invalid field gets `aria-invalid` and its message through `aria-describedby`.
-  Results are derived on every render, so an invalid edit removes them at once.
+- **Status.** An `<output>` line, with the implicit status role, lists what is missing, asks for
+  corrections or counts the warnings. Each invalid field gets `aria-invalid` and its message through
+  `aria-describedby`. Results are derived on every render, so an invalid edit removes them at once.
 - **Results:** target and simulated entry notional, quantity, exit notional, fees, carrying cost,
   price move, equity at the exit fill, net result and the change against starting collateral. The
   exit fill and stop trigger are shown apart. The stop is labelled "compared only", with the fill
