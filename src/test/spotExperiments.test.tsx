@@ -47,6 +47,7 @@ import { SpotExperiments } from '@/components/SpotExperiments';
 import type { Candle } from '@/lib/binance';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
 import {
+  checkCloseDraft,
   checkObservationDraft,
   checkDraft,
   checkRuleDraft,
@@ -57,6 +58,7 @@ import {
   spotSymbol,
   type CandidateEvidence,
   type ExperimentEntry,
+  type LinkedFill,
   type SpotExperimentRecord,
 } from '@/lib/spotExperiments';
 import {
@@ -843,9 +845,9 @@ describe('Manual Spot experiments in Account', () => {
     for (const rule of ['Allocation ceiling', 'Stop', 'Horizon', 'Target', 'Exit']) {
       expect(fact(item, rule)).toBe('Not decided');
     }
-    expect(within(item).getByText('Linked fills').nextElementSibling).toHaveTextContent(
-      /^No linked fills$/,
-    );
+    expect(
+      within(item).getByText('Linked fills', { selector: 'h5' }).nextElementSibling,
+    ).toHaveTextContent(/^No linked fills$/);
     expect(fact(item, 'Observations')).toBe('None recorded');
     expect(fact(item, 'Close')).toBe('Not closed: no close recorded');
     expect(item).not.toHaveTextContent(/P&L|profit|remaining|position size|order status/i);
@@ -1190,5 +1192,380 @@ describe('Manual Spot experiments in Account', () => {
     await act(async () => {});
     expect(hidden.container).toBeEmptyDOMElement();
     expect(db.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('closing an experiment record', () => {
+  const EXPERIMENT_ID = 'e0000000-0000-4000-8000-000000000001';
+  const renderList = () => render(wrap(<SpotExperiments userId={OWNER} />));
+  const linkedFill = (overrides: Partial<LinkedFill>): LinkedFill => ({
+    id: 'f1',
+    experiment_id: EXPERIMENT_ID,
+    recorded_at: '2026-10-28T17:03:00+00:00',
+    account_label: 'main',
+    symbol: 'ZCTLONGUSDT',
+    trade_id: '9001',
+    order_id: '7001',
+    side: 'buy',
+    trade_time_ms: Date.UTC(2026, 9, 27, 21, 20),
+    quantity: '10.00000000',
+    price: '1.00000000',
+    quote_quantity: '10.00000000',
+    commission: '0.01000000',
+    commission_asset: 'ZCTLONG',
+    retrieved_at: '2026-10-28T17:02:00+00:00',
+    window_start_ms: Date.UTC(2026, 9, 27, 21),
+    window_end_ms: Date.UTC(2026, 9, 27, 22),
+    coverage_complete: true,
+    ...overrides,
+  });
+  const close = (overrides: Partial<ExperimentEntry> = {}) =>
+    entry({
+      id: 'c1',
+      kind: 'close',
+      rule: null,
+      rule_status: null,
+      statement: 'Synthetic close reason.',
+      stated_at: '2026-10-28T16:30:00.000Z',
+      recorded_at: '2026-10-28T17:10:00+00:00',
+      ...overrides,
+    });
+  const open = async () => {
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    return item;
+  };
+  const reviewClose = async (reason: string, stated = '') => {
+    const item = await open();
+    fireEvent.click(within(item).getByText('Close experiment record'));
+    fireEvent.change(within(item).getByLabelText('Reason for closing'), {
+      target: { value: reason },
+    });
+    fireEvent.change(within(item).getByLabelText('Close stated time (UTC, optional)'), {
+      target: { value: stated },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review close' }));
+    return item;
+  };
+  const confirmClose = (review: HTMLElement) =>
+    within(review).getByRole('button', { name: /^(Confirm and save close entry|Saving…)$/ });
+
+  it('needs a reason, takes an optional stated time as UTC, and refuses a future one', () => {
+    expect(checkCloseDraft({ statement: '  ', statedAt: '' }, NOW)).toEqual({
+      ok: false,
+      errors: { statement: 'State why you are closing this record.' },
+    });
+    expect(checkCloseDraft({ statement: ' Synthetic reason. ', statedAt: '' }, NOW)).toEqual({
+      ok: true,
+      statement: 'Synthetic reason.',
+      statedAt: null,
+    });
+    expect(
+      checkCloseDraft({ statement: 'Synthetic reason.', statedAt: '2026-10-28T16:30' }, NOW),
+    ).toEqual({ ok: true, statement: 'Synthetic reason.', statedAt: '2026-10-28T16:30:00.000Z' });
+    expect(
+      checkCloseDraft({ statement: 'Synthetic reason.', statedAt: '2026-10-28T17:01' }, NOW),
+    ).toEqual({
+      ok: false,
+      errors: { statedAt: 'This is in the future. A close cannot be stated after it is recorded.' },
+    });
+    expect(checkCloseDraft({ statement: 'x'.repeat(1001), statedAt: 'soon' }, NOW)).toEqual({
+      ok: false,
+      errors: {
+        statement: 'Use at most 1000 characters.',
+        statedAt: 'Enter a valid UTC date and time.',
+      },
+    });
+  });
+
+  it('names an existing close when the database refuses a second one', async () => {
+    db.insertResult.mockResolvedValue({ data: null, error: { code: '23505', message: 'dup' } });
+    expect(
+      await recordExperimentEntry({
+        experiment_id: EXPERIMENT_ID,
+        kind: 'close',
+        rule: null,
+        rule_status: null,
+        supersedes: null,
+        observed_in: null,
+        statement: 'Synthetic close reason.',
+        stated_at: null,
+      }),
+    ).toEqual({
+      state: 'conflict',
+      message:
+        'This experiment already has a close entry: another close was stored first, or this reviewed close was already submitted. Only one is allowed. Refresh the experiment history before deciding what to do.',
+    });
+  });
+
+  it('reviews the close with a factual summary, explains what it does not do, and stores it once', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const before = experiment({
+      spot_experiment_entries: [
+        entry({ id: 'r1', rule: 'stop', rule_status: 'approved' }),
+        entry({
+          id: 'r2',
+          rule: 'target',
+          rule_status: 'proposed',
+          recorded_at: '2026-10-28T17:06:00+00:00',
+        }),
+        entry({
+          id: 'o1',
+          kind: 'observation',
+          rule: null,
+          rule_status: null,
+          observed_in: 'elsewhere',
+          statement: 'Synthetic observation.',
+          stated_at: '2026-10-28T16:00:00.000Z',
+        }),
+      ],
+      spot_experiment_fills: [
+        linkedFill({ id: 'f1' }),
+        linkedFill({
+          id: 'f2',
+          trade_id: '9002',
+          side: 'sell',
+          trade_time_ms: Date.UTC(2026, 9, 27, 21, 40),
+        }),
+      ],
+    });
+    const stored = close();
+    db.listResult.mockResolvedValueOnce({ data: [before], error: null }).mockResolvedValueOnce({
+      data: [{ ...before, spot_experiment_entries: [...before.spot_experiment_entries, stored] }],
+      error: null,
+    });
+    const answer = deferred<unknown>();
+    db.insertResult.mockReturnValue(answer.promise);
+    renderList();
+    const item = await open();
+    fireEvent.click(within(item).getByText('Close experiment record'));
+    fireEvent.click(within(item).getByRole('button', { name: 'Review close' }));
+    expect(within(item).getByText('State why you are closing this record.')).toBeInTheDocument();
+    expect(db.inserts).toEqual([]);
+
+    fireEvent.change(within(item).getByLabelText('Reason for closing'), {
+      target: { value: '  Synthetic close reason.  ' },
+    });
+    fireEvent.change(within(item).getByLabelText('Close stated time (UTC, optional)'), {
+      target: { value: '2026-10-28T16:30' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review close' }));
+    const review = within(item).getByRole('region', { name: 'Check close before saving' });
+    expect(
+      within(review).getByRole('heading', { name: 'Check close before saving' }),
+    ).toHaveFocus();
+    expect(fact(review, 'Experiment')).toBe('ZCTLONGUSDT · main');
+    expect(fact(review, 'Reason')).toBe('Synthetic close reason.');
+    expect(fact(review, 'Stated time')).toBe('2026-10-28 16:30:00 UTC');
+    expect(fact(review, 'Recorded time')).toBe('Set by the database when it stores the entry');
+    expect(review).toHaveTextContent('Retrospective record');
+    expect(review).toHaveTextContent(
+      'Closing this record places no order and sends nothing to Binance. It does not show that the Binance position is closed: Popup reads no orders or positions, and linked fills are copies the server did not verify.',
+    );
+    expect(review).toHaveTextContent(
+      'Only one close can be stored, and it cannot be edited or removed. The record stays open to later rules, observations and fills, each marked as recorded after the close.',
+    );
+    const summary = within(review).getByRole('region', { name: 'What the record holds now' });
+    expect(fact(summary, 'Decision')).toBe(
+      'Bought a small ZCT position. (stated 2026-10-27 21:15:00 UTC; recorded 2026-10-28 17:00:01.500 UTC)',
+    );
+    expect(fact(summary, 'Source scan')).toBe(
+      `${SCAN_ID} · reproduction: match · authenticity not established`,
+    );
+    expect(fact(summary, 'Rules')).toBe(
+      'Approved: Stop · Not decided: Allocation ceiling, Horizon, Target, Exit · History: 2 entries',
+    );
+    expect(fact(summary, 'Linked fills')).toBe(
+      '2 linked: 1 buy, 1 sell. Only fills linked here; nothing is derived from them.',
+    );
+    expect(fact(summary, 'Observations')).toBe('1 recorded');
+    expect(fact(summary, 'Close')).toBe('Not closed: no close recorded');
+    expect(review).not.toHaveTextContent(/remaining|profit|P&L|success|failure|sold out/i);
+
+    fireEvent.click(confirmClose(review));
+    fireEvent.keyDown(confirmClose(review), { key: 'Enter' });
+    fireEvent.click(confirmClose(review));
+    expect(db.inserts).toEqual([
+      {
+        table: 'spot_experiment_entries',
+        row: {
+          experiment_id: EXPERIMENT_ID,
+          kind: 'close',
+          rule: null,
+          rule_status: null,
+          supersedes: null,
+          observed_in: null,
+          statement: 'Synthetic close reason.',
+          stated_at: '2026-10-28T16:30:00.000Z',
+        },
+      },
+    ]);
+    await act(async () => answer.resolve({ data: stored, error: null }));
+    expect(within(review).getByText(/^Saved\./)).toHaveTextContent(
+      'The database recorded this close entry at 2026-10-28 17:10:00 UTC',
+    );
+    expect(within(review).queryByRole('button', { name: /Add another/ })).not.toBeInTheDocument();
+    expect(within(review).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(fact(item, 'Close')).toBe(
+        'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC)',
+      ),
+    );
+    expect(db.inserts).toHaveLength(1);
+  });
+
+  it('reports a close stored meanwhile as a conflict, refreshes, and offers no second close', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const other = close({
+      id: 'c9',
+      statement: 'Synthetic close from another tab.',
+      stated_at: null,
+    });
+    db.listResult
+      .mockResolvedValueOnce({ data: [experiment()], error: null })
+      .mockResolvedValueOnce({
+        data: [experiment({ spot_experiment_entries: [other] })],
+        error: null,
+      });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+    });
+    renderList();
+    const item = await reviewClose('Synthetic close reason.');
+    const review = within(item).getByRole('region', { name: 'Check close before saving' });
+    expect(fact(review, 'Stated time')).toBe('Not stated');
+    expect(review).not.toHaveTextContent('Retrospective record');
+    fireEvent.click(confirmClose(review));
+    expect(await within(review).findByRole('alert')).toHaveTextContent(
+      'Not saved. This experiment already has a close entry',
+    );
+    expect(confirmClose(review)).toBeDisabled();
+    await waitFor(() =>
+      expect(fact(item, 'Close')).toMatch(
+        /^Synthetic close from another tab\. \(stated not stated/,
+      ),
+    );
+    fireEvent.click(within(review).getByRole('button', { name: 'Edit' }));
+    expect(within(item).queryByText('Close experiment record')).not.toBeInTheDocument();
+    expect(within(item).queryByLabelText('Reason for closing')).not.toBeInTheDocument();
+    expect(db.inserts).toHaveLength(1);
+  });
+
+  it('lets a permission refusal be retried and says nothing was stored', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    db.insertResult.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table spot_experiment_entries' },
+    });
+    renderList();
+    const item = await reviewClose('Synthetic close reason.');
+    const review = within(item).getByRole('region', { name: 'Check close before saving' });
+    fireEvent.click(confirmClose(review));
+    expect(await within(review).findByRole('alert')).toHaveTextContent(
+      /^Not saved\. Permission denied: .* Nothing was stored\.$/,
+    );
+    expect(confirmClose(review)).toBeEnabled();
+    expect(fact(item, 'Close')).toBe('Not closed: no close recorded');
+  });
+
+  it('keeps an uncertain close locked while the history refresh is pending and after it', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const refresh = deferred<unknown>();
+    db.listResult
+      .mockResolvedValueOnce({ data: [experiment()], error: null })
+      .mockReturnValueOnce(refresh.promise);
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Synthetic connection ended before confirmation' },
+    });
+    renderList();
+    const item = await reviewClose('Synthetic close reason.');
+    const review = within(item).getByRole('region', { name: 'Check close before saving' });
+    fireEvent.click(confirmClose(review));
+    expect(await within(review).findByText(/History refresh pending/)).toHaveTextContent(
+      'This close entry may or may not be stored.',
+    );
+    expect(confirmClose(review)).toBeDisabled();
+    expect(within(review).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    await act(async () =>
+      refresh.resolve({
+        data: [experiment({ spot_experiment_entries: [close()] })],
+        error: null,
+      }),
+    );
+    expect(await within(review).findByText(/History refreshed/)).toBeInTheDocument();
+    expect(confirmClose(review)).toBeDisabled();
+    expect(within(review).queryByText(/^Saved\./)).not.toBeInTheDocument();
+    expect(db.inserts).toHaveLength(1);
+  });
+
+  it('shows a stored close after a reload and keeps later evidence visible as after the close', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({
+      data: [
+        experiment({
+          spot_experiment_entries: [
+            entry({ id: 'r1', rule: 'stop', recorded_at: '2026-10-28T17:05:00+00:00' }),
+            close(),
+            entry({
+              id: 'r2',
+              rule: 'horizon',
+              statement: 'Synthetic late horizon.',
+              recorded_at: '2026-10-28T17:12:00+00:00',
+            }),
+            entry({
+              id: 'o1',
+              kind: 'observation',
+              rule: null,
+              rule_status: null,
+              observed_in: 'binance_interface',
+              statement: 'Synthetic late observation.',
+              stated_at: '2026-10-28T17:11:00.000Z',
+              recorded_at: '2026-10-28T17:15:00+00:00',
+            }),
+          ],
+          spot_experiment_fills: [
+            linkedFill({ id: 'f1' }),
+            linkedFill({
+              id: 'f2',
+              trade_id: '9002',
+              side: 'sell',
+              recorded_at: '2026-10-28T17:20:00+00:00',
+            }),
+          ],
+        }),
+      ],
+      error: null,
+    });
+    renderList();
+    const item = await open();
+    expect(fact(item, 'Close')).toBe(
+      'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC)',
+    );
+    expect(within(item).queryByText('Close experiment record')).not.toBeInTheDocument();
+    expect(item).toHaveTextContent(
+      'Closing doesn’t lock this record: rules, observations and fills added later still appear, each marked as recorded after the close.',
+    );
+    expect(fact(item, 'Recorded after the close')).toBe(
+      '1 linked fill, 1 rule entry, 1 observation',
+    );
+    const history = within(item).getByRole('list', { name: 'Rule history' });
+    const [early, late] = within(history).getAllByRole('listitem');
+    expect(early).not.toHaveTextContent('Recorded after the close');
+    expect(late).toHaveTextContent('Synthetic late horizon.');
+    expect(late).toHaveTextContent('Recorded after the close');
+    expect(within(item).getByRole('list', { name: 'Dated observations' })).toHaveTextContent(
+      'Recorded after the close',
+    );
+    const fills = within(item)
+      .getAllByRole('listitem')
+      .filter((li) => li.classList.contains('experiment-fill'));
+    expect(fills[1]).toHaveTextContent('Linked after the close');
+    expect(within(item).getByText('Add a rule')).toBeInTheDocument();
+    expect(within(item).getByText('Add an observation')).toBeInTheDocument();
+    expect(item).not.toHaveTextContent(/remaining|profit|success|failure|sold/i);
   });
 });

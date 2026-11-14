@@ -8,17 +8,16 @@ was observed afterwards. It records:
 - the fills the owner links;
 - dated observations, and the owner's explicit close.
 
-**Stage: recording, fill linking, rules, observations and viewing.** Migration `20261114120000`
-adds the tables, the
-access rule and their validation. It was applied to production on 2026-11-13 (UTC)
+**Stage: recording, fill linking, rules, observations, closing and viewing.** Migration
+`20261114120000` adds the tables, the access rule and their validation. It was applied to production on 2026-11-13 (UTC)
 ([release record](#production-release-2026-11-13)). The app records an experiment from a saved
 scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
 ([Recording](#recording-from-a-saved-scan)), links fills to it from the
 [execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage)
 ([Linking](#linking-fills-from-the-execution-view)), and lists experiments with their linked fills
 in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Account also
-records append-only rules and dated observations through the existing entries table. Closing comes
-later.
+records append-only rules, dated observations and the owner's explicit close through the existing
+entries table ([Closing](#closing-in-account)).
 
 ## Access
 
@@ -237,17 +236,77 @@ evidence. It asks the database nothing until it is opened.
   while the UI reports the history refresh as pending, succeeded or failed; it does not claim
   success or automatically retry an observation, because the existing schema has no observation
   idempotency key.
-- **Close.** Only its existing state is shown: **Not closed** or the owner's stored close. There is
-  no close form in this increment. No position, total, P&L, remaining quantity or order status.
+- **Record summary.** Under the linked fills, one factual summary: the decision with its stated
+  and recorded times, the source scan with its reproduction and authenticity, which named rules
+  are approved or not decided and how many rule entries the history holds, how many fills are
+  linked by side, how many observations are recorded, and the close (**Not closed** or the owner's
+  stored close). After a close it also counts the fills, rule entries and observations recorded
+  after it. Counts only: no position, total, P&L, remaining quantity, order status or rating.
+- **Close.** **Close experiment record** adds the owner's close ([Closing](#closing-in-account)).
+
+## Closing in Account
+
+**Close experiment record** sits under the record summary of an experiment that has no close.
+
+- **The owner's words.** A reason is required (at most 1,000 characters). A stated UTC time is
+  optional: empty means not stated. The field is read as UTC, whatever the browser's time zone,
+  and a time after now is refused.
+- **Review, then confirm.** The review shows the experiment, the reason, the stated time and that
+  the database sets the recorded time. A stated time earlier than now is labelled a retrospective
+  record. The review repeats the record summary and says that closing places no order, sends
+  nothing to Binance and does not show that the Binance position is closed. Only **Confirm and
+  save close entry** inserts, and it locks before the request leaves, so repeated presses send one
+  request.
+- **What is stored.** One `spot_experiment_entries` row with `kind = 'close'`, the reason as
+  `statement` and the optional `stated_at`. Rule, status, supersedes and place are null. No sale,
+  remaining quantity, total, profit or loss, and no success or failure rating is inferred or
+  stored.
+- **Outcomes.**
+  - **Saved:** only with the time the database returned. There is no **Add another**: the
+    database accepts one close per experiment.
+  - **Already closed:** the database holds a close for this experiment (another tab or device
+    stored one first, or this review was already submitted). Nothing new is stored, Confirm locks
+    and the history is read again, so the stored close appears in the summary.
+  - **Refused:** the database answered (for example, permission denied). Nothing was stored, and
+    Confirm can be pressed again.
+  - **No confirmation:** no answer came back, so the close may or may not be stored. The review
+    stays locked while the history refresh is reported as pending, succeeded or failed, and success
+    is never claimed.
+- **After the close.** The close form is gone, and a note says the record is not locked. Adding
+  rules and observations still works, and fills can still be linked. Each later item is marked
+  **Recorded after the close** (fills: **Linked after the close**) by comparing database-recorded
+  times, and the summary counts them. A close cannot be edited, withdrawn or removed.
 
 ## Not in this increment
 
-- No closing workflow.
+- No correction, withdrawal or reopening of a close: the one close entry is final.
 - No P&L, totals, remaining quantity, leverage or order status.
 - No scanner, model or paper-ledger change, and no schema migration.
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of closing — 2026-11-14
+
+Synthetic `ZCT*` data only. Nothing was written to production, and no request reached Binance.
+Component tests replace the Supabase client. The browser check ran on a scratch `zcclose` stack
+built from every migration, with an invented owner and four invented experiments. In the browser
+(Playwright, time zone Asia/Jerusalem), every request outside the local app and stack was aborted,
+including the app's public Binance price requests and WebSocket, and the `binance-spot-account`
+function was answered in the browser with `not_configured`.
+
+| Check                                          | Result                                                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reason and stated time                         | Empty reason refused (unit test); 15:00 typed in a UTC+2 browser was reviewed and stored as 15:00 UTC; a future time is refused (unit test) |
+| Review                                         | Shows the reason, times, the no-order and no-position statements and the record summary; nothing is sent                                    |
+| Owner row removed before Confirm               | `403` permission denied, "Nothing was stored"; after restoring it, the same review saved                                                    |
+| Three presses of Confirm (click, Enter, click) | One insert, `201`; no **Add another**                                                                                                       |
+| Close stored meanwhile by another session      | `409` reported as **Already closed**; Confirm locked; the refreshed summary shows the other close; no form                                  |
+| Response dropped after the database stored it  | "May or may not be stored"; locked; the refreshed history shows the stored close; one row                                                   |
+| Evidence after the close                       | An observation added through the form and a sell fill linked later both show as after the close                                             |
+| Full reload                                    | Close, its stated and recorded times, later evidence and the summary counts unchanged; one close per experiment                             |
+| Keyboard                                       | Enter opens the disclosure; Tab reaches the reason, the time and Confirm; the review heading takes focus                                    |
+| Layout                                         | 375 px: no horizontal page scroll, one column of facts. Light and dark themes checked                                                       |
 
 ## Verification of rules and observations — 2026-11-14
 
