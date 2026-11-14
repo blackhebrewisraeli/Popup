@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { History } from 'lucide-react';
+import { FillLinking, type FillLinkingView } from '@/components/LinkSpotFill';
 import {
   readSpotExecutions,
+  type SpotExecution,
   type SpotExecutionRead,
   type SpotExecutionSelection,
   type SpotFailure,
@@ -13,6 +15,7 @@ import {
   SPOT_EXECUTION_SYMBOLS,
   type SpotExecutionEvidence,
 } from '@/lib/binanceSpotEvidence';
+import { ACCOUNT_LABEL } from '@/lib/spotExperiments';
 import { utcInputTime, utcText } from '@/lib/utils';
 
 const RANGE_OPTIONS = [
@@ -33,6 +36,8 @@ interface Selection {
   /** `datetime-local` values, read as UTC. */
   start: string;
   end: string;
+  /** The owner's name for this Binance account, given for linking fills; empty when not given. */
+  accountLabel: string;
 }
 
 /** The custom window to request, or why none may be requested. */
@@ -107,11 +112,15 @@ function ExecutionResults({
   snapshot,
   busy,
   onNextPage,
-}: Readonly<{
-  snapshot: SpotExecutionEvidence;
-  busy: string | null;
-  onNextPage: (continuation: string) => void;
-}>) {
+  linkCell,
+  linkArea,
+}: Readonly<
+  {
+    snapshot: SpotExecutionEvidence;
+    busy: string | null;
+    onNextPage: (continuation: string) => void;
+  } & Partial<FillLinkingView>
+>) {
   const next = snapshot.continuation;
   const complete = requestedCoverageComplete(snapshot);
   return (
@@ -209,10 +218,11 @@ function ExecutionResults({
                 <th scope="col">Price</th>
                 <th scope="col">Quote quantity</th>
                 <th scope="col">Commission</th>
+                {linkCell && <th scope="col">Experiment</th>}
               </tr>
             </thead>
             <tbody>
-              {snapshot.executions.map((execution) => (
+              {snapshot.executions.map((execution: SpotExecution) => (
                 <tr key={`${execution.symbol}:${execution.tradeId}`}>
                   <td>
                     <time dateTime={new Date(execution.time).toISOString()}>
@@ -229,12 +239,15 @@ function ExecutionResults({
                   <td>
                     {execution.commission} {execution.commissionAsset}
                   </td>
+                  {linkCell && <td>{linkCell(execution)}</td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {linkArea}
 
       {snapshot.conflicts.length > 0 && (
         <div className="spot-execution-scroll">
@@ -300,14 +313,18 @@ function ExecutionResults({
 
 export function BinanceSpotExecutions({
   read = readSpotExecutions,
+  linkFor,
 }: Readonly<{
   read?: (request: SpotExecutionSelection | { continuation: string }) => Promise<SpotExecutionRead>;
+  /** The signed-in user, when fills may be linked to their Manual Spot experiments. */
+  linkFor?: string;
 }>) {
   const [selection, setSelection] = useState<Selection>({
     symbol: 'BTCUSDT',
     range: '24',
     start: '',
     end: '',
+    accountLabel: '',
   });
   const [problem, setProblem] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<SpotExecutionEvidence | null>(null);
@@ -320,6 +337,7 @@ export function BinanceSpotExecutions({
   // Every selection change and every read bumps this, so only the newest read's answer applies.
   const seqRef = useRef(0);
   const hintId = useId();
+  const labelHintId = useId();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -355,6 +373,12 @@ export function BinanceSpotExecutions({
       if (busy !== null) return;
       let request: SpotExecutionSelection | { continuation: string };
       if (continuation === null) {
+        if (selection.accountLabel !== '' && !ACCOUNT_LABEL.test(selection.accountLabel)) {
+          setProblem(
+            'The account label must be 1 to 40 lowercase letters, digits, hyphens or underscores, starting with a letter or digit.',
+          );
+          return;
+        }
         const bounds = selectedWindow(selection, Date.now());
         if (typeof bounds === 'string') {
           setProblem(bounds);
@@ -450,6 +474,21 @@ export function BinanceSpotExecutions({
               </label>
             </>
           )}
+          {linkFor && (
+            <label>
+              <span>Account label</span>
+              <input
+                type="text"
+                name="binance-execution-account-label"
+                value={selection.accountLabel}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                aria-describedby={labelHintId}
+                onChange={(event) => changeSelection({ accountLabel: event.target.value })}
+              />
+            </label>
+          )}
           <button
             type="button"
             className="portfolio-cash-btn"
@@ -459,6 +498,13 @@ export function BinanceSpotExecutions({
             <History size={13} aria-hidden="true" /> {busy ?? 'Load executions'}
           </button>
         </div>
+        {linkFor && (
+          <p id={labelHintId} className="spot-note">
+            Account label: optional, your own name for this Binance account as in your experiments
+            (such as main). It is needed only to link fills, belongs to this retrieval, and clears
+            the result when changed. It does not identify the account to Binance.
+          </p>
+        )}
         {custom && (
           <p id={hintId} className="spot-note">
             Enter both times in UTC, not your local time. The range may be at most 24 hours and must
@@ -485,7 +531,16 @@ export function BinanceSpotExecutions({
         </p>
       )}
 
-      {snapshot && <ExecutionResults snapshot={snapshot} busy={busy} onNextPage={load} />}
+      {snapshot &&
+        (linkFor ? (
+          <FillLinking userId={linkFor} accountLabel={selection.accountLabel} snapshot={snapshot}>
+            {(view): ReactNode => (
+              <ExecutionResults snapshot={snapshot} busy={busy} onNextPage={load} {...view} />
+            )}
+          </FillLinking>
+        ) : (
+          <ExecutionResults snapshot={snapshot} busy={busy} onNextPage={load} />
+        ))}
     </section>
   );
 }

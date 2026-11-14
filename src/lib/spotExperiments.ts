@@ -4,10 +4,13 @@
  * add one (`is_binance_spot_owner()` and row-level security) and sets the ID, owner and
  * recorded time; nothing here can.
  *
- * This increment records the experiment itself. It writes no rule, observation, close or fill,
- * and the scenario's arithmetic is never copied: a rule exists only as an entry the owner adds.
+ * The owner records the experiment itself and links fills from a Popup execution read. Nothing
+ * here writes a rule, observation or close, and the scenario's arithmetic is never copied: a rule
+ * exists only as an entry the owner adds. A linked fill is a client-submitted copy: the server
+ * never re-reads Binance to verify it.
  */
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
+import type { SpotExecution } from '@/lib/binanceSpotAccount';
 import { SERVER_ERROR_CODE } from '@/lib/db';
 import type { Database, Json } from '@/integrations/supabase/types';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
@@ -208,6 +211,9 @@ export function refusalText(code: string, message: string): string {
     return 'Permission denied: only the configured Binance owner can do this, and the database did not accept this sign-in as the owner.';
   }
   if (code === '23514') return `A value failed the database's checks (${message}).`;
+  if (code === '23503') {
+    return `The experiment does not accept it: its pair or account label differ, or it is not one of yours (${message}).`;
+  }
   return `The database refused it (${code}: ${message}).`;
 }
 
@@ -259,8 +265,33 @@ export async function isSpotExperimentOwner(): Promise<boolean> {
 
 export const EXPERIMENT_LIMIT = 100;
 
-const EXPERIMENT_COLUMNS =
-  'id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, spot_experiment_entries(id, kind, rule, rule_status, supersedes, statement, stated_at, recorded_at), spot_experiment_fills(id)';
+const FILL_COLUMNS =
+  'id, experiment_id, recorded_at, account_label, symbol, trade_id, order_id, side, trade_time_ms, quantity, price, quote_quantity, commission, commission_asset, retrieved_at, window_start_ms, window_end_ms, coverage_complete';
+
+const EXPERIMENT_COLUMNS = `id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, spot_experiment_entries(id, kind, rule, rule_status, supersedes, statement, stated_at, recorded_at), spot_experiment_fills(${FILL_COLUMNS})`;
+
+/** A stored fill link: the copied fill, the read it came from, and the database's own time. */
+export type LinkedFill = Pick<
+  Tables['spot_experiment_fills']['Row'],
+  | 'id'
+  | 'experiment_id'
+  | 'recorded_at'
+  | 'account_label'
+  | 'symbol'
+  | 'trade_id'
+  | 'order_id'
+  | 'side'
+  | 'trade_time_ms'
+  | 'quantity'
+  | 'price'
+  | 'quote_quantity'
+  | 'commission'
+  | 'commission_asset'
+  | 'retrieved_at'
+  | 'window_start_ms'
+  | 'window_end_ms'
+  | 'coverage_complete'
+>;
 
 export type ExperimentEntry = Pick<
   Tables['spot_experiment_entries']['Row'],
@@ -281,15 +312,15 @@ export type SpotExperimentRecord = Pick<
   | 'decision_stated_at'
 > & {
   spot_experiment_entries: ExperimentEntry[];
-  spot_experiment_fills: { id: string }[];
+  spot_experiment_fills: LinkedFill[];
 };
 
 export type OwnerExperiments =
   { owner: false } | { owner: true; experiments: SpotExperimentRecord[] };
 
 /**
- * The owner's experiments, newest recorded first, each with its entries and linked fill IDs
- * from the same read. A non-owner gets `owner: false`, never an empty list that would read as
+ * The owner's experiments, newest recorded first, each with its entries and linked fills from
+ * the same read. A non-owner gets `owner: false`, never an empty list that would read as
  * "none recorded".
  */
 export async function loadOwnerExperiments(userId: string): Promise<OwnerExperiments> {
@@ -326,4 +357,170 @@ export function currentRules(entries: readonly ExperimentEntry[]): {
     NAMED_RULES.map((rule) => [rule, approved.find((entry) => entry.rule === rule) ?? null]),
   ) as Record<NamedRule, ExperimentEntry | null>;
   return { named, other: approved.filter((entry) => entry.rule === 'other') };
+}
+
+export type SpotFillInsert = Required<
+  Pick<
+    Tables['spot_experiment_fills']['Insert'],
+    | 'experiment_id'
+    | 'account_label'
+    | 'symbol'
+    | 'trade_id'
+    | 'order_id'
+    | 'side'
+    | 'trade_time_ms'
+    | 'quantity'
+    | 'price'
+    | 'quote_quantity'
+    | 'commission'
+    | 'commission_asset'
+    | 'retrieved_at'
+    | 'window_start_ms'
+    | 'window_end_ms'
+    | 'coverage_complete'
+  >
+>;
+
+/** The execution read a fill is copied from, as the browser holds it. */
+export interface FillRead {
+  /** The account label the owner gave this retrieval. */
+  accountLabel: string;
+  /** The function's clock for the retrieval's latest page. */
+  retrievedAt: string;
+  startTime: number;
+  endTime: number;
+  /** Complete for the requested pairs and window, as the execution view assessed it. */
+  complete: boolean;
+}
+
+/**
+ * The row to store: the fill exactly as the read returned it (decimal strings untouched, the
+ * commission in its own asset) and the read's provenance. The ID, owner and recorded time come
+ * from the database.
+ */
+export function fillRow(
+  experimentId: string,
+  execution: SpotExecution,
+  read: FillRead,
+): SpotFillInsert {
+  return {
+    experiment_id: experimentId,
+    account_label: read.accountLabel,
+    symbol: execution.symbol,
+    trade_id: execution.tradeId,
+    order_id: execution.orderId,
+    side: execution.side,
+    trade_time_ms: execution.time,
+    quantity: execution.quantity,
+    price: execution.price,
+    quote_quantity: execution.quoteQuantity,
+    commission: execution.commission,
+    commission_asset: execution.commissionAsset,
+    retrieved_at: read.retrievedAt,
+    window_start_ms: read.startTime,
+    window_end_ms: read.endTime,
+    coverage_complete: read.complete,
+  };
+}
+
+/** The experiments a fill may join: the database accepts only the same pair and account label. */
+export function matchingExperiments(
+  experiments: readonly SpotExperimentRecord[],
+  symbol: string,
+  accountLabel: string,
+): SpotExperimentRecord[] {
+  return experiments.filter(
+    (experiment) => experiment.symbol === symbol && experiment.account_label === accountLabel,
+  );
+}
+
+/** The stored link for this trade under this label, if the loaded experiments hold one. */
+export function storedLink(
+  experiments: readonly SpotExperimentRecord[],
+  accountLabel: string,
+  symbol: string,
+  tradeId: string,
+): { experiment: SpotExperimentRecord; fill: LinkedFill } | null {
+  for (const experiment of experiments) {
+    const fill = experiment.spot_experiment_fills.find(
+      (item) =>
+        item.account_label === accountLabel && item.symbol === symbol && item.trade_id === tradeId,
+    );
+    if (fill) return { experiment, fill };
+  }
+  return null;
+}
+
+const FILL_FIELDS: [keyof SpotFillInsert & keyof LinkedFill, string][] = [
+  ['order_id', 'order ID'],
+  ['side', 'side'],
+  ['trade_time_ms', 'trade time'],
+  ['quantity', 'quantity'],
+  ['price', 'price'],
+  ['quote_quantity', 'quote quantity'],
+  ['commission', 'commission'],
+  ['commission_asset', 'commission asset'],
+];
+
+/**
+ * The fill fields in which a stored copy differs from this read, compared exactly. The read's
+ * own provenance (its time, window and coverage) is expected to differ between reads.
+ */
+export function fillDifferences(stored: LinkedFill, row: SpotFillInsert): string[] {
+  return FILL_FIELDS.filter(([key]) => stored[key] !== row[key]).map(([, name]) => name);
+}
+
+export type LinkOutcome =
+  | { state: 'linked'; fill: LinkedFill }
+  /** The database already holds a link for this trade; `fill` is its stored copy when it could be read. */
+  | { state: 'already'; fill: LinkedFill | null }
+  /** The database answered and stored nothing. */
+  | { state: 'refused'; message: string }
+  /** No answer from the database: the link may or may not be stored. */
+  | { state: 'unknown'; message: string };
+
+const UNIQUE_VIOLATION = '23505';
+
+/** The stored link for one trade under one label, read after the database refused a second one. */
+async function readStoredLink(row: SpotFillInsert): Promise<LinkedFill | null> {
+  try {
+    const { data, error } = await supabase
+      .from('spot_experiment_fills')
+      .select(FILL_COLUMNS)
+      .eq('account_label', row.account_label)
+      .eq('symbol', row.symbol)
+      .eq('trade_id', row.trade_id)
+      .maybeSingle();
+    return error ? null : data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Links one fill. `linked` only with the row the database returned. The database stores one link
+ * per trade and account label, so a second attempt (a retry after no answer included) is told
+ * apart as `already`, never stored twice.
+ */
+export async function linkSpotFill(row: SpotFillInsert): Promise<LinkOutcome> {
+  try {
+    const { data, error } = await supabase
+      .from('spot_experiment_fills')
+      .insert(row)
+      .select(FILL_COLUMNS)
+      .single();
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION)
+        return { state: 'already', fill: await readStoredLink(row) };
+      return SERVER_ERROR_CODE.test(error.code)
+        ? { state: 'refused', message: refusalText(error.code, error.message) }
+        : { state: 'unknown', message: error.message };
+    }
+    if (typeof data?.id !== 'string' || typeof data.recorded_at !== 'string') {
+      return { state: 'unknown', message: 'The database did not return the stored row.' };
+    }
+    return { state: 'linked', fill: data };
+  } catch (error) {
+    return { state: 'unknown', message: error instanceof Error ? error.message : String(error) };
+  }
 }

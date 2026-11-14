@@ -8,15 +8,15 @@ was observed afterwards. It records:
 - the fills the owner links;
 - dated observations, and the owner's explicit close.
 
-**Stage: recording and viewing.** Migration `20261114120000` adds the tables, the access rule and
-their validation. It was applied to production on 2026-11-13 (UTC)
-([release record](#production-release-2026-11-13)). The app now records an experiment from a saved
+**Stage: recording, fill linking and viewing.** Migration `20261114120000` adds the tables, the
+access rule and their validation. It was applied to production on 2026-11-13 (UTC)
+([release record](#production-release-2026-11-13)). The app records an experiment from a saved
 scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
-([Recording](#recording-from-a-saved-scan)) and lists experiments in **Account**, apart from the
-paper Signal Journal ([Viewing](#viewing-in-account)). Production's owner configuration is still
-empty, so there nobody can read or add an experiment yet. Linking fills from the
-[execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage), rules, observations and
-closing come later.
+([Recording](#recording-from-a-saved-scan)), links fills to it from the
+[execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage)
+([Linking](#linking-fills-from-the-execution-view)), and lists experiments with their linked fills
+in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Rules,
+observations and closing come later.
 
 ## Access
 
@@ -56,18 +56,18 @@ insert grant, so a request that sends them is refused.
 
 Each assurance is separate. None implies another.
 
-| Fact               | Column                                          | Establishes                                                                                                            | Does not establish                                                                                                                                            |
-| ------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Snapshot identity  | `source_snapshot_sha256`                        | Which bytes the experiment refers to: the SHA-256 of the snapshot file, as the browser reported it                     | That the scan is authentic, or that it reproduces. The database can't read the file. Any other copy with the same bytes has the same hash                     |
-| Reproduction       | `source_reproduction`                           | What the local offline reproduction reported when the record was made: `match` or `not_checked`. `mismatch` is refused | That it would reproduce now. The database can't re-run it, and the value is client-submitted                                                                  |
-| Authenticity       | none                                            | Nothing                                                                                                                | Local snapshots are unsigned. No column shows that the scan came from Popup's scanner or from TradingView data                                                |
-| Candidate evidence | `source_evidence`                               | What the browser showed for the candidate (rank, setups, freshness), as a copy                                         | It is not re-derived from the snapshot                                                                                                                        |
-| Recorded time      | `recorded_at`                                   | When the database stored the row (`clock_timestamp()`). Clients can't set it                                           | When anything happened in the market or in Binance                                                                                                            |
-| Stated time        | `decision_stated_at`, `stated_at`               | When the owner says the decision was made, the rule was set, the observation was made or the experiment ended          | Anything the database can check. Never after `recorded_at`. Null means not stated                                                                             |
-| Fill               | `spot_experiment_fills`                         | The values the owner's browser submitted, copied from the execution view                                               | That Binance holds that fill. The server doesn't re-read Binance to verify it: the row is **client-submitted evidence**, not a server-verified Binance record |
-| Read behind a fill | `retrieved_at`, `window_*`, `coverage_complete` | The read the browser says it copied from: the function's clock, the requested window and whether every page was read   | The same limits as the fill. Coverage complete covers that window and pair only                                                                               |
-| Account context    | `account_label`                                 | The caller's label for the Binance account. It scopes fill identity                                                    | Which Binance account that is. Popup reads no Binance account identifier, so the label proves nothing about identity                                          |
-| Order status       | none                                            | Nothing                                                                                                                | Popup reads no orders. An observation is what the owner saw, and when, never a current status                                                                 |
+| Fact               | Column                                          | Establishes                                                                                                                                                       | Does not establish                                                                                                                                            |
+| ------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Snapshot identity  | `source_snapshot_sha256`                        | Which bytes the experiment refers to: the SHA-256 of the snapshot file, as the browser reported it                                                                | That the scan is authentic, or that it reproduces. The database can't read the file. Any other copy with the same bytes has the same hash                     |
+| Reproduction       | `source_reproduction`                           | What the local offline reproduction reported when the record was made: `match` or `not_checked`. `mismatch` is refused                                            | That it would reproduce now. The database can't re-run it, and the value is client-submitted                                                                  |
+| Authenticity       | none                                            | Nothing                                                                                                                                                           | Local snapshots are unsigned. No column shows that the scan came from Popup's scanner or from TradingView data                                                |
+| Candidate evidence | `source_evidence`                               | What the browser showed for the candidate (rank, setups, freshness), as a copy                                                                                    | It is not re-derived from the snapshot                                                                                                                        |
+| Recorded time      | `recorded_at`                                   | When the database stored the row (`clock_timestamp()`). Clients can't set it                                                                                      | When anything happened in the market or in Binance                                                                                                            |
+| Stated time        | `decision_stated_at`, `stated_at`               | When the owner says the decision was made, the rule was set, the observation was made or the experiment ended                                                     | Anything the database can check. Never after `recorded_at`. Null means not stated                                                                             |
+| Fill               | `spot_experiment_fills`                         | The values the owner's browser submitted, copied from the execution view                                                                                          | That Binance holds that fill. The server doesn't re-read Binance to verify it: the row is **client-submitted evidence**, not a server-verified Binance record |
+| Read behind a fill | `retrieved_at`, `window_*`, `coverage_complete` | The read the browser says it copied from: the function's clock for the retrieval's latest page, the requested window and whether every page was read consistently | The same limits as the fill. Coverage complete covers that window and pair only. A fill from an earlier page of the retrieval was read before `retrieved_at`  |
+| Account context    | `account_label`                                 | The caller's label for the Binance account. It scopes fill identity                                                                                               | Which Binance account that is. Popup reads no Binance account identifier, so the label proves nothing about identity                                          |
+| Order status       | none                                            | Nothing                                                                                                                                                           | Popup reads no orders. An observation is what the owner saw, and when, never a current status                                                                 |
 
 **Recording later is allowed.** A decision or rule recorded after it was made has a stated time
 earlier than its recorded time. That is a labelled retrospective record, not an inconsistency. A
@@ -166,6 +166,42 @@ evidence. It asks the database nothing until it is opened.
   - **No confirmation:** no answer came back, so the row may or may not exist. Confirm locks until
     the owner edits and reviews again, and the message says to check Account first.
 
+## Linking fills from the execution view
+
+**Link to experiment** sits in the Experiment column of Account's **Binance Spot executions** table.
+
+- **An account label for the retrieval.** The owner names the account before loading, in the
+  database's label format. It belongs to that retrieval: changing it clears the result, like the
+  pair and range. Without one, no row can be linked, and the view says so.
+- **Consistent rows only.** Conflicting variants of a trade get no control. A row whose trade is
+  already linked under this label shows where (**Linked:** the experiment) and flags a stored copy
+  whose fill values differ from this read. A row with no experiment for its pair under this label
+  says so.
+- **Only matching experiments.** The list is the owner's own experiments with the fill's pair and
+  the retrieval's label, from the same read Account makes. The database accepts nothing else (its
+  foreign key names the pair and label). With several, none is preselected.
+- **Review, then confirm.** The panel shows the experiment (with its decision), the account label,
+  every fill field exactly as read (side, trade and order IDs, trade time to the millisecond,
+  quantity, price, quote quantity, commission with its own asset), the retrieval time (the
+  function's clock for the retrieval's latest page), the requested window and the coverage. Only
+  **Confirm and link** sends it, and it locks before the request leaves, so repeated presses send
+  one insert. If a later page turns the fill into a conflict while the panel is open, it can no
+  longer be linked.
+- **What is stored.** One `spot_experiment_fills` row: the fill as client-submitted evidence,
+  never re-read from Binance by the server. Decimal strings and the commission asset are stored
+  as read. No entry is written, so linking never closes an experiment, a sell included.
+- **Outcomes.**
+  - **Linked:** only with the ID and `recorded_at` the database returned.
+  - **Already linked:** the database holds a link for this trade under this label (one trade
+    belongs to one experiment). The stored copy is read back and the panel says whether it belongs
+    to another experiment and which fill fields differ from this read. Nothing is changed: links
+    are append-only, with no correction path yet.
+  - **Refused:** the database answered (for example, permission denied). Nothing was stored, and
+    Confirm can be pressed again.
+  - **No confirmation:** no answer came back, so the link may or may not be stored. Trying again is
+    safe: the unique key turns a stored link into **Already linked**, never a second row. The
+    experiment list is read again either way.
+
 ## Viewing in Account
 
 **Manual Spot experiments** sits inside Account's **Binance Spot** card, so only the owner the
@@ -173,23 +209,51 @@ evidence. It asks the database nothing until it is opened.
 
 - **States.** Loading, empty, unavailable (the database names no owner, or another one), refused
   (permission denied), and failed. A failure never shows an empty list in its place.
-- **One read.** The owner's newest 100 experiments, each with its entries and linked fill IDs
+- **One read.** The owner's newest 100 experiments, each with its entries and linked fills
   embedded.
 - **Each experiment.** Pair, account label, and both times: the stated decision time (or **Not
   stated**) and the database's recorded time. Then the scan, snapshot SHA-256, reproduction,
   authenticity (**Not established**), and the copied evidence.
 - **Rules.** Each named rule shows its current approved entry, or **Not decided**.
-- **Fills, observations, close.** Only counts or their absence: **No linked fills**, **None
-  recorded**, **Not closed**. No position, total, P&L, remaining quantity or order status.
+- **Linked fills.** Each fill in trade time order: side, trade and order IDs, trade time, quantity,
+  price, quote quantity and commission with its asset, exactly as stored; the read it was copied
+  from (retrieval time, window, coverage); and when the database stored the link. A fill stored
+  after a close is labelled **Linked after the close**. Or **No linked fills**.
+- **Observations, close.** Only counts or their absence: **None recorded**, **Not closed**. No
+  position, total, P&L, remaining quantity or order status.
 
 ## Not in this increment
 
-- No fill linking, rule or observation forms, or closing.
+- No rule or observation forms, and no closing.
 - No P&L, totals, remaining quantity, leverage or order status.
 - No scanner, model or paper-ledger change, and no schema migration.
-- No Binance requests, order actions or changes to the `binance-spot-account` function.
-- No server-side verification of linked fills.
-- No owner configuration in production.
+- No new Binance requests, order actions or changes to the `binance-spot-account` function.
+  Linking reuses a read the owner already made.
+- No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of fill linking — 2026-11-14
+
+Synthetic data only. Nothing was written to production, and no request reached Binance. The stack
+was a scratch `zclink` stack built from every migration, with an invented owner and four invented
+experiments (two `main`/`BTCUSDT`, one `spare`/`BTCUSDT`, one `spare`/`ETHUSDT`). In the browser
+(Playwright), every request outside the local app and stack was aborted before the page loaded,
+including the app's public Binance price requests and WebSocket, and the `binance-spot-account`
+function was answered in the browser with invented fills: two buys, a sell, and one conflicting
+trade.
+
+| Check                                                          | Result                                                                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Controls                                                       | Consistent rows only; the conflicting trade had none. Only the label's experiments for the pair were offered |
+| Review, then three presses of Confirm (click, Enter, click)    | One insert, `201`. The stored row equals the review: decimal strings and commission assets unchanged         |
+| Fill time outside the requested window (a fixture mistake)     | Refused by the database's window check; "Nothing was stored", Confirm available again                        |
+| Same trade linked meanwhile to another experiment, other value | `409`, then a read-back: names the other experiment and the differing field (quantity); nothing stored       |
+| Owner row removed before Confirm                               | `403` permission denied, nothing stored; after restoring it, the same review linked                          |
+| Response dropped after the database stored the link            | "May or may not be stored"; the row then showed Linked; Try again gave Already linked, same values; one row  |
+| Account label changed                                          | Result cleared; under the other label the same trade was linkable again (identity is scoped by label)        |
+| Sell linked                                                    | Stored as a sell; no entry written; the experiment stayed Not closed                                         |
+| Full reload, Account                                           | Every experiment listed its fills exactly, with retrieval time, window, coverage and link time               |
+| Keyboard                                                       | Enter opens the panel and focuses its heading; Tab reaches the list, Confirm, Cancel; Cancel restores focus  |
+| Layout                                                         | 375 px: no horizontal page scroll, one column of facts, values wrap. Light and dark themes checked           |
 
 ## Verification of the recording UI — 2026-11-14
 

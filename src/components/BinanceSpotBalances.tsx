@@ -176,7 +176,7 @@ export function BinanceSpotBalances({
           </table>
         ))}
 
-      <BinanceSpotExecutions />
+      <BinanceSpotExecutions linkFor={accountContext} />
       <BinanceSpotReconciliation key={accountContext} accountContext={accountContext} />
       {children}
     </section>

@@ -689,7 +689,7 @@ describe('Manual Spot experiments in Account', () => {
       ],
     });
     expect(db.listed[0]?.columns).toMatch(
-      /spot_experiment_entries\(.*\), spot_experiment_fills\(id\)$/,
+      /spot_experiment_entries\(.*\), spot_experiment_fills\(id, experiment_id, recorded_at, .*, coverage_complete\)$/,
     );
   });
 
@@ -733,7 +733,9 @@ describe('Manual Spot experiments in Account', () => {
     for (const rule of ['Allocation ceiling', 'Stop', 'Horizon', 'Target', 'Exit']) {
       expect(fact(item, rule)).toBe('Not decided');
     }
-    expect(fact(item, 'Fills')).toBe('No linked fills');
+    expect(within(item).getByText('Linked fills').nextElementSibling).toHaveTextContent(
+      /^No linked fills$/,
+    );
     expect(fact(item, 'Observations')).toBe('None recorded');
     expect(fact(item, 'Close')).toBe('Not closed: no close recorded');
     expect(item).not.toHaveTextContent(/P&L|profit|remaining|position size|order status/i);
@@ -747,7 +749,6 @@ describe('Manual Spot experiments in Account', () => {
           decision_stated_at: null,
           source_evidence: { facts: 'not a list' },
           spot_experiment_entries: [entry({ stated_at: '2026-10-28T16:00:00+00:00' })],
-          spot_experiment_fills: [{ id: 'f1' }],
         }),
       ],
       error: null,
@@ -764,7 +765,6 @@ describe('Manual Spot experiments in Account', () => {
       'Synthetic stop rule (stated 2026-10-28 16:00:00 UTC; recorded 2026-10-28 17:05:00 UTC)',
     );
     expect(fact(item, 'Target')).toBe('Not decided');
-    expect(fact(item, 'Fills')).toBe('1 linked (client-submitted copies)');
     expect(item).toHaveTextContent('This copy is not in a form this view can read');
   });
 
