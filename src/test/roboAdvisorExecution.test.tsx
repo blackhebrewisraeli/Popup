@@ -365,6 +365,31 @@ describe('RoboAdvisor execution, signed in', () => {
     expect(localStorage.length).toBe(0);
   });
 
+  it('closes on an Escape pressed in the same task that settles a lost booking as uncertain', async () => {
+    execute.mockImplementation((proposal) =>
+      proposal.dryRun && bookingCalls().length === 0
+        ? Promise.resolve(receipt('planned', proposal.requestId))
+        : Promise.reject(new Error('Failed to fetch')),
+    );
+    const confirm = await openProposal();
+    // The note commits before React's passive effects run. An Escape pressed in that gap
+    // must reach a listener that already knows the booking is no longer out.
+    let pressed = false;
+    const observer = new MutationObserver(() => {
+      if (pressed || !document.body.textContent?.includes("Couldn't reach the server to check"))
+        return;
+      pressed = true;
+      observer.disconnect();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(pressed).toBe(true));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(bookingCalls()).toHaveLength(1);
+  });
+
   describe('repricing', () => {
     const stale = "BTC's server price is over 2 hours old. Try again after the next price refresh.";
     const reprice = () => screen.getByRole('button', { name: 'Reprice' });

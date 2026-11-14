@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
@@ -632,7 +632,10 @@ export function RoboAdvisor({
     };
   }, [open]);
 
-  useEffect(() => {
+  // A layout effect, so the listener is replaced while React commits. A passive effect
+  // leaves the previous closeModal listening until it runs, and that one still thinks a
+  // booking that has just settled is out, so an Escape pressed in between was lost.
+  useLayoutEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       // A nested Radix layer (e.g. PricingModal) that handled this Escape has
