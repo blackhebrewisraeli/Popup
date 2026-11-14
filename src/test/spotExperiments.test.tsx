@@ -944,10 +944,19 @@ describe('Manual Spot experiments in Account', () => {
 
   it('reviews a rule, submits it once, and names the current entry it supersedes', async () => {
     db.rpc.mockResolvedValue({ data: true, error: null });
-    db.listResult.mockResolvedValue({
-      data: [
-        experiment({ spot_experiment_entries: [entry({ id: 's1', rule_status: 'proposed' })] }),
-      ],
+    const first = experiment({
+      spot_experiment_entries: [entry({ id: 's1', rule_status: 'proposed' })],
+    });
+    const stored = entry({
+      id: 's2',
+      rule_status: 'approved',
+      supersedes: 's1',
+      statement: 'Synthetic approved replacement.',
+      stated_at: '2026-10-27T21:15:00.000Z',
+      recorded_at: '2026-10-28T17:07:00+00:00',
+    });
+    db.listResult.mockResolvedValueOnce({ data: [first], error: null }).mockResolvedValueOnce({
+      data: [experiment({ spot_experiment_entries: [first.spot_experiment_entries[0]!, stored] })],
       error: null,
     });
     const answer = deferred<unknown>();
@@ -990,15 +999,65 @@ describe('Manual Spot experiments in Account', () => {
     ]);
     await act(async () =>
       answer.resolve({
-        data: {
-          ...db.inserts[0]?.row,
-          id: 's2',
-          recorded_at: '2026-10-28T17:07:00+00:00',
-        },
+        data: stored,
         error: null,
       }),
     );
     expect(within(review).getByText(/^Saved\./)).toHaveTextContent('2026-10-28 17:07:00 UTC');
+    expect(within(review).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    fireEvent.click(within(review).getByRole('button', { name: 'Add another rule' }));
+    expect(within(item).getByLabelText('Rule statement')).toHaveValue('');
+    expect(within(item).getByLabelText('Rule stated time (UTC, optional)')).toHaveValue('');
+    fireEvent.change(within(item).getByLabelText('Rule statement'), {
+      target: { value: 'Synthetic next stop proposal.' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review rule' }));
+    const nextReview = within(item).getByRole('region', { name: 'Check rule before saving' });
+    expect(fact(nextReview, 'Replaces')).toContain('Approved — Synthetic approved replacement.');
+  });
+
+  it('keeps an uncertain save locked and reports a failed history refresh without hiding history', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const current = entry({ id: 's1', rule_status: 'proposed' });
+    const refresh = deferred<unknown>();
+    db.listResult
+      .mockResolvedValueOnce({
+        data: [experiment({ spot_experiment_entries: [current] })],
+        error: null,
+      })
+      .mockReturnValueOnce(refresh.promise);
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Synthetic connection ended before confirmation' },
+    });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add a rule'));
+    fireEvent.change(within(item).getByLabelText('Rule statement'), {
+      target: { value: 'Synthetic uncertain replacement.' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review rule' }));
+    const review = within(item).getByRole('region', { name: 'Check rule before saving' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save rule' }));
+    expect(await within(review).findByText(/History refresh pending/)).toBeInTheDocument();
+    expect(within(review).getByRole('button', { name: 'Confirm and save rule' })).toBeDisabled();
+    expect(within(review).queryByText(/history was refreshed/i)).not.toBeInTheDocument();
+
+    await act(async () =>
+      refresh.resolve({
+        data: null,
+        error: { code: '', message: 'Synthetic history read failed' },
+      }),
+    );
+    expect(await within(review).findByText(/History refresh failed/)).toHaveTextContent(
+      'The history shown may be stale',
+    );
+    expect(within(review).getByRole('button', { name: 'Confirm and save rule' })).toBeDisabled();
+    expect(within(item).getByRole('list', { name: 'Rule history' })).toHaveTextContent(
+      'Synthetic stop rule',
+    );
   });
 
   it('requires an observation time, then reviews where and when without claiming current status', async () => {

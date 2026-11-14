@@ -136,8 +136,13 @@ function Observations({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
 }
 
 type SaveState = EntryOutcome | 'saving' | null;
+type RefreshState = 'idle' | 'pending' | 'succeeded' | 'failed';
 
-function SaveOutcome({ state, noun }: Readonly<{ state: SaveState; noun: string }>) {
+function SaveOutcome({
+  state,
+  noun,
+  refreshState,
+}: Readonly<{ state: SaveState; noun: string; refreshState: RefreshState }>) {
   if (state === 'saving')
     return (
       <output className="spot-record-status">Saving… waiting for the database to confirm.</output>
@@ -166,7 +171,12 @@ function SaveOutcome({ state, noun }: Readonly<{ state: SaveState; noun: string 
     return (
       <p role="alert" className="spot-field-error">
         No confirmation from the database ({state.message}). This {noun} may or may not be stored.
-        The history was refreshed; inspect it before trying anything again.
+        {refreshState === 'pending' &&
+          ' History refresh pending. Saving remains locked while you inspect the visible history.'}
+        {refreshState === 'succeeded' &&
+          ' History refreshed. Inspect it before deciding what happened; saving remains locked.'}
+        {refreshState === 'failed' &&
+          ' History refresh failed. The history shown may be stale; saving remains locked.'}
       </p>
     );
   }
@@ -178,7 +188,26 @@ function Actions({
   state,
   onConfirm,
   onEdit,
-}: Readonly<{ noun: string; state: SaveState; onConfirm: () => void; onEdit: () => void }>) {
+  onAddAnother,
+  refreshState,
+}: Readonly<{
+  noun: string;
+  state: SaveState;
+  onConfirm: () => void;
+  onEdit: () => void;
+  onAddAnother: () => void;
+  refreshState: RefreshState;
+}>) {
+  if (state !== null && state !== 'saving' && state.state === 'recorded') {
+    return (
+      <>
+        <button type="button" className="portfolio-cash-btn" onClick={onAddAnother}>
+          Add another {noun}
+        </button>
+        <SaveOutcome state={state} noun={noun} refreshState={refreshState} />
+      </>
+    );
+  }
   const locked = state === 'saving' || (state !== null && state.state !== 'refused');
   const editLocked = state === 'saving' || (state !== null && state.state === 'unknown');
   return (
@@ -191,7 +220,7 @@ function Actions({
           Edit
         </button>
       </div>
-      <SaveOutcome state={state} noun={noun} />
+      <SaveOutcome state={state} noun={noun} refreshState={refreshState} />
     </>
   );
 }
@@ -199,7 +228,7 @@ function Actions({
 function RuleComposer({
   experiment,
   onRefresh,
-}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => void }>) {
+}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
   const id = useId();
   const [draft, setDraft] = useState<RuleDraft>({
     rule: 'stop',
@@ -211,9 +240,15 @@ function RuleComposer({
   const [errors, setErrors] = useState<EntryDraftErrors & { form?: string }>({});
   const [review, setReview] = useState<ExperimentEntryInsert | null>(null);
   const [state, setState] = useState<SaveState>(null);
+  const [refreshState, setRefreshState] = useState<RefreshState>('idle');
+  const [knownEntry, setKnownEntry] = useState<ExperimentEntry | null>(null);
   const saving = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const versions = ruleVersions(experiment.spot_experiment_entries);
+  const knownEntries =
+    knownEntry && !experiment.spot_experiment_entries.some((entry) => entry.id === knownEntry.id)
+      ? [...experiment.spot_experiment_entries, knownEntry]
+      : experiment.spot_experiment_entries;
+  const versions = ruleVersions(knownEntries);
   const current =
     draft.rule === 'other'
       ? (versions.other.find((entry) => entry.id === otherLine) ?? null)
@@ -236,6 +271,7 @@ function RuleComposer({
     }
     setErrors({});
     setState(null);
+    setRefreshState('idle');
     setReview({
       experiment_id: experiment.id,
       kind: 'rule',
@@ -254,14 +290,21 @@ function RuleComposer({
     setState('saving');
     void recordExperimentEntry(review).then((outcome) => {
       if (outcome.state === 'refused') saving.current = false;
+      if (outcome.state === 'unknown') setRefreshState('pending');
+      if (outcome.state === 'recorded') setKnownEntry(outcome.entry);
       setState(outcome);
-      if (outcome.state !== 'refused') onRefresh();
+      if (outcome.state === 'unknown') {
+        void onRefresh()
+          .then((ok) => setRefreshState(ok ? 'succeeded' : 'failed'))
+          .catch(() => setRefreshState('failed'));
+      } else if (outcome.state !== 'refused') {
+        void onRefresh();
+      }
     });
   };
 
   if (review) {
-    const replaced =
-      experiment.spot_experiment_entries.find((entry) => entry.id === review.supersedes) ?? null;
+    const replaced = knownEntries.find((entry) => entry.id === review.supersedes) ?? null;
     return (
       <section className="spot-record-review" aria-label="Check rule before saving">
         <h5 ref={heading} tabIndex={-1} className="scan-effects-title">
@@ -305,8 +348,17 @@ function RuleComposer({
           onEdit={() => {
             saving.current = false;
             setState(null);
+            setRefreshState('idle');
             setReview(null);
           }}
+          onAddAnother={() => {
+            saving.current = false;
+            setDraft({ rule: 'stop', status: 'proposed', statement: '', statedAt: '' });
+            setOtherLine('new');
+            setErrors({});
+            setReview(null);
+          }}
+          refreshState={refreshState}
         />
       </section>
     );
@@ -406,7 +458,7 @@ function RuleComposer({
 function ObservationComposer({
   experiment,
   onRefresh,
-}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => void }>) {
+}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
   const id = useId();
   const [draft, setDraft] = useState<ObservationDraft>({
     observedIn: 'binance_interface',
@@ -416,6 +468,7 @@ function ObservationComposer({
   const [errors, setErrors] = useState<EntryDraftErrors>({});
   const [review, setReview] = useState<ExperimentEntryInsert | null>(null);
   const [state, setState] = useState<SaveState>(null);
+  const [refreshState, setRefreshState] = useState<RefreshState>('idle');
   const saving = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -431,6 +484,7 @@ function ObservationComposer({
     }
     setErrors({});
     setState(null);
+    setRefreshState('idle');
     setReview({
       experiment_id: experiment.id,
       kind: 'observation',
@@ -448,8 +502,15 @@ function ObservationComposer({
     setState('saving');
     void recordExperimentEntry(review).then((outcome) => {
       if (outcome.state === 'refused') saving.current = false;
+      if (outcome.state === 'unknown') setRefreshState('pending');
       setState(outcome);
-      if (outcome.state !== 'refused') onRefresh();
+      if (outcome.state === 'unknown') {
+        void onRefresh()
+          .then((ok) => setRefreshState(ok ? 'succeeded' : 'failed'))
+          .catch(() => setRefreshState('failed'));
+      } else if (outcome.state !== 'refused') {
+        void onRefresh();
+      }
     });
   };
 
@@ -482,8 +543,16 @@ function ObservationComposer({
           onEdit={() => {
             saving.current = false;
             setState(null);
+            setRefreshState('idle');
             setReview(null);
           }}
+          onAddAnother={() => {
+            saving.current = false;
+            setDraft({ observedIn: 'binance_interface', statement: '', statedAt: '' });
+            setErrors({});
+            setReview(null);
+          }}
+          refreshState={refreshState}
         />
       </section>
     );
@@ -543,7 +612,7 @@ function ObservationComposer({
 export function ExperimentEntries({
   experiment,
   onRefresh,
-}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => void }>) {
+}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
   return (
     <>
       <Rules entries={experiment.spot_experiment_entries} />

@@ -230,10 +230,13 @@ evidence. It asks the database nothing until it is opened.
   becomes a current-order-status claim.
 - **Adding an entry.** Rule and observation forms first validate the owner's words and UTC time,
   then show an explicit review. Only **Confirm and save** inserts. Repeated presses send one
-  request. Permission and validation refusals say nothing was stored. A concurrent named-rule
-  change is reported as a conflict and refreshes history. If the database gives no answer, the
-  review stays locked and history is refreshed; the UI does not claim success or automatically
-  retry an observation, because the existing schema has no observation idempotency key.
+  request. A successful immutable result offers **Add another**, which starts a blank draft; a new
+  rule still supersedes the current rule version, including the entry just returned. Permission and
+  validation refusals say nothing was stored. A concurrent named-rule change is reported as a
+  conflict and requests a history refresh. If the database gives no answer, the review stays locked
+  while the UI reports the history refresh as pending, succeeded or failed; it does not claim
+  success or automatically retry an observation, because the existing schema has no observation
+  idempotency key.
 - **Close.** Only its existing state is shown: **Not closed** or the owner's stored close. There is
   no close form in this increment. No position, total, P&L, remaining quantity or order status.
 
@@ -252,16 +255,18 @@ Synthetic `ZCT*` data only. No production write or live Binance request was made
 replace the Supabase client; the existing database suite verifies the unchanged entries schema and
 supersession constraints.
 
-| Check                                   | Result                                                                                                    |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Rule review and repeated Confirm        | One insert containing only the reviewed rule; no scenario or fill values                                  |
-| Proposed → approved → withdrawn         | Each change supersedes the current entry; all versions remain visible                                     |
-| Concurrent named-rule change            | Unique conflict reported; history refreshed; no success claimed                                           |
-| Permission refusal and missing response | Refusal allows correction; an unanswered save stays locked and is never reported as stored                |
-| Observation review                      | Requires where and stated UTC time; review and history show stated and database times                     |
-| Open-stop observation                   | Displayed only as what was observed then, never current status                                            |
-| Persistence                             | Reloaded synthetic records retain rule history, observation provenance and retrospective labels           |
-| Keyboard and mobile                     | Native disclosure/select controls, focused review heading, and one-column facts/forms at 560 px and below |
+| Check                                    | Result                                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Rule review and repeated Confirm         | One insert containing only the reviewed rule; no scenario or fill values                                  |
+| Proposed → approved → withdrawn          | Each change supersedes the current entry; all versions remain visible                                     |
+| Concurrent named-rule change             | Unique conflict reported; history refresh requested; no success claimed                                   |
+| Permission refusal and missing response  | Refusal allows correction; an unanswered save stays locked and is never reported as stored                |
+| Successful immutable entry               | No edit offered; Add another opens a blank draft and rules retain the current supersession head           |
+| Failed history refresh after uncertainty | Save stays locked; stale history remains inspectable and no successful refresh is claimed                 |
+| Observation review                       | Requires where and stated UTC time; review and history show stated and database times                     |
+| Open-stop observation                    | Displayed only as what was observed then, never current status                                            |
+| Persistence                              | Reloaded synthetic records retain rule history, observation provenance and retrospective labels           |
+| Keyboard and mobile                      | Native disclosure/select controls, focused review heading, and one-column facts/forms at 560 px and below |
 
 ## Verification of fill linking — 2026-11-14
 

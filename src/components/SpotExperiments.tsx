@@ -124,7 +124,7 @@ function Fills({ fills, closedAt }: Readonly<{ fills: LinkedFill[]; closedAt: st
 function Detail({
   experiment,
   onRefresh,
-}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => void }>) {
+}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
   const evidence = parseEvidence(experiment.source_evidence);
   const entries = experiment.spot_experiment_entries;
   const close = entries.find((entry) => entry.kind === 'close');
@@ -205,7 +205,7 @@ function Detail({
 function ExperimentList({
   experiments,
   onRefresh,
-}: Readonly<{ experiments: SpotExperimentRecord[]; onRefresh: () => void }>) {
+}: Readonly<{ experiments: SpotExperimentRecord[]; onRefresh: () => Promise<boolean> }>) {
   if (experiments.length === 0) {
     return (
       <p className="spot-note">
@@ -274,7 +274,7 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
     body = <p className="spot-note">The ?devAuth preview has no session to read them with.</p>;
   } else if (query.isPending) {
     body = <output className="spot-status">Loading experiments…</output>;
-  } else if (query.isError) {
+  } else if (query.isError && query.data === undefined) {
     body = (
       <div className="spot-failed" role="alert">
         <p>{failureText(query.error)}</p>
@@ -283,6 +283,8 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
         </button>
       </div>
     );
+  } else if (query.data === undefined) {
+    body = <output className="spot-status">Loading experiments…</output>;
   } else if (!query.data.owner) {
     body = (
       <p className="spot-note">
@@ -292,7 +294,10 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
     );
   } else {
     body = (
-      <ExperimentList experiments={query.data.experiments} onRefresh={() => void query.refetch()} />
+      <ExperimentList
+        experiments={query.data.experiments}
+        onRefresh={async () => (await query.refetch()).isSuccess}
+      />
     );
   }
 
