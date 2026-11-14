@@ -1552,6 +1552,10 @@ body {
 .spot-record-review > h5:focus {
   outline: none;
 }
+/* <output> is inline by default; these status lines read as paragraphs. */
+.spot-record-status {
+  display: block;
+}
 .spot-record-review code,
 .experiment-detail code {
   overflow-wrap: anywhere;

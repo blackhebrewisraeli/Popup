@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import { isDevAuthUser, useAuth } from '@/lib/authStore';
 import {
   checkDraft,
@@ -60,17 +60,24 @@ function Fact({ name, value }: Readonly<{ name: string; value: ReactNode }>) {
   );
 }
 
-function OutcomeText({ outcome }: Readonly<{ outcome: RecordOutcome | 'saving' | null }>) {
+/** Where a save stands: not sent, in flight, or answered. */
+type Outcome = RecordOutcome | 'saving' | null;
+
+function OutcomeText({ outcome }: Readonly<{ outcome: Outcome }>) {
   if (outcome === 'saving') {
-    return <p role="status">Recording… waiting for the database to confirm.</p>;
+    return (
+      <output className="spot-record-status">
+        Recording… waiting for the database to confirm.
+      </output>
+    );
   }
   if (outcome?.state === 'recorded') {
     return (
-      <p role="status">
+      <output className="spot-record-status">
         Recorded. The database stored experiment <code>{outcome.id}</code> at{' '}
         <time dateTime={outcome.recordedAt}>{utcText(outcome.recordedAt)}</time>, by its own clock.
         It is under {EXPERIMENTS_PLACE}.
-      </p>
+      </output>
     );
   }
   if (outcome?.state === 'refused') {
@@ -103,7 +110,7 @@ function Review({
 }: Readonly<{
   row: SpotExperimentInsert;
   evidence: CandidateEvidence;
-  outcome: RecordOutcome | 'saving' | null;
+  outcome: Outcome;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   onConfirm: () => void;
   onEdit: () => void;
@@ -219,7 +226,7 @@ function ExperimentForm({
     row: SpotExperimentInsert;
     evidence: CandidateEvidence;
   } | null>(null);
-  const [outcome, setOutcome] = useState<RecordOutcome | 'saving' | null>(null);
+  const [outcome, setOutcome] = useState<Outcome>(null);
   // Set before the request leaves, so a second click in the same frame sends nothing.
   const savingRef = useRef(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -228,7 +235,7 @@ function ExperimentForm({
     if (review) headingRef.current?.focus();
   }, [review]);
 
-  const onReview = (event: FormEvent) => {
+  const onReview = (event: SubmitEvent) => {
     event.preventDefault();
     const check = checkDraft(draft, Date.now());
     if (!check.ok) {
@@ -373,9 +380,9 @@ function OwnerGate({ userId, children }: Readonly<{ userId: string; children: Re
   });
   if (owner.isPending) {
     return (
-      <p role="status" className="market-scan-fit">
+      <output className="market-scan-fit spot-record-status">
         Checking whether the database accepts experiments from this sign-in…
-      </p>
+      </output>
     );
   }
   if (owner.isError) {
