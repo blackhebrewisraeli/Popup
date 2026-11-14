@@ -33,6 +33,7 @@ const PROMISE_SURFACES = [
   ...SURFACES,
   'src/components/AccountPanel.tsx',
   'src/components/AdInterstitialModal.tsx',
+  'src/components/LeverageSimulation.tsx',
   'src/components/PortfolioDashboard.tsx',
   'src/components/PricingModal.tsx',
   'src/components/SharedPortfolioView.tsx',

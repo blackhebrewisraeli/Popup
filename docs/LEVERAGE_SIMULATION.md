@@ -4,8 +4,9 @@
 perpetual **long**. It does arithmetic on numbers the owner types. It is not a Binance execution
 model, an eligibility check or a liquidation calculator.
 
-**Stage: pure engine and tests only.** There is no UI, storage, network request, account access,
-scanner change or link to the Manual Spot record. Nothing calls it yet.
+**Stage: engine and an offline Account section.** [Account](#in-account) shows the engine's figures
+for numbers typed there. There is no storage, network request, account access, scanner change or
+link to the Manual Spot record.
 
 ## Boundaries
 
@@ -142,6 +143,63 @@ does not model:
 - lot size, minimum notional, tick size or slippage, other than the owner's chosen fill prices.
 
 A liquidation reference is not a guaranteed maximum loss.
+
+## In Account
+
+**Leverage simulation** (`src/components/LeverageSimulation.tsx`) is its own card in Account, below
+and outside the Binance Spot card and its Manual Spot experiments. Every signed-in user sees it; it
+reads nothing, so it needs no owner check.
+
+- **Engine only.** Every figure is a string returned by `simulatePerpetualLong`, shown unrounded.
+  The component adds words (paid or received, gain or loss, above or at-or-below), never arithmetic.
+- **Memory only.** Every numeric field starts empty, and sizing starts at target notional. Nothing
+  is prefilled from a balance, a fill, a scan, a setting or an earlier session. Switching sizing
+  clears the size, because the same number means something else. **Clear simulation** empties every
+  field. A reload clears it too, and the card is keyed by user.
+- **Three groups:** position (collateral, sizing, size, entry fill, exit fill, optional stop
+  trigger), costs (two fee rates, the signed carrying cost) and maintenance assumptions (rate,
+  amount, bracket floor and cap). They stay open, so a validation message is never hidden. Each
+  field names its unit. Rates say they are percentages, and leverage says it is a multiple of
+  collateral. The carrying cost says positive is paid and negative is received.
+- **Status.** An `<output>` line, with the implicit status role, lists what is missing, asks for
+  corrections or counts the warnings. Each invalid field gets `aria-invalid` and its message through
+  `aria-describedby`. Results are derived on every render, so an invalid edit removes them at once.
+- **Results:** target and simulated entry notional, quantity, exit notional, fees, carrying cost,
+  price move, equity at the exit fill, net result and the change against starting collateral. The
+  exit fill and stop trigger are shown apart. The stop is labelled "compared only", with the fill
+  minus the trigger.
+- **References.** Both references show their assumptions and the collateral they start from. A
+  reference shows its rounded and exact price, its notional and where the stop and exit sit. Every
+  other status gets a plain-language reason and no price; a bracket mismatch also shows the notional
+  where it solves.
+- **Warnings** sit above the figures. They cover exhausted collateral, and an exit fill or stop
+  trigger at or below either reference. Each comparison carries `SHARED_PRICE_NOTE`.
+- **No advice.** No recommended leverage, risk rating, placeholder number or order control.
+
+### Verification (2026-11-14)
+
+- **Component tests:** 19 in `src/test/leverageSimulation.test.tsx`. Each compares the figures on
+  screen with `simulatePerpetualLong` for the same inputs. They cover:
+  - the 10/50/1/0.96 fixture, leverage 2×, 5× and 10×, a floored quantity, fees with a paid carry, and
+    a carrying credit;
+  - stop versus fill, and all three warnings;
+  - all five unavailable statuses, plus the after-cost-only negative requirement;
+  - invalid inputs, the too-small size, reset, no prefill, no `fetch`, and placement outside the
+    Binance card.
+
+  Five deliberate component mutations each failed a test.
+
+- **Browser:** synthetic inputs only, on the local dev server with Supabase pointed at an unused
+  local port. Before the first page load, Playwright aborted every request and WebSocket not served
+  by that server. Blocked were Google Fonts, Vercel analytics, the Binance stream and every Supabase
+  call. Checked:
+  - Tab order through the groups, and arrow keys on the sizing radios;
+  - the fixture's figures and references;
+  - the status line, and an invalid stop's `aria-invalid` and description;
+  - light and dark themes through the app's toggle;
+  - 375 px with no horizontal overflow.
+
+  Not checked: a screen reader, Safari, a physical phone.
 
 ## Acceptance fixtures
 

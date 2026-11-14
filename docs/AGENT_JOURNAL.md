@@ -21,11 +21,16 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-14 · Offline perpetual long scenario engine · Draft PR, branch `feat/perpetual-scenario-engine`.**
+- **2026-11-14 · Leverage simulation in Account · Draft PR, branch `feat/leverage-simulation-ui`.**
+  - **Changed:** Account has a separate **Leverage simulation** card, outside the Binance Spot card. It shows `simulatePerpetualLong` figures for numbers typed there, grouped into position, costs and maintenance assumptions. Fields start empty, and the card holds no defaults or advice. It shows both liquidation references or a plain reason for each unavailable status, and it warns about exhausted collateral or a stop or exit at or below a reference. Each comparison carries the shared-price note ([in Account](LEVERAGE_SIMULATION.md#in-account)). No storage, network, migration, Binance request or order control.
+  - **Evidence:** 19 component tests check the screen against engine output; typecheck, lint, build and the full suite pass. A browser check used synthetic inputs, with every non-local request blocked before load: keyboard, status and errors, light and dark themes, and 375 px.
+  - **Not done:** no Isolated Margin model, no market data, no saving. Not checked with a screen reader or on a phone.
+  - **Next:** owner review of the draft PR.
+
+- **2026-11-14 · Offline perpetual long scenario engine · Merged in [#178](https://github.com/blackhebrewisraeli/Popup/pull/178) as `86aa6cb`.**
   - **Changed:** `src/lib/perpetualScenario.ts` works out one isolated USDT-margined perpetual long from owner-typed inputs only: quantity, notional, fees, a signed carrying cost, equity at a hypothetical exit fill, net result and change against starting collateral. It also gives a simplified liquidation reference, both zero-cost and after costs, only when the inputs and the entered bracket hold together ([contract, derivations and limits](LEVERAGE_SIMULATION.md)). No UI, storage, network, scanner change or Spot integration.
   - **Evidence:** 48 tests cover the module fully, including the negative-requirement refusal found in review. Fixture values were cross-checked with an independent exact-fraction computation. Typecheck, lint, build and the full suite pass. No Binance request and no production access.
-  - **Not done:** no UI, no Isolated Margin model, no market data. Outputs are not Binance-verified liquidation prices or achievable executions.
-  - **Next:** owner review of the draft PR.
+  - **Not done:** no Isolated Margin model, no market data. Outputs are not Binance-verified liquidation prices or achievable executions. The UI followed in the entry above.
 
 - **2026-11-14 · Close a Manual Spot experiment record in Account · Merged in [#177](https://github.com/blackhebrewisraeli/Popup/pull/177) as `ce65b84`.**
   - **Changed:** **Close experiment record** stores the owner's one append-only close (reason, optional UTC stated time) after a review that repeats a factual record summary and says closing places no order and does not show the Binance position is closed ([closing](MANUAL_SPOT_EXPERIMENTS.md#closing-in-account)). Account shows that summary for every experiment. Rules, observations and fills recorded after a close stay visible and are marked so. The rule, observation and close forms share one save hook. Existing schema; no migration.
