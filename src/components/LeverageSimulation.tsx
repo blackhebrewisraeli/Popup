@@ -413,9 +413,16 @@ function promptText(check: Extract<PerpetualCheck, { ok: false }>, sizing: Sizin
  * nothing is saved or sent. Results are derived on every render, so an invalid edit removes
  * them at once.
  */
-export function LeverageSimulation() {
+export function LeverageSimulation({
+  onInputsChange,
+}: Readonly<{ onInputsChange?: (inputs: PerpetualInputs) => void }> = {}) {
   const id = useId();
   const [inputs, setInputs] = useState<PerpetualInputs>(EMPTY_PERPETUAL);
+  // The filter comparison follows each edit in the same event, so a changed input clears it.
+  const update = (next: PerpetualInputs) => {
+    setInputs(next);
+    onInputsChange?.(next);
+  };
   const check = simulatePerpetualLong(inputs);
   const errors = check.ok ? {} : check.errors;
   const field = (name: PerpetualField) => (
@@ -425,14 +432,13 @@ export function LeverageSimulation() {
       copy={name === 'size' ? SIZE[inputs.sizing] : FIELDS[name]}
       value={inputs[name]}
       error={errors[name]}
-      onChange={(value) => setInputs((current) => ({ ...current, [name]: value }))}
+      onChange={(value) => update({ ...inputs, [name]: value })}
     />
   );
   // The size number means something else under the other sizing, so it is not carried over.
-  const setSizing = (sizing: Sizing) =>
-    setInputs((current) =>
-      current.sizing === sizing ? current : { ...current, sizing, size: '' },
-    );
+  const setSizing = (sizing: Sizing) => {
+    if (inputs.sizing !== sizing) update({ ...inputs, sizing, size: '' });
+  };
   const warnings = check.ok ? warningsOf(check.scenario) : [];
   let status = 'Hypothetical result below.';
   if (!check.ok) status = promptText(check, inputs.sizing);
@@ -500,7 +506,7 @@ export function LeverageSimulation() {
         <button
           type="button"
           className="portfolio-cash-btn"
-          onClick={() => setInputs(EMPTY_PERPETUAL)}
+          onClick={() => update(EMPTY_PERPETUAL)}
         >
           Clear simulation
         </button>

@@ -509,7 +509,7 @@ describe('Account placement', () => {
     for (const box of within(section()).getAllByRole('textbox')) expect(box).toHaveValue('');
   });
 
-  it('puts the public perpetual facts right after the simulation, unread until asked', async () => {
+  it('puts the public perpetual facts and then the filter comparison after the simulation, idle until asked', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     try {
@@ -522,6 +522,13 @@ describe('Account placement', () => {
       expect(card).not.toContainElement(facts);
       expect(section()).not.toContainElement(facts);
       expect(section().nextElementSibling).toBe(facts);
+      // The filter comparison follows the facts, outside the Binance card, compared on no load.
+      const comparison = screen.getByRole('region', {
+        name: /^Scenario against TRXUSDT perpetual filters/,
+      });
+      expect(facts.nextElementSibling).toBe(comparison);
+      expect(card).not.toContainElement(comparison);
+      expect(within(comparison).queryAllByRole('heading', { level: 5 })).toHaveLength(0);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();

@@ -4045,6 +4045,37 @@ body {
   padding-left: 16px;
   list-style: disc;
 }
+/* The scenario against the TRXUSDT perpetual filters (docs/LEVERAGE_SIMULATION.md). */
+.perp-compare-card .portfolio-cash-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.perp-compare-checks {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.perp-compare-checks > li + li {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.perp-compare-rule {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.perp-compare-check {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+.perp-compare-outside {
+  color: var(--signal-red);
+}
+.perp-compare-unchecked {
+  color: color-mix(in oklch, var(--accent-amber) 72%, var(--foreground));
+}
 .spot-table {
   width: 100%;
   border-collapse: collapse;

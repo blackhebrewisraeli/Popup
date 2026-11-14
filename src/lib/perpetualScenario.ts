@@ -82,6 +82,8 @@ export interface PerpetualScenario {
   quantity: string;
   /** As entered, or collateral × leverage. */
   targetNotional: string;
+  /** The entry fill price as entered, at 1e-8. */
+  entryFill: string;
   /** Quantity × entry: at most the target, because quantity is floored. */
   entryNotional: string;
   exitNotional: string;
@@ -124,7 +126,7 @@ const SIGNED_FORMAT_ERROR =
   'Enter a plain decimal such as 0.5 or -0.5: digits, one decimal point and an optional leading minus.';
 
 /** n / 10^digits exactly, trailing zeros trimmed, no grouping: "-2.154", "0". */
-function formatScaled(n: bigint, digits: number): string {
+export function formatScaled(n: bigint, digits: number): string {
   const sign = n < 0n ? '-' : '';
   const abs = n < 0n ? -n : n;
   const unit = 10n ** BigInt(digits);
@@ -372,6 +374,7 @@ export function simulatePerpetualLong(inputs: PerpetualInputs): PerpetualCheck {
     scenario: {
       quantity: units(quantity),
       targetNotional: formatScaled(target16, 16),
+      entryFill: units(v.entry),
       entryNotional: usdt(entryNotional22),
       exitNotional: usdt(exitNotional22),
       fees: { entry: usdt(entryFee22), exit: usdt(exitFee22), total: usdt(entryFee22 + exitFee22) },
