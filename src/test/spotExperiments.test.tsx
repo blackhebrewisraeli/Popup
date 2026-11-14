@@ -1090,6 +1090,93 @@ describe('Manual Spot experiments in Account', () => {
     expect(review).toHaveTextContent('Retrospective record');
   });
 
+  const reviewObservation = async (statement: string) => {
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add an observation'));
+    fireEvent.change(within(item).getByLabelText('Observed in'), {
+      target: { value: 'elsewhere' },
+    });
+    fireEvent.change(within(item).getByLabelText('Observation'), {
+      target: { value: statement },
+    });
+    fireEvent.change(within(item).getByLabelText('Observed at (UTC)'), {
+      target: { value: '2026-10-27T22:00' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    return item;
+  };
+
+  it('edits a reviewed observation, allows a retry after a refusal, and Add another starts blank', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    renderList();
+    const item = await reviewObservation('Synthetic stop appeared open.');
+    let review = within(item).getByRole('region', { name: 'Check observation before saving' });
+    expect(fact(review, 'Observed in')).toBe('Elsewhere');
+    fireEvent.click(within(review).getByRole('button', { name: 'Edit' }));
+    expect(within(item).getByLabelText('Observation')).toHaveValue('Synthetic stop appeared open.');
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    review = within(item).getByRole('region', { name: 'Check observation before saving' });
+
+    db.insertResult.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table spot_experiment_entries' },
+    });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save observation' }));
+    expect(await within(review).findByRole('alert')).toHaveTextContent(
+      /^Not saved\. Permission denied: .* Nothing was stored\.$/,
+    );
+    const confirm = within(review).getByRole('button', { name: 'Confirm and save observation' });
+    expect(confirm).toBeEnabled();
+
+    db.insertResult.mockResolvedValueOnce({
+      data: entry({
+        id: 'o1',
+        kind: 'observation',
+        rule: null,
+        rule_status: null,
+        observed_in: 'elsewhere',
+        statement: 'Synthetic stop appeared open.',
+        stated_at: '2026-10-27T22:00:00.000Z',
+        recorded_at: '2026-10-28T17:08:00+00:00',
+      }),
+      error: null,
+    });
+    fireEvent.click(confirm);
+    expect(await within(review).findByText(/^Saved\./)).toHaveTextContent(
+      'observation at 2026-10-28 17:08:00 UTC',
+    );
+    expect(db.inserts).toHaveLength(2);
+    expect(db.inserts[1]?.row).toMatchObject({ kind: 'observation', observed_in: 'elsewhere' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Add another observation' }));
+    expect(within(item).getByLabelText('Observation')).toHaveValue('');
+    expect(within(item).getByLabelText('Observed at (UTC)')).toHaveValue('');
+    expect(within(item).getByLabelText('Observed in')).toHaveValue('binance_interface');
+  });
+
+  it('keeps an uncertain observation save locked after its history refresh succeeds', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Synthetic connection ended before confirmation' },
+    });
+    renderList();
+    const item = await reviewObservation('Synthetic uncertain observation.');
+    const review = within(item).getByRole('region', { name: 'Check observation before saving' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save observation' }));
+    expect(await within(review).findByText(/History refreshed/)).toHaveTextContent(
+      'This observation may or may not be stored.',
+    );
+    expect(
+      within(review).getByRole('button', { name: 'Confirm and save observation' }),
+    ).toBeDisabled();
+    expect(within(review).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(db.inserts).toHaveLength(1);
+  });
+
   it('appears only inside the Binance card, which the owner alone sees', async () => {
     db.rpc.mockResolvedValue({ data: true, error: null });
     db.listResult.mockResolvedValue({ data: [], error: null });
