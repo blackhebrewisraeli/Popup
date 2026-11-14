@@ -55,7 +55,7 @@ import {
   type SetupCheck,
 } from '@/lib/scanReview';
 import { plansSpot } from '@/lib/spotScenario';
-import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
+import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { closeOnBackdrop, cn } from '@/lib/utils';
 import { containDialogTab } from '@/lib/dialogFocus';
 
@@ -876,12 +876,14 @@ function Evidence({
   scan,
   scanId,
   source,
+  saved,
   scanFacts,
 }: Readonly<{
   selection: Selection;
   scan: MarketScan;
   scanId: string | undefined;
   source: TradingViewDevSource | undefined;
+  saved: TradingViewSavedScan | undefined;
   scanFacts: boolean;
 }>) {
   const titleId = useId();
@@ -1018,6 +1020,7 @@ function Evidence({
           scan={scan}
           scanId={scanId}
           source={source}
+          saved={saved}
         />
       )}
     </div>
@@ -1030,6 +1033,7 @@ function ExplanationSheet({
   scan,
   scanId,
   source,
+  saved,
   onClose,
   returnFocus,
 }: Readonly<{
@@ -1037,6 +1041,7 @@ function ExplanationSheet({
   scan: MarketScan;
   scanId: string | undefined;
   source: TradingViewDevSource | undefined;
+  saved: TradingViewSavedScan | undefined;
   onClose: () => void;
   /** Called once the sheet is gone; the review puts focus back on the selected row. */
   returnFocus: () => void;
@@ -1085,7 +1090,14 @@ function ExplanationSheet({
             <X size={18} />
           </button>
         </header>
-        <Evidence selection={selection} scan={scan} scanId={scanId} source={source} scanFacts />
+        <Evidence
+          selection={selection}
+          scan={scan}
+          scanId={scanId}
+          source={source}
+          saved={saved}
+          scanFacts
+        />
       </dialog>
     </div>,
     document.body,
@@ -1103,6 +1115,7 @@ function EvidencePanel({
   scan,
   scanId,
   source,
+  saved,
 }: Readonly<{
   id: string;
   selection: Selection | undefined;
@@ -1111,6 +1124,7 @@ function EvidencePanel({
   scan: MarketScan;
   scanId: string | undefined;
   source: TradingViewDevSource | undefined;
+  saved: TradingViewSavedScan | undefined;
 }>) {
   const ref = useRef<HTMLElement>(null);
   const ticker = selection?.result.ticker;
@@ -1141,6 +1155,7 @@ function EvidencePanel({
             scan={scan}
             scanId={scanId}
             source={source}
+            saved={saved}
             scanFacts={false}
           />
         </>
@@ -1387,6 +1402,7 @@ export function ScanReview({
             scan={scan}
             scanId={scanId}
             source={source}
+            saved={choice?.saved}
           />
         )}
       </div>
@@ -1396,6 +1412,7 @@ export function ScanReview({
           scan={scan}
           scanId={scanId}
           source={source}
+          saved={choice?.saved}
           onClose={closeSheet}
           returnFocus={focusSelectedRow}
         />

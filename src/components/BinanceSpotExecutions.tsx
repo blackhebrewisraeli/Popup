@@ -13,6 +13,7 @@ import {
   SPOT_EXECUTION_SYMBOLS,
   type SpotExecutionEvidence,
 } from '@/lib/binanceSpotEvidence';
+import { utcInputTime, utcText } from '@/lib/utils';
 
 const RANGE_OPTIONS = [
   { hours: 1, label: 'Last hour' },
@@ -32,21 +33,6 @@ interface Selection {
   /** `datetime-local` values, read as UTC. */
   start: string;
   end: string;
-}
-
-/** An instant as UTC text, with milliseconds only when it has them. */
-const utcText = (time: number | string) =>
-  new Date(time).toISOString().replace('T', ' ').replace('.000Z', 'Z').replace('Z', ' UTC');
-
-/**
- * A `datetime-local` value read as UTC. The input's value carries no time zone, so appending Z
- * keeps the browser's own zone out of it. The round trip refuses dates such as 30 February, which
- * some engines roll into March.
- */
-function utcInputTime(value: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) return null;
-  const time = Date.parse(`${value}Z`);
-  return time > 0 && new Date(time).toISOString().startsWith(value) ? time : null;
 }
 
 /** The custom window to request, or why none may be requested. */

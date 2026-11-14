@@ -351,31 +351,34 @@ describe('Candidates to review first', () => {
     const summary = within(sheet).getByText('Plan a hypothetical scenario', {
       selector: 'summary',
     });
+    const record = within(sheet).getByText('Record experiment', { selector: 'summary' });
     const press = (shiftKey = false) =>
       fireEvent.keyDown(window, { key: 'Tab', shiftKey, cancelable: true });
     expect(close).toHaveFocus();
 
-    // Closed: the summary is the last control; the hidden fields are not.
+    // Closed: Record experiment's summary is the last control; the hidden fields are not.
     expect(press(true)).toBe(false); // fireEvent returns false once the default is prevented
-    expect(summary).toHaveFocus();
+    expect(record).toHaveFocus();
     expect(press()).toBe(false);
     expect(close).toHaveFocus();
 
-    // Open: Tab leaves the summary for the fields, and wraps after the last of them.
+    // Open: Tab leaves the summary for the fields, and from the last of them on to Record
+    // experiment, which stays the boundary.
     fireEvent.click(summary);
     const clear = within(sheet).getByRole('button', { name: 'Clear scenario' });
     summary.focus();
     expect(press()).toBe(true);
+    clear.focus();
+    expect(press()).toBe(true);
     close.focus();
     expect(press(true)).toBe(false);
-    expect(clear).toHaveFocus();
-    expect(press()).toBe(false);
-    expect(close).toHaveFocus();
+    expect(record).toHaveFocus();
 
-    // Closed again: the boundary returns to the summary.
+    // Closed again: the boundary is still Record experiment's summary.
     fireEvent.click(summary);
+    close.focus();
     expect(press(true)).toBe(false);
-    expect(summary).toHaveFocus();
+    expect(record).toHaveFocus();
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

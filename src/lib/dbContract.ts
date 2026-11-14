@@ -23,6 +23,7 @@ type FrontendRpc =
   | 'execute_paper_portfolio'
   | 'execute_tactical_signal'
   | 'get_shared_portfolio'
+  | 'is_binance_spot_owner'
   | 'rotate_signal_webhook_token';
 
 export const DB_CONTRACT: { [Name in FrontendRpc]: Requirement<Name> } = {
@@ -48,6 +49,8 @@ export const DB_CONTRACT: { [Name in FrontendRpc]: Requirement<Name> } = {
     roles: ['authenticated'],
   },
   get_shared_portfolio: { args: { share_id: 'always' }, roles: ['anon', 'authenticated'] },
+  // Manual Spot experiments: whether the signed-in user is the configured Binance owner.
+  is_binance_spot_owner: { args: {}, roles: ['authenticated'] },
   rotate_signal_webhook_token: { args: {}, roles: ['authenticated'] },
 };
 

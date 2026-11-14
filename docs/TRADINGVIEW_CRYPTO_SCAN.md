@@ -210,3 +210,7 @@ reaches the same panel, under the same rules and with empty inputs.
   in-app reload that brings changed content (even under the same scan ID) clears it. An in-app
   reload of an unchanged file keeps it. Nothing is journaled or stored, and no background process
   runs.
+- **Record experiment.** A separate disclosure below the scenario. From a saved scan, the
+  configured Binance owner can store their own decision with this evidence and the snapshot's
+  identity, after reviewing it. The scenario's inputs and figures are never part of the record.
+  See [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan).

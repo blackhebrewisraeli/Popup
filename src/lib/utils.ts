@@ -16,3 +16,18 @@ export function closeOnBackdrop(close: () => void) {
     if (event.target === event.currentTarget) close();
   };
 }
+
+/** An instant as UTC text, with milliseconds only when it has them. */
+export const utcText = (time: number | string) =>
+  new Date(time).toISOString().replace('T', ' ').replace('.000Z', 'Z').replace('Z', ' UTC');
+
+/**
+ * A `datetime-local` value read as UTC. The input's value carries no time zone, so appending Z
+ * keeps the browser's own zone out of it. The round trip refuses dates such as 30 February, which
+ * some engines roll into March.
+ */
+export function utcInputTime(value: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) return null;
+  const time = Date.parse(`${value}Z`);
+  return time > 0 && new Date(time).toISOString().startsWith(value) ? time : null;
+}

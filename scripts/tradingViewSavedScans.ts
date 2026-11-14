@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -41,7 +42,7 @@ const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBL
 async function readStoreFile(
   store: string,
   name: string,
-): Promise<{ text: string; modified: number } | null> {
+): Promise<{ text: string; sha256: string; modified: number } | null> {
   let handle;
   try {
     handle = await open(join(resolve(store), name), READ_FLAGS);
@@ -50,7 +51,14 @@ async function readStoreFile(
   }
   try {
     const stats = await handle.stat();
-    return stats.isFile() ? { text: await handle.readFile('utf8'), modified: stats.mtimeMs } : null;
+    if (!stats.isFile()) return null;
+    // Hashed and parsed from the same read, so the hash names exactly the bytes that were checked.
+    const bytes = await handle.readFile();
+    return {
+      text: bytes.toString('utf8'),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      modified: stats.mtimeMs,
+    };
   } finally {
     await handle.close();
   }
@@ -131,7 +139,8 @@ export async function listSavedScans(store: string): Promise<SavedScanList> {
 }
 
 type Refused = Exclude<SavedScanRead, { state: 'VERIFIED' }>;
-type Checked = { state: 'VERIFIED'; snapshot: ScanSnapshot; legacy: boolean } | Refused;
+type Checked =
+  { state: 'VERIFIED'; snapshot: ScanSnapshot; legacy: boolean; sha256: string } | Refused;
 
 /** Reads one TradingView snapshot and reproduces it offline; null when absent, a link, or not one. */
 async function checkSnapshot(store: string, scanId: string): Promise<Checked | null> {
@@ -159,7 +168,9 @@ async function checkSnapshot(store: string, scanId: string): Promise<Checked | n
   } catch (error) {
     return refuse('MALFORMED', `its inputs cannot be scored (${(error as Error).message})`);
   }
-  if (reason === null) return { state: 'VERIFIED', snapshot, legacy: isLegacy(raw) };
+  if (reason === null) {
+    return { state: 'VERIFIED', snapshot, legacy: isLegacy(raw), sha256: file.sha256 };
+  }
   if (reason === 'SNAPSHOT_METADATA_MISMATCH') {
     return refuse('MALFORMED', 'required snapshot fields are missing or invalid');
   }
@@ -240,12 +251,13 @@ async function checkedComparison(
 export async function readSavedScan(store: string, scanId: string): Promise<SavedScanRead | null> {
   const checked = await checkSnapshot(store, scanId);
   if (checked?.state !== 'VERIFIED') return checked;
-  const { snapshot, legacy } = checked;
+  const { snapshot, legacy, sha256 } = checked;
   const recorded = await recordedView(store, snapshot);
   const saved: TradingViewSavedScan = {
     repositoryCommit: snapshot.repositoryCommit,
     legacy,
     view: recorded?.kind ?? null,
+    snapshotSha256: sha256,
   };
   const view: TradingViewDevScan = {
     kind: TRADINGVIEW_DEV_SCAN_KIND,

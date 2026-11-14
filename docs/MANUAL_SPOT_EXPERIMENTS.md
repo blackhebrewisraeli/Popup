@@ -8,14 +8,15 @@ was observed afterwards. It records:
 - the fills the owner links;
 - dated observations, and the owner's explicit close.
 
-**Stage: storage only, in production.** Migration `20261114120000` adds the tables, the access rule
-and their validation. It was applied to production on 2026-11-13 (UTC)
-([release record](#production-release-2026-11-13)). The owner configuration is empty, so nobody can
-read or add an experiment, and nothing in the app reads or writes the tables yet. A later increment
-adds the views in
-**Account**, separate from the paper Signal Journal: recording from the
-[Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) and linking fills from the
-[execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage).
+**Stage: recording and viewing.** Migration `20261114120000` adds the tables, the access rule and
+their validation. It was applied to production on 2026-11-13 (UTC)
+([release record](#production-release-2026-11-13)). The app now records an experiment from a saved
+scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
+([Recording](#recording-from-a-saved-scan)) and lists experiments in **Account**, apart from the
+paper Signal Journal ([Viewing](#viewing-in-account)). Production's owner configuration is still
+empty, so there nobody can read or add an experiment yet. Linking fills from the
+[execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage), rules, observations and
+closing come later.
 
 ## Access
 
@@ -132,13 +133,86 @@ Rows live in the hosted database and are readable only by the configured owner. 
 holds synthetic fixtures only (`ZCT*` pairs, invented IDs, prices and times). No live experiment,
 scan ID, account label or fill belongs in code, tests or docs.
 
+## Recording from a saved scan
+
+**Record experiment** sits under **Plan a hypothetical scenario** in a TradingView crypto pair's
+evidence. It asks the database nothing until it is opened.
+
+- **A saved scan only.** Choose the scan under **Scan shown**. The local saved-scan route
+  (`vite dev` only) reproduces the snapshot offline and reports `snapshotSha256`, the SHA-256 of the
+  file's bytes from that same read. The published view is not the snapshot file, so it offers no
+  form and says which scan to choose.
+- **Who.** A signed-in user whom `is_binance_spot_owner()` names. The `?devAuth` stub has no
+  session, so the form never appears and nothing is sent. Without a session, the database refuses
+  `anon` anyway. Anyone else is told recording is unavailable, never who the owner is.
+- **The owner states:** the decision in their own words, an account label (the database's format),
+  and optionally when they decided (`datetime-local`, read as UTC, never after now).
+- **Copied:** the pair, the scan ID, the snapshot hash, `source_reproduction = 'match'`, and the
+  candidate's evidence exactly as **Recorded evidence it rests on** shows it (the same facts, in
+  the same words, plus rank, setups and staleness). Snapshot identity, reproduction and
+  authenticity stay separate facts, as [above](#what-each-fact-establishes).
+- **Not copied:** the scenario's inputs and figures. No entry is written, so every rule stays
+  **Not decided** until the owner adds one.
+- **Labels.** A stated time marks the record **Retrospective**. A stale scan marks it **Historical
+  scan**, recorded retrospectively from evidence about an earlier day.
+- **Review, then confirm.** **Review record** shows every value that will be stored. Only **Confirm
+  and record** sends it. The button locks before the request leaves, so repeated presses send one
+  insert.
+- **Outcomes.**
+  - **Recorded:** only with the ID and `recorded_at` the database returned. The button then stays
+    locked.
+  - **Refused:** the database answered, for example a permission refusal. Nothing was stored.
+    The draft is kept, and Confirm can be pressed again.
+  - **No confirmation:** no answer came back, so the row may or may not exist. Confirm locks until
+    the owner edits and reviews again, and the message says to check Account first.
+
+## Viewing in Account
+
+**Manual Spot experiments** sits inside Account's **Binance Spot** card, so only the owner the
+`binance-spot-account` function recognizes sees it. The database still decides what it shows.
+
+- **States.** Loading, empty, unavailable (the database names no owner, or another one), refused
+  (permission denied), and failed. A failure never shows an empty list in its place.
+- **One read.** The owner's newest 100 experiments, each with its entries and linked fill IDs
+  embedded.
+- **Each experiment.** Pair, account label, and both times: the stated decision time (or **Not
+  stated**) and the database's recorded time. Then the scan, snapshot SHA-256, reproduction,
+  authenticity (**Not established**), and the copied evidence.
+- **Rules.** Each named rule shows its current approved entry, or **Not decided**.
+- **Fills, observations, close.** Only counts or their absence: **No linked fills**, **None
+  recorded**, **Not closed**. No position, total, P&L, remaining quantity or order status.
+
 ## Not in this increment
 
-- No UI: recording, linking and the Account view come next.
-- No `types.ts` entries and no `DB_CONTRACT` change: the frontend calls nothing new.
+- No fill linking, rule or observation forms, or closing.
+- No P&L, totals, remaining quantity, leverage or order status.
+- No scanner, model or paper-ledger change, and no schema migration.
 - No Binance requests, order actions or changes to the `binance-spot-account` function.
-- No server-side verification of linked fills, and no derived totals.
+- No server-side verification of linked fills.
 - No owner configuration in production.
+
+## Verification of the recording UI — 2026-11-14
+
+Synthetic data only. Nothing was written to production, and no request reached Binance. The stack
+was a scratch `zcrecord` stack built from every migration. Its users were invented, and its scans
+were labeled `ZCT*` fixtures written with the repository's own `saveScan` into a separate worktree.
+
+| Check                                                         | Result                                                                                                                          |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Hash from the saved-scan route against `shasum -a 256`        | Equal. Rewriting the same JSON in other bytes kept `VERIFIED` and changed the hash                                              |
+| Owner check, before and after the owner row                   | `false`, then `true`. Before it, the owner's insert was refused with `42501`                                                    |
+| Inserts from another user, `anon` (what `?devAuth` would use) | Refused, `42501`                                                                                                                |
+| Inserts naming `id` or `recorded_at`, or a future stated time | Refused: column privileges, then the time check (`23514`)                                                                       |
+| Update by the owner                                           | Refused, `42501`                                                                                                                |
+| Embedded list read                                            | The owner got the rows with `spot_experiment_entries` and `spot_experiment_fills` embedded; another user got none               |
+| Browser record, three rapid Enter presses on Confirm          | One `201` insert. Hash, scan, stated time and 10 evidence facts stored; no entry or fill                                        |
+| Owner row removed between review and Confirm                  | `Not recorded. Permission denied…`; no row added. Account then showed the unavailable state                                     |
+| Release contract against the stack                            | All 31 migrations and every RPC this frontend calls                                                                             |
+| Keyboard                                                      | Enter opens the disclosure; errors focus the first invalid field; review focuses its heading; Tab wraps inside the 375 px sheet |
+| Layout                                                        | 375 px: no horizontal scroll, one column of facts, the hash wraps. Light and dark themes checked                                |
+
+Account's Binance card needs the `binance-spot-account` function, which the scratch stack doesn't
+serve, so that one response was answered in the page with `not_configured`.
 
 ## Verification — 2026-11-14
 

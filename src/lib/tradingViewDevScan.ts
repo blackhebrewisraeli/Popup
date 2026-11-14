@@ -24,6 +24,7 @@ export const TRADINGVIEW_DEV_SCAN_FILE = 'tradingview-dev-scan.json';
 export const TRADINGVIEW_SAVED_SCANS_ROUTE = '/__zerochart/tradingview-saved-scans';
 /** A snapshot's scan ID, and so its file name: the only thing the saved-scan route accepts. */
 export const SCAN_ID = /^\d{8}T\d{6}Z-[0-9a-f]{8}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 
 /**
  * A short digest of a view as read (FNV-1a over its JSON). The review is keyed by it, so a
@@ -97,6 +98,11 @@ export interface TradingViewSavedScan {
   legacy: boolean;
   /** The recorded view that supplied source and comparison, or null when only the snapshot exists. */
   view: 'published' | 'preserved' | null;
+  /**
+   * SHA-256 of the snapshot file's bytes, from the same read that reproduced it. It names those
+   * bytes only: any copy with the same bytes has the same hash, and nothing signs the file.
+   */
+  snapshotSha256: string;
 }
 
 export interface TradingViewDevScan {
@@ -174,7 +180,9 @@ function isSaved(saved: Partial<TradingViewSavedScan> | undefined): boolean {
     saved === undefined ||
     (typeof saved?.repositoryCommit === 'string' &&
       typeof saved.legacy === 'boolean' &&
-      (saved.view === null || saved.view === 'published' || saved.view === 'preserved'))
+      (saved.view === null || saved.view === 'published' || saved.view === 'preserved') &&
+      typeof saved.snapshotSha256 === 'string' &&
+      SHA256.test(saved.snapshotSha256))
   );
 }
 

@@ -132,8 +132,8 @@ Storage for [manual Spot experiments](./MANUAL_SPOT_EXPERIMENTS.md). The migrati
   policies and grants.
 - It changes no existing table, policy, grant, function or row, and backfills nothing.
 
-No frontend uses it yet, and `DB_CONTRACT` is unchanged. The gate still requires every migration in
-the commit to be applied, so the database goes first.
+At release no frontend used it, and `DB_CONTRACT` was unchanged. The gate still requires every
+migration in the commit to be applied, so the database goes first.
 
 **Order: database, then merge.**
 
@@ -151,8 +151,12 @@ checks.
 Until the configuration below is set, no signed-in user can read or add an experiment, the owner
 included. The service role can read but never write.
 
-**Owner configuration (a separate step).** It is needed only once a UI uses these tables. In the
-SQL editor, name the owner: the same Popup user ID the `binance-spot-account` function has in
+**Recording UI.** The frontend now reads and inserts experiments and calls
+`is_binance_spot_owner()`. `DB_CONTRACT` requires that function, executable by `authenticated` only.
+Production already has it, so no database step comes before the merge.
+
+**Owner configuration (a separate step).** Until it is set, the recording UI says recording is
+unavailable and Account shows no experiments. In the SQL editor, name the owner: the same Popup user ID the `binance-spot-account` function has in
 `BINANCE_SPOT_OWNER_USER_ID`. Keep that ID out of the repository.
 
 ```sql
@@ -164,6 +168,7 @@ the row. The previous owner's experiments stay stored but become invisible.
 
 **Rollback.**
 
-- Frontend: nothing to roll back. No frontend depends on these tables yet.
+- Frontend: Instant Rollback to a deployment from before the recording UI is safe. It never reads
+  the tables, and recorded rows stay.
 - Database: forward-only. Never drop the tables or delete their rows to undo this. To withdraw
   access, revoke the `authenticated` grants in a new migration. The stored evidence stays.
