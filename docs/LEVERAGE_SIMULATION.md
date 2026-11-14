@@ -4,11 +4,13 @@
 perpetual **long**. It does arithmetic on numbers the owner types. It is not a Binance execution
 model, an eligibility check or a liquidation calculator.
 
-**Stage: engine, an offline Account section and a public contract-facts panel.**
-[Account](#in-account) shows the engine's figures for numbers typed there. The simulation makes no
-network request and has no storage, account access, scanner change or link to the Manual Spot
-record. Beside it, a separate [public contract data](#public-contract-data) panel reads public
-facts about the TRXUSDT perpetual, only when asked, and never fills the simulation.
+**Stage: engine, an offline Account section, a public contract-facts panel and a filter
+comparison.** [Account](#in-account) shows the engine's figures for numbers typed there. The
+simulation makes no network request and has no storage, account access, scanner change or link to
+the Manual Spot record. Beside it, a separate [public contract data](#public-contract-data) panel
+reads public facts about the TRXUSDT perpetual, only when asked, and never fills the simulation. A
+third card, the [filter comparison](#filter-comparison), checks the current result against that
+snapshot's filters, only on an explicit press.
 
 ## Boundaries
 
@@ -16,7 +18,7 @@ facts about the TRXUSDT perpetual, only when asked, and never fills the simulati
   holds no leverage, fee, funding, maintenance-margin or bracket value of its own, and suggests
   none. 5× appears only in tests, as a requested scenario.
   The public contract data panel shows market facts beside the simulation but does not pass any
-  of them into it.
+  of them into it. The filter comparison reads both and changes neither.
 - **No account inference.** It assumes nothing about position mode, margin mode settings,
   Multi-Assets mode, auto-add margin, Portfolio Margin, VIP tier or eligibility.
 - **No funding schedule.** Carrying cost is one signed amount for the whole holding period.
@@ -280,8 +282,9 @@ Each group fails on its own and says why; nothing from a failed group is shown.
 
 ### Not in this increment
 
-No prefilling of the simulation, no change to its inputs, no quantity rounding to the contract step,
-no order-validity verdict and no comparison against the filters. No other symbol, no scanner change,
+No prefilling of the simulation, no change to its inputs, no quantity rounding to the contract step
+and no order-validity verdict. The filters are compared with the simulation only in the separate
+[filter comparison](#filter-comparison), on an explicit press. No other symbol, no scanner change,
 no signed endpoint, no account data.
 
 ### Verification (2026-11-14)
@@ -308,6 +311,102 @@ no signed endpoint, no account data.
   margin asset and status; 375 px with no horizontal overflow; light and dark themes.
 
   Not checked: a live request to Binance from the hosted app, a screen reader, Safari, a phone.
+
+## Filter comparison
+
+**Scenario against TRXUSDT perpetual filters** (`src/components/PerpetualFilterComparison.tsx` over
+`src/lib/perpetualFilterComparison.ts`) is its own card in Account, right after the public contract
+data. It runs arithmetic checks of the simulation's current result against the filters of the last
+public read. It sends no request, has no storage, and never rounds, resizes or changes an input.
+There is no overall verdict, and nothing says a position is ready to trade.
+
+The three cards share one account-keyed state (`PerpetualWorkspace` in AccountPanel). The simulation
+and the facts panel report each change in the same event that makes it, so the comparison never
+sees an old input or an old read.
+
+### Binding and prerequisites
+
+The simulation does not name an instrument. Only a press of **Compare this scenario with TRXUSDT
+perpetual** treats the scenario as a TRXUSDT USDⓈ-M perpetual position, for these checks only. The
+result states the binding and the time of the press. The button is `aria-disabled`, and a press does
+nothing, until all of these hold:
+
+- the simulation has a valid result;
+- the last public read finished, and its exchangeInfo group passed the fixed-contract check
+  (`contractGate` is `confirmed`); premiumIndex, ticker and fundingInfo are not used;
+- that snapshot is no older than 60 seconds.
+
+The status line names whichever is missing.
+
+### Checks
+
+Values are compared as exact integers at a shared decimal scale: the simulation's own strings and
+the snapshot's own strings, with no floating point. Rules follow Binance's USDⓈ-M
+[filter definitions](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/common-definition)
+(last modified 2026-11-12, read 2026-11-14).
+
+| Subject                  | Filter          | Rule                                                                       |
+| ------------------------ | --------------- | -------------------------------------------------------------------------- |
+| Quantity                 | LOT_SIZE        | ≥ minQty; ≤ maxQty; (quantity − minQty) % stepSize = 0                     |
+| Quantity                 | MARKET_LOT_SIZE | Same rules, kept separate; Binance defines it for MARKET orders            |
+| Entry fill, exit fill    | PRICE_FILTER    | ≥ minPrice; ≤ maxPrice; (price − minPrice) % tickSize = 0, each on its own |
+| Simulated entry notional | MIN_NOTIONAL    | quantity × entry fill ≥ notional                                           |
+
+Each of the 13 checks shows the compared value, the reported constraint and one of **within this
+constraint**, **outside this constraint** or **not checked**. A step or tick outside its grid also
+shows the exact remainder.
+
+- **MIN_NOTIONAL** is arithmetic only. Binance values a MARKET order at the mark price, which is not
+  read here, so the check does not validate a Market order's exchange reference-price calculation.
+- **PRICE_FILTER only.** PERCENT_PRICE, the band around the mark price, is not checked, and the stop
+  trigger is not compared.
+- **Not established:** account eligibility, sufficient collateral, maintenance-bracket validity,
+  price-band compliance, liquidity or order acceptance.
+
+### Unusable filters
+
+| Case                                            | Handling                                                                                  |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Filter missing from the snapshot                | Its checks are not checked: "Not reported: the snapshot has no … filter".                 |
+| Field not a plain decimal                       | Its checks are not checked, naming the field.                                             |
+| PRICE_FILTER field equal to 0                   | That rule is not checked: Binance documents 0 as disabling it. The other rules still run. |
+| PRICE_FILTER minPrice above maxPrice (both set) | All three price checks are not checked: the filter contradicts itself.                    |
+| LOT_SIZE or MARKET_LOT_SIZE minQty above maxQty | All three checks of that filter are not checked; the other lot filter still runs.         |
+| stepSize 0                                      | The step check is not checked: Binance gives no disabled meaning, and % 0 is undefined.   |
+| A duplicate filter, or an unconfirmed contract  | The snapshot is not validated (see [failures](#failures)), so no comparison can be made.  |
+
+### Staleness and invalidation
+
+- **Snapshot time.** The card shows when the exchangeInfo response arrived, on this device's clock.
+- **Popup policy, not a Binance rule:** a snapshot older than 60 seconds is stale. A timer re-renders
+  the card at that moment; no request is made. The outcomes of a shown comparison all turn to "not
+  checked" with the reason, the button is disabled, and the age is checked again at every press.
+  Exactly 60 seconds is still fresh.
+- **Cleared, never refreshed.** Editing any input, switching the sizing, clearing the simulation,
+  starting a new public read, or a new read that fails or finishes clears the comparison, and the
+  status says why. Comparing again always needs another press.
+
+### Verification (2026-11-14)
+
+- **Tests:** `src/test/perpetualFilterComparison.test.ts` (inclusive minimum and maximum one 1e-8
+  either side, LOT_SIZE and MARKET_LOT_SIZE apart, exact step and tick remainders, steps counted
+  from minQty across decimal scales, disabled PRICE_FILTER rules, contradictory and zero-step
+  filters, missing and malformed filters, MIN_NOTIONAL at the boundary, the 60-second boundary,
+  and an unchanged scenario) and `src/test/perpetualFilterComparisonPanel.test.tsx` (nothing before
+  a press, no request from the comparison, the binding and snapshot time, every check's three
+  parts, untouched inputs, a refused contract, staleness at 60 s and 60 s + 1 ms, the age check at
+  the press, and clearing on an edit, a cleared simulation, a new read and a failed read). The
+  Account test checks the card follows the public data, outside the Binance card. Twelve
+  deliberate mutations were tried; every one failed a test.
+- **Browser:** the local dev server with Supabase pointed at an unused port, every request and
+  WebSocket not served by it aborted before the first load, and the four fapi endpoints answered
+  from fixtures. Checked: no fapi request on load and none from a compare; keyboard only from the
+  first input through Read and Compare, with a visible focus outline; 13 checks with exact
+  remainders; the live page turning stale 60.02 s after receipt with all outcomes withheld; clearing
+  on a new read and on an edit; 375 px with no horizontal overflow; light and dark themes; no new
+  storage keys.
+
+  Not checked: a live Binance response, a screen reader, Safari, a phone.
 
 ## Acceptance fixtures
 

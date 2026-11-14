@@ -7,8 +7,7 @@ import { LEDGER_NAMES, type PortfolioType } from '@/lib/portfolioAccounting';
 import { downloadCsv, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { loadWalkForward, walkForwardCsv } from '@/lib/engine/walkForwardLogger';
 import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
-import { LeverageSimulation } from '@/components/LeverageSimulation';
-import { PerpetualContractFacts } from '@/components/PerpetualContractFacts';
+import { PerpetualWorkspace } from '@/components/PerpetualFilterComparison';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
@@ -123,11 +122,12 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
         </BinanceSpotBalances>
       )}
 
-      {/* Offline arithmetic, outside the Binance card; keyed so typed numbers never cross accounts. */}
-      <LeverageSimulation key={`leverage-${user?.id ?? 'signed-out'}`} />
-
-      {/* Public TRXUSDT perpetual facts, read only on request; never fills the simulation. */}
-      <PerpetualContractFacts key={`perp-facts-${user?.id ?? 'signed-out'}`} />
+      {/*
+        Outside the Binance card: the offline leverage simulation, the public TRXUSDT perpetual
+        facts (read only on request, never filling the simulation) and the explicit comparison
+        between them. Keyed so typed numbers and reads never cross accounts.
+      */}
+      <PerpetualWorkspace key={`perpetual-${user?.id ?? 'signed-out'}`} />
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />

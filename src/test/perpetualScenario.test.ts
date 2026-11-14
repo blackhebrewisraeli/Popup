@@ -54,6 +54,7 @@ describe('simulatePerpetualLong: acceptance fixture', () => {
     expect(scenarioOf({})).toEqual({
       quantity: '50',
       targetNotional: '50',
+      entryFill: '1',
       entryNotional: '50',
       exitNotional: '48',
       fees: { entry: '0', exit: '0', total: '0' },

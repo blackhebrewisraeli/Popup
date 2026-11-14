@@ -19,7 +19,8 @@ import {
   type TickerFacts,
 } from '@/lib/perpetualContractFacts';
 
-type View = { phase: 'idle' } | { phase: 'reading' } | { phase: 'done'; snapshot: FactsSnapshot };
+export type FactsView =
+  { phase: 'idle' } | { phase: 'reading' } | { phase: 'done'; snapshot: FactsSnapshot };
 
 const ACCOUNT_SPECIFIC = 'Account-specific — not read; enter manually.';
 
@@ -304,7 +305,7 @@ function Snapshot({ id, snapshot }: Readonly<{ id: string; snapshot: FactsSnapsh
   );
 }
 
-function statusText(view: View): string {
+function statusText(view: FactsView): string {
   if (view.phase === 'idle') {
     return 'Not read. Pressing the button sends one GET to each of 4 public endpoints.';
   }
@@ -325,9 +326,16 @@ function statusText(view: View): string {
  * Public, read-only facts about the Binance USDⓈ-M TRXUSDT perpetual, read only on request
  * (docs/LEVERAGE_SIMULATION.md#public-contract-data). It never fills or changes the simulation.
  */
-export function PerpetualContractFacts() {
+export function PerpetualContractFacts({
+  onViewChange,
+}: Readonly<{ onViewChange?: (view: FactsView) => void }> = {}) {
   const id = useId();
-  const [view, setView] = useState<View>({ phase: 'idle' });
+  const [view, setView] = useState<FactsView>({ phase: 'idle' });
+  // The filter comparison follows each change in the same event, so it never sees an old read.
+  const show = (next: FactsView) => {
+    setView(next);
+    onViewChange?.(next);
+  };
   const readId = useRef(0);
   const inFlight = useRef<AbortController | null>(null);
 
@@ -346,11 +354,11 @@ export function PerpetualContractFacts() {
     const current = ++readId.current;
     const controller = new AbortController();
     inFlight.current = controller;
-    setView({ phase: 'reading' });
+    show({ phase: 'reading' });
     void readPublicContractData({ signal: controller.signal }).then((snapshot) => {
       if (readId.current !== current) return;
       inFlight.current = null;
-      setView({ phase: 'done', snapshot });
+      show({ phase: 'done', snapshot });
     });
   };
 
