@@ -833,7 +833,9 @@ describe('Markets source: saved scans', () => {
     expect(reads()).toEqual([TRADINGVIEW_SAVED_SCANS_ROUTE, one(SMALL.scanId), one(LARGE.scanId)]);
   });
 
-  it('starts the review over whenever the scan shown changes', async () => {
+  // Three full scan switches, each with role queries across the whole review: about 1 s alone,
+  // but 5.0–5.5 s on loaded CI runners, past Vitest's 5 s default.
+  it('starts the review over whenever the scan shown changes', { timeout: 10_000 }, async () => {
     store();
     const shown = await open();
     for (const scanId of [LARGE.scanId, SMALL.scanId, '']) {
