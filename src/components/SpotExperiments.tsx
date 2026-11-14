@@ -1,27 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ExperimentEntries } from '@/components/ExperimentEntries';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
-  currentRules,
   EXPERIMENT_LIMIT,
   ExperimentReadError,
   loadOwnerExperiments,
-  NAMED_RULES,
   parseEvidence,
   type ExperimentEntry,
   type LinkedFill,
-  type NamedRule,
   type SpotExperimentRecord,
 } from '@/lib/spotExperiments';
 import { utcText } from '@/lib/utils';
-
-const RULE_NAME: Record<NamedRule, string> = {
-  allocation_ceiling: 'Allocation ceiling',
-  stop: 'Stop',
-  horizon: 'Horizon',
-  target: 'Target',
-  exit: 'Exit',
-};
 
 const REPRODUCTION: Record<string, string> = {
   match: 'Match: reproduced offline when recorded, as the browser reported it',
@@ -131,12 +121,14 @@ function Fills({ fills, closedAt }: Readonly<{ fills: LinkedFill[]; closedAt: st
   );
 }
 
-function Detail({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) {
+function Detail({
+  experiment,
+  onRefresh,
+}: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
   const evidence = parseEvidence(experiment.source_evidence);
   const entries = experiment.spot_experiment_entries;
-  const rules = currentRules(entries);
   const close = entries.find((entry) => entry.kind === 'close');
-  const observations = entries.filter((entry) => entry.kind === 'observation').length;
+  const observationCount = entries.filter((entry) => entry.kind === 'observation').length;
   return (
     <div className="experiment-detail">
       <dl className="scan-facts">
@@ -191,22 +183,7 @@ function Detail({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) 
         </p>
       )}
 
-      <h5 className="scan-effects-title">Rules</h5>
-      <dl className="scan-facts">
-        {NAMED_RULES.map((rule) => {
-          const entry = rules.named[rule];
-          return (
-            <Fact
-              key={rule}
-              name={RULE_NAME[rule]}
-              value={entry ? <Statement entry={entry} /> : 'Not decided'}
-            />
-          );
-        })}
-        {rules.other.map((entry) => (
-          <Fact key={entry.id} name="Other" value={<Statement entry={entry} />} />
-        ))}
-      </dl>
+      <ExperimentEntries experiment={experiment} onRefresh={onRefresh} />
 
       <h5 className="scan-effects-title">Linked fills</h5>
       <Fills fills={experiment.spot_experiment_fills} closedAt={close?.recorded_at ?? null} />
@@ -214,7 +191,7 @@ function Detail({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) 
       <dl className="scan-facts">
         <Fact
           name="Observations"
-          value={observations === 0 ? 'None recorded' : `${observations} recorded`}
+          value={observationCount === 0 ? 'None recorded' : `${observationCount} recorded`}
         />
         <Fact
           name="Close"
@@ -225,7 +202,10 @@ function Detail({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) 
   );
 }
 
-function ExperimentList({ experiments }: Readonly<{ experiments: SpotExperimentRecord[] }>) {
+function ExperimentList({
+  experiments,
+  onRefresh,
+}: Readonly<{ experiments: SpotExperimentRecord[]; onRefresh: () => Promise<boolean> }>) {
   if (experiments.length === 0) {
     return (
       <p className="spot-note">
@@ -252,7 +232,7 @@ function ExperimentList({ experiments }: Readonly<{ experiments: SpotExperimentR
                   )}
                   {stale && <span className="market-scan-tag scan-stale">Historical scan</span>}
                 </summary>
-                <Detail experiment={experiment} />
+                <Detail experiment={experiment} onRefresh={onRefresh} />
               </details>
             </li>
           );
@@ -294,7 +274,7 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
     body = <p className="spot-note">The ?devAuth preview has no session to read them with.</p>;
   } else if (query.isPending) {
     body = <output className="spot-status">Loading experiments…</output>;
-  } else if (query.isError) {
+  } else if (query.isError && query.data === undefined) {
     body = (
       <div className="spot-failed" role="alert">
         <p>{failureText(query.error)}</p>
@@ -303,6 +283,8 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
         </button>
       </div>
     );
+  } else if (query.data === undefined) {
+    body = <output className="spot-status">Loading experiments…</output>;
   } else if (!query.data.owner) {
     body = (
       <p className="spot-note">
@@ -311,7 +293,12 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
       </p>
     );
   } else {
-    body = <ExperimentList experiments={query.data.experiments} />;
+    body = (
+      <ExperimentList
+        experiments={query.data.experiments}
+        onRefresh={async () => (await query.refetch()).isSuccess}
+      />
+    );
   }
 
   return (

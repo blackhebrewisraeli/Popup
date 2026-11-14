@@ -47,9 +47,12 @@ import { SpotExperiments } from '@/components/SpotExperiments';
 import type { Candle } from '@/lib/binance';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
 import {
+  checkObservationDraft,
   checkDraft,
+  checkRuleDraft,
   currentRules,
   experimentRow,
+  recordExperimentEntry,
   recordSpotExperiment,
   spotSymbol,
   type CandidateEvidence,
@@ -617,7 +620,9 @@ function experiment(overrides: Partial<SpotExperimentRecord> = {}): SpotExperime
 
 const entry = (overrides: Partial<ExperimentEntry>): ExperimentEntry => ({
   id: 'r1',
+  experiment_id: 'e0000000-0000-4000-8000-000000000001',
   kind: 'rule',
+  observed_in: null,
   rule: 'stop',
   rule_status: 'approved',
   supersedes: null,
@@ -625,6 +630,111 @@ const entry = (overrides: Partial<ExperimentEntry>): ExperimentEntry => ({
   stated_at: null,
   recorded_at: '2026-10-28T17:05:00+00:00',
   ...overrides,
+});
+
+describe('Manual Spot entry drafts and saves', () => {
+  it('checks rule and observation statements and reads their stated times as UTC', () => {
+    expect(
+      checkRuleDraft(
+        { rule: 'stop', status: 'approved', statement: ' ', statedAt: '2026-10-28T18:00' },
+        NOW,
+      ),
+    ).toEqual({
+      ok: false,
+      errors: {
+        statement: 'State the rule in your own words.',
+        statedAt: 'This is in the future. A rule cannot be stated after it is recorded.',
+      },
+    });
+    expect(
+      checkRuleDraft(
+        {
+          rule: 'stop',
+          status: 'proposed',
+          statement: 'Consider a synthetic stop.',
+          statedAt: '2026-10-27T21:15',
+        },
+        NOW,
+      ),
+    ).toEqual({
+      ok: true,
+      rule: 'stop',
+      status: 'proposed',
+      statement: 'Consider a synthetic stop.',
+      statedAt: '2026-10-27T21:15:00.000Z',
+    });
+    expect(
+      checkObservationDraft(
+        {
+          observedIn: 'binance_interface',
+          statement: 'Synthetic stop appeared open.',
+          statedAt: '',
+        },
+        NOW,
+      ),
+    ).toEqual({
+      ok: false,
+      errors: { statedAt: 'State when you observed this, in UTC.' },
+    });
+    expect(
+      checkObservationDraft(
+        {
+          observedIn: 'elsewhere',
+          statement: 'Synthetic note seen elsewhere.',
+          statedAt: '2026-10-27T20:05',
+        },
+        NOW,
+      ),
+    ).toEqual({
+      ok: true,
+      observedIn: 'elsewhere',
+      statement: 'Synthetic note seen elsewhere.',
+      statedAt: '2026-10-27T20:05:00.000Z',
+    });
+  });
+
+  it('reports a stored entry only from the returned row and separates conflicts, refusals and uncertainty', async () => {
+    const row = {
+      experiment_id: 'e0000000-0000-4000-8000-000000000001',
+      kind: 'rule',
+      rule: 'stop',
+      rule_status: 'approved',
+      supersedes: null,
+      observed_in: null,
+      statement: 'Synthetic stop',
+      stated_at: null,
+    };
+    db.insertResult.mockResolvedValue({
+      data: { ...row, id: 'r1', recorded_at: '2026-10-28T17:01:00+00:00' },
+      error: null,
+    });
+    expect(await recordExperimentEntry(row)).toMatchObject({
+      state: 'recorded',
+      entry: { id: 'r1' },
+    });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '23505', message: 'duplicate' },
+    });
+    expect(await recordExperimentEntry(row)).toEqual({
+      state: 'conflict',
+      message:
+        'The rule changed or this reviewed entry was already submitted. Refresh the experiment history before deciding what to do.',
+    });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'permission denied' },
+    });
+    expect(await recordExperimentEntry(row)).toMatchObject({ state: 'refused' });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Failed to fetch' },
+    });
+    expect(await recordExperimentEntry(row)).toEqual({
+      state: 'unknown',
+      message: 'Failed to fetch',
+    });
+  });
 });
 
 describe('current rules', () => {
@@ -762,10 +872,309 @@ describe('Manual Spot experiments in Account', () => {
     fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
     expect(fact(item, 'Stated decision time')).toBe('Not stated');
     expect(fact(item, 'Stop')).toBe(
-      'Synthetic stop rule (stated 2026-10-28 16:00:00 UTC; recorded 2026-10-28 17:05:00 UTC)',
+      'Approved — Synthetic stop rule (stated 2026-10-28 16:00:00 UTC; recorded 2026-10-28 17:05:00 UTC)',
     );
     expect(fact(item, 'Target')).toBe('Not decided');
     expect(item).toHaveTextContent('This copy is not in a form this view can read');
+  });
+
+  it('distinguishes proposals, approvals, withdrawals and Not decided while preserving rule and observation history', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({
+      data: [
+        experiment({
+          spot_experiment_entries: [
+            entry({
+              id: 's1',
+              rule_status: 'proposed',
+              statement: 'Synthetic stop proposal',
+              stated_at: '2026-10-27T20:00:00+00:00',
+            }),
+            entry({
+              id: 's2',
+              supersedes: 's1',
+              statement: 'Synthetic approved stop',
+              stated_at: '2026-10-27T21:00:00+00:00',
+            }),
+            entry({ id: 'h1', rule: 'horizon', statement: 'Synthetic horizon' }),
+            entry({
+              id: 'h2',
+              rule: 'horizon',
+              rule_status: 'withdrawn',
+              supersedes: 'h1',
+              statement: 'Synthetic horizon withdrawn',
+            }),
+            entry({
+              id: 'o1',
+              kind: 'observation',
+              rule: null,
+              rule_status: null,
+              observed_in: 'binance_interface',
+              supersedes: null,
+              statement: 'Synthetic stop appeared open.',
+              stated_at: '2026-10-27T22:00:00+00:00',
+              recorded_at: '2026-10-28T17:06:00+00:00',
+            }),
+          ],
+        }),
+      ],
+      error: null,
+    });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    expect(fact(item, 'Stop')).toMatch(/^Approved — Synthetic approved stop/);
+    expect(fact(item, 'Horizon')).toMatch(/^Withdrawn — Synthetic horizon withdrawn.*Not decided/);
+    expect(fact(item, 'Target')).toBe('Not decided');
+    const history = within(item).getByRole('list', { name: 'Rule history' });
+    expect(history).toHaveTextContent('Proposal — Synthetic stop proposal');
+    expect(history).toHaveTextContent('Approved — Synthetic approved stop');
+    expect(history).toHaveTextContent('Withdrawn — Synthetic horizon withdrawn');
+    const observations = within(item).getByRole('list', { name: 'Dated observations' });
+    expect(observations).toHaveTextContent('Binance interface');
+    expect(observations).toHaveTextContent('Synthetic stop appeared open.');
+    expect(observations).toHaveTextContent('Stated 2026-10-27 22:00:00 UTC');
+    expect(observations).toHaveTextContent('Recorded 2026-10-28 17:06:00 UTC');
+    expect(observations).toHaveTextContent(
+      'This records what was observed then; it does not state what is true now.',
+    );
+    expect(observations).toHaveTextContent('Retrospective');
+  });
+
+  it('reviews a rule, submits it once, and names the current entry it supersedes', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const first = experiment({
+      spot_experiment_entries: [entry({ id: 's1', rule_status: 'proposed' })],
+    });
+    const stored = entry({
+      id: 's2',
+      rule_status: 'approved',
+      supersedes: 's1',
+      statement: 'Synthetic approved replacement.',
+      stated_at: '2026-10-27T21:15:00.000Z',
+      recorded_at: '2026-10-28T17:07:00+00:00',
+    });
+    db.listResult.mockResolvedValueOnce({ data: [first], error: null }).mockResolvedValueOnce({
+      data: [experiment({ spot_experiment_entries: [first.spot_experiment_entries[0]!, stored] })],
+      error: null,
+    });
+    const answer = deferred<unknown>();
+    db.insertResult.mockReturnValue(answer.promise);
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add a rule'));
+    fireEvent.change(within(item).getByLabelText('Rule'), { target: { value: 'stop' } });
+    fireEvent.change(within(item).getByLabelText('Status'), { target: { value: 'approved' } });
+    fireEvent.change(within(item).getByLabelText('Rule statement'), {
+      target: { value: 'Synthetic approved replacement.' },
+    });
+    fireEvent.change(within(item).getByLabelText('Rule stated time (UTC, optional)'), {
+      target: { value: '2026-10-27T21:15' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review rule' }));
+    const review = within(item).getByRole('region', { name: 'Check rule before saving' });
+    expect(fact(review, 'Status')).toBe('Approved');
+    expect(fact(review, 'Replaces')).toContain('Proposal — Synthetic stop rule');
+    expect(fact(review, 'Stated time')).toBe('2026-10-27 21:15:00 UTC');
+    const confirm = within(review).getByRole('button', { name: /Confirm and save rule|Saving/ });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(db.inserts).toEqual([
+      {
+        table: 'spot_experiment_entries',
+        row: {
+          experiment_id: 'e0000000-0000-4000-8000-000000000001',
+          kind: 'rule',
+          rule: 'stop',
+          rule_status: 'approved',
+          supersedes: 's1',
+          observed_in: null,
+          statement: 'Synthetic approved replacement.',
+          stated_at: '2026-10-27T21:15:00.000Z',
+        },
+      },
+    ]);
+    await act(async () =>
+      answer.resolve({
+        data: stored,
+        error: null,
+      }),
+    );
+    expect(within(review).getByText(/^Saved\./)).toHaveTextContent('2026-10-28 17:07:00 UTC');
+    expect(within(review).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    fireEvent.click(within(review).getByRole('button', { name: 'Add another rule' }));
+    expect(within(item).getByLabelText('Rule statement')).toHaveValue('');
+    expect(within(item).getByLabelText('Rule stated time (UTC, optional)')).toHaveValue('');
+    fireEvent.change(within(item).getByLabelText('Rule statement'), {
+      target: { value: 'Synthetic next stop proposal.' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review rule' }));
+    const nextReview = within(item).getByRole('region', { name: 'Check rule before saving' });
+    expect(fact(nextReview, 'Replaces')).toContain('Approved — Synthetic approved replacement.');
+  });
+
+  it('keeps an uncertain save locked and reports a failed history refresh without hiding history', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const current = entry({ id: 's1', rule_status: 'proposed' });
+    const refresh = deferred<unknown>();
+    db.listResult
+      .mockResolvedValueOnce({
+        data: [experiment({ spot_experiment_entries: [current] })],
+        error: null,
+      })
+      .mockReturnValueOnce(refresh.promise);
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Synthetic connection ended before confirmation' },
+    });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add a rule'));
+    fireEvent.change(within(item).getByLabelText('Rule statement'), {
+      target: { value: 'Synthetic uncertain replacement.' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review rule' }));
+    const review = within(item).getByRole('region', { name: 'Check rule before saving' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save rule' }));
+    expect(await within(review).findByText(/History refresh pending/)).toBeInTheDocument();
+    expect(within(review).getByRole('button', { name: 'Confirm and save rule' })).toBeDisabled();
+    expect(within(review).queryByText(/history was refreshed/i)).not.toBeInTheDocument();
+
+    await act(async () =>
+      refresh.resolve({
+        data: null,
+        error: { code: '', message: 'Synthetic history read failed' },
+      }),
+    );
+    expect(await within(review).findByText(/History refresh failed/)).toHaveTextContent(
+      'The history shown may be stale',
+    );
+    expect(within(review).getByRole('button', { name: 'Confirm and save rule' })).toBeDisabled();
+    expect(within(item).getByRole('list', { name: 'Rule history' })).toHaveTextContent(
+      'Synthetic stop rule',
+    );
+  });
+
+  it('requires an observation time, then reviews where and when without claiming current status', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add an observation'));
+    fireEvent.change(within(item).getByLabelText('Observation'), {
+      target: { value: 'Synthetic stop appeared open.' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    expect(within(item).getByText('State when you observed this, in UTC.')).toBeInTheDocument();
+    expect(db.inserts).toEqual([]);
+    fireEvent.change(within(item).getByLabelText('Observed in'), {
+      target: { value: 'binance_interface' },
+    });
+    fireEvent.change(within(item).getByLabelText('Observed at (UTC)'), {
+      target: { value: '2026-10-27T22:00' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    const review = within(item).getByRole('region', { name: 'Check observation before saving' });
+    expect(fact(review, 'Observed in')).toBe('Binance interface');
+    expect(fact(review, 'Stated time')).toBe('2026-10-27 22:00:00 UTC');
+    expect(review).toHaveTextContent(
+      'This records what you observed at that stated time. It never claims the stop or anything else has that status now.',
+    );
+    expect(review).toHaveTextContent('Retrospective record');
+  });
+
+  const reviewObservation = async (statement: string) => {
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    fireEvent.click(within(item).getByText('Add an observation'));
+    fireEvent.change(within(item).getByLabelText('Observed in'), {
+      target: { value: 'elsewhere' },
+    });
+    fireEvent.change(within(item).getByLabelText('Observation'), {
+      target: { value: statement },
+    });
+    fireEvent.change(within(item).getByLabelText('Observed at (UTC)'), {
+      target: { value: '2026-10-27T22:00' },
+    });
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    return item;
+  };
+
+  it('edits a reviewed observation, allows a retry after a refusal, and Add another starts blank', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    renderList();
+    const item = await reviewObservation('Synthetic stop appeared open.');
+    let review = within(item).getByRole('region', { name: 'Check observation before saving' });
+    expect(fact(review, 'Observed in')).toBe('Elsewhere');
+    fireEvent.click(within(review).getByRole('button', { name: 'Edit' }));
+    expect(within(item).getByLabelText('Observation')).toHaveValue('Synthetic stop appeared open.');
+    fireEvent.click(within(item).getByRole('button', { name: 'Review observation' }));
+    review = within(item).getByRole('region', { name: 'Check observation before saving' });
+
+    db.insertResult.mockResolvedValueOnce({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table spot_experiment_entries' },
+    });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save observation' }));
+    expect(await within(review).findByRole('alert')).toHaveTextContent(
+      /^Not saved\. Permission denied: .* Nothing was stored\.$/,
+    );
+    const confirm = within(review).getByRole('button', { name: 'Confirm and save observation' });
+    expect(confirm).toBeEnabled();
+
+    db.insertResult.mockResolvedValueOnce({
+      data: entry({
+        id: 'o1',
+        kind: 'observation',
+        rule: null,
+        rule_status: null,
+        observed_in: 'elsewhere',
+        statement: 'Synthetic stop appeared open.',
+        stated_at: '2026-10-27T22:00:00.000Z',
+        recorded_at: '2026-10-28T17:08:00+00:00',
+      }),
+      error: null,
+    });
+    fireEvent.click(confirm);
+    expect(await within(review).findByText(/^Saved\./)).toHaveTextContent(
+      'observation at 2026-10-28 17:08:00 UTC',
+    );
+    expect(db.inserts).toHaveLength(2);
+    expect(db.inserts[1]?.row).toMatchObject({ kind: 'observation', observed_in: 'elsewhere' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Add another observation' }));
+    expect(within(item).getByLabelText('Observation')).toHaveValue('');
+    expect(within(item).getByLabelText('Observed at (UTC)')).toHaveValue('');
+    expect(within(item).getByLabelText('Observed in')).toHaveValue('binance_interface');
+  });
+
+  it('keeps an uncertain observation save locked after its history refresh succeeds', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Synthetic connection ended before confirmation' },
+    });
+    renderList();
+    const item = await reviewObservation('Synthetic uncertain observation.');
+    const review = within(item).getByRole('region', { name: 'Check observation before saving' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Confirm and save observation' }));
+    expect(await within(review).findByText(/History refreshed/)).toHaveTextContent(
+      'This observation may or may not be stored.',
+    );
+    expect(
+      within(review).getByRole('button', { name: 'Confirm and save observation' }),
+    ).toBeDisabled();
+    expect(within(review).getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(db.inserts).toHaveLength(1);
   });
 
   it('appears only inside the Binance card, which the owner alone sees', async () => {

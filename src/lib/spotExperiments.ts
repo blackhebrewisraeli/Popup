@@ -4,10 +4,10 @@
  * add one (`is_binance_spot_owner()` and row-level security) and sets the ID, owner and
  * recorded time; nothing here can.
  *
- * The owner records the experiment itself and links fills from a Popup execution read. Nothing
- * here writes a rule, observation or close, and the scenario's arithmetic is never copied: a rule
- * exists only as an entry the owner adds. A linked fill is a client-submitted copy: the server
- * never re-reads Binance to verify it.
+ * The owner records the experiment itself, adds append-only rules and observations, and links fills
+ * from a Popup execution read. Nothing here writes a close, and the scenario's arithmetic is never
+ * copied: a rule exists only as an entry the owner adds. A linked fill is a client-submitted copy:
+ * the server never re-reads Binance to verify it.
  */
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
 import type { SpotExecution } from '@/lib/binanceSpotAccount';
@@ -43,6 +43,88 @@ export type SpotExperimentInsert = Required<
 /** The database's own checks, mirrored so a form can say what is wrong before anything is sent. */
 export const ACCOUNT_LABEL = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const MAX_STATEMENT = 1000;
+export const NAMED_RULES = ['allocation_ceiling', 'stop', 'horizon', 'target', 'exit'] as const;
+export const RULES = [...NAMED_RULES, 'other'] as const;
+export const RULE_STATUSES = ['proposed', 'approved', 'withdrawn'] as const;
+export const OBSERVED_IN = ['binance_interface', 'elsewhere'] as const;
+export type NamedRule = (typeof NAMED_RULES)[number];
+export type RuleName = (typeof RULES)[number];
+export type RuleStatus = (typeof RULE_STATUSES)[number];
+export type ObservedIn = (typeof OBSERVED_IN)[number];
+
+export interface RuleDraft {
+  rule: RuleName;
+  status: RuleStatus;
+  statement: string;
+  /** A `datetime-local` value read as UTC; empty when not stated. */
+  statedAt: string;
+}
+
+export interface ObservationDraft {
+  observedIn: ObservedIn;
+  statement: string;
+  /** A required `datetime-local` value read as UTC. */
+  statedAt: string;
+}
+
+export type EntryDraftErrors = Partial<Record<'statement' | 'statedAt', string>>;
+
+function checkEntryText(
+  statementInput: string,
+  statedAtInput: string,
+  now: number,
+  kind: 'rule' | 'observation',
+): { statement: string; statedAt: string | null; errors: EntryDraftErrors } {
+  const errors: EntryDraftErrors = {};
+  const statement = statementInput.trim();
+  if (statement === '') errors.statement = `State the ${kind} in your own words.`;
+  else if ([...statement].length > MAX_STATEMENT) {
+    errors.statement = `Use at most ${MAX_STATEMENT} characters.`;
+  }
+  let statedAt: string | null = null;
+  if (statedAtInput === '') {
+    if (kind === 'observation') errors.statedAt = 'State when you observed this, in UTC.';
+  } else {
+    const time = utcInputTime(statedAtInput);
+    if (time === null) errors.statedAt = 'Enter a valid UTC date and time.';
+    else if (time > now) {
+      errors.statedAt = `This is in the future. A ${kind} cannot be stated after it is recorded.`;
+    } else statedAt = new Date(time).toISOString();
+  }
+  return { statement, statedAt, errors };
+}
+
+export type RuleDraftCheck =
+  | { ok: true; rule: RuleName; status: RuleStatus; statement: string; statedAt: string | null }
+  | { ok: false; errors: EntryDraftErrors };
+
+export function checkRuleDraft(draft: RuleDraft, now: number): RuleDraftCheck {
+  const { statement, statedAt, errors } = checkEntryText(
+    draft.statement,
+    draft.statedAt,
+    now,
+    'rule',
+  );
+  return Object.keys(errors).length > 0
+    ? { ok: false, errors }
+    : { ok: true, rule: draft.rule, status: draft.status, statement, statedAt };
+}
+
+export type ObservationDraftCheck =
+  | { ok: true; observedIn: ObservedIn; statement: string; statedAt: string }
+  | { ok: false; errors: EntryDraftErrors };
+
+export function checkObservationDraft(draft: ObservationDraft, now: number): ObservationDraftCheck {
+  const { statement, statedAt, errors } = checkEntryText(
+    draft.statement,
+    draft.statedAt,
+    now,
+    'observation',
+  );
+  return Object.keys(errors).length > 0
+    ? { ok: false, errors }
+    : { ok: true, observedIn: draft.observedIn, statement, statedAt: statedAt! };
+}
 
 /**
  * The candidate as the Manual Spot scenario shows it under "Recorded evidence it rests on":
@@ -268,7 +350,10 @@ export const EXPERIMENT_LIMIT = 100;
 const FILL_COLUMNS =
   'id, experiment_id, recorded_at, account_label, symbol, trade_id, order_id, side, trade_time_ms, quantity, price, quote_quantity, commission, commission_asset, retrieved_at, window_start_ms, window_end_ms, coverage_complete';
 
-const EXPERIMENT_COLUMNS = `id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, spot_experiment_entries(id, kind, rule, rule_status, supersedes, statement, stated_at, recorded_at), spot_experiment_fills(${FILL_COLUMNS})`;
+const ENTRY_COLUMNS =
+  'id, experiment_id, kind, rule, rule_status, supersedes, observed_in, statement, stated_at, recorded_at';
+
+const EXPERIMENT_COLUMNS = `id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, spot_experiment_entries(${ENTRY_COLUMNS}), spot_experiment_fills(${FILL_COLUMNS})`;
 
 /** A stored fill link: the copied fill, the read it came from, and the database's own time. */
 export type LinkedFill = Pick<
@@ -295,7 +380,16 @@ export type LinkedFill = Pick<
 
 export type ExperimentEntry = Pick<
   Tables['spot_experiment_entries']['Row'],
-  'id' | 'kind' | 'rule' | 'rule_status' | 'supersedes' | 'statement' | 'stated_at' | 'recorded_at'
+  | 'id'
+  | 'experiment_id'
+  | 'kind'
+  | 'rule'
+  | 'rule_status'
+  | 'supersedes'
+  | 'observed_in'
+  | 'statement'
+  | 'stated_at'
+  | 'recorded_at'
 >;
 
 export type SpotExperimentRecord = Pick<
@@ -336,9 +430,6 @@ export async function loadOwnerExperiments(userId: string): Promise<OwnerExperim
   return { owner: true, experiments: data };
 }
 
-export const NAMED_RULES = ['allocation_ceiling', 'stop', 'horizon', 'target', 'exit'] as const;
-export type NamedRule = (typeof NAMED_RULES)[number];
-
 /**
  * The current rules: rule entries no later entry replaces. A named rule is decided only by its
  * current entry, and only when that entry is approved; `other` may hold several.
@@ -357,6 +448,76 @@ export function currentRules(entries: readonly ExperimentEntry[]): {
     NAMED_RULES.map((rule) => [rule, approved.find((entry) => entry.rule === rule) ?? null]),
   ) as Record<NamedRule, ExperimentEntry | null>;
   return { named, other: approved.filter((entry) => entry.rule === 'other') };
+}
+
+/** Every current rule version, including proposals and withdrawals, plus the immutable history. */
+export function ruleVersions(entries: readonly ExperimentEntry[]): {
+  named: Record<NamedRule, ExperimentEntry | null>;
+  other: ExperimentEntry[];
+  history: ExperimentEntry[];
+} {
+  const history = entries
+    .filter((entry) => entry.kind === 'rule')
+    .sort(
+      (a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at) || a.id.localeCompare(b.id),
+    );
+  const replaced = new Set(
+    history.flatMap((entry) => (entry.supersedes ? [entry.supersedes] : [])),
+  );
+  const current = history.filter((entry) => !replaced.has(entry.id));
+  const named = Object.fromEntries(
+    NAMED_RULES.map((rule) => [rule, current.find((entry) => entry.rule === rule) ?? null]),
+  ) as Record<NamedRule, ExperimentEntry | null>;
+  return { named, other: current.filter((entry) => entry.rule === 'other'), history };
+}
+
+export type ExperimentEntryInsert = Required<
+  Pick<
+    Tables['spot_experiment_entries']['Insert'],
+    | 'experiment_id'
+    | 'kind'
+    | 'rule'
+    | 'rule_status'
+    | 'supersedes'
+    | 'observed_in'
+    | 'statement'
+    | 'stated_at'
+  >
+>;
+
+export type EntryOutcome =
+  | { state: 'recorded'; entry: ExperimentEntry }
+  | { state: 'conflict'; message: string }
+  | { state: 'refused'; message: string }
+  | { state: 'unknown'; message: string };
+
+/** Stores one append-only rule or observation entry, and claims success only from its returned row. */
+export async function recordExperimentEntry(row: ExperimentEntryInsert): Promise<EntryOutcome> {
+  try {
+    const { data, error } = await supabase
+      .from('spot_experiment_entries')
+      .insert(row)
+      .select(ENTRY_COLUMNS)
+      .single();
+    if (error) {
+      if (error.code === UNIQUE_VIOLATION) {
+        return {
+          state: 'conflict',
+          message:
+            'The rule changed or this reviewed entry was already submitted. Refresh the experiment history before deciding what to do.',
+        };
+      }
+      return SERVER_ERROR_CODE.test(error.code)
+        ? { state: 'refused', message: refusalText(error.code, error.message) }
+        : { state: 'unknown', message: error.message };
+    }
+    if (typeof data?.id !== 'string' || typeof data.recorded_at !== 'string') {
+      return { state: 'unknown', message: 'The database did not return the stored entry.' };
+    }
+    return { state: 'recorded', entry: data };
+  } catch (error) {
+    return { state: 'unknown', message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export type SpotFillInsert = Required<

@@ -8,15 +8,17 @@ was observed afterwards. It records:
 - the fills the owner links;
 - dated observations, and the owner's explicit close.
 
-**Stage: recording, fill linking and viewing.** Migration `20261114120000` adds the tables, the
+**Stage: recording, fill linking, rules, observations and viewing.** Migration `20261114120000`
+adds the tables, the
 access rule and their validation. It was applied to production on 2026-11-13 (UTC)
 ([release record](#production-release-2026-11-13)). The app records an experiment from a saved
 scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
 ([Recording](#recording-from-a-saved-scan)), links fills to it from the
 [execution view](BINANCE_SPOT_ACCOUNT.md#execution-history-coverage)
 ([Linking](#linking-fills-from-the-execution-view)), and lists experiments with their linked fills
-in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Rules,
-observations and closing come later.
+in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Account also
+records append-only rules and dated observations through the existing entries table. Closing comes
+later.
 
 ## Access
 
@@ -214,22 +216,57 @@ evidence. It asks the database nothing until it is opened.
 - **Each experiment.** Pair, account label, and both times: the stated decision time (or **Not
   stated**) and the database's recorded time. Then the scan, snapshot SHA-256, reproduction,
   authenticity (**Not established**), and the copied evidence.
-- **Rules.** Each named rule shows its current approved entry, or **Not decided**.
+- **Rules.** Each named rule shows its current version as **Proposal**, **Approved** or
+  **Withdrawn**. A proposal or withdrawal is also labelled **Not decided**. The complete immutable
+  history remains available. A change or withdrawal always supersedes the current entry; several
+  unrelated `other` rule lines may coexist.
 - **Linked fills.** Each fill in trade time order: side, trade and order IDs, trade time, quantity,
   price, quote quantity and commission with its asset, exactly as stored; the read it was copied
   from (retrieval time, window, coverage); and when the database stored the link. A fill stored
   after a close is labelled **Linked after the close**. Or **No linked fills**.
-- **Observations, close.** Only counts or their absence: **None recorded**, **Not closed**. No
-  position, total, P&L, remaining quantity or order status.
+- **Observations.** Each observation shows where it was seen, the owner's required stated UTC time,
+  and the database-recorded time. It is labelled retrospective and always says that it records
+  what was observed then, not what is true now. An observation that an open stop was visible never
+  becomes a current-order-status claim.
+- **Adding an entry.** Rule and observation forms first validate the owner's words and UTC time,
+  then show an explicit review. Only **Confirm and save** inserts. Repeated presses send one
+  request. A successful immutable result offers **Add another**, which starts a blank draft; a new
+  rule still supersedes the current rule version, including the entry just returned. Permission and
+  validation refusals say nothing was stored. A concurrent named-rule change is reported as a
+  conflict and requests a history refresh. If the database gives no answer, the review stays locked
+  while the UI reports the history refresh as pending, succeeded or failed; it does not claim
+  success or automatically retry an observation, because the existing schema has no observation
+  idempotency key.
+- **Close.** Only its existing state is shown: **Not closed** or the owner's stored close. There is
+  no close form in this increment. No position, total, P&L, remaining quantity or order status.
 
 ## Not in this increment
 
-- No rule or observation forms, and no closing.
+- No closing workflow.
 - No P&L, totals, remaining quantity, leverage or order status.
 - No scanner, model or paper-ledger change, and no schema migration.
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of rules and observations — 2026-11-14
+
+Synthetic `ZCT*` data only. No production write or live Binance request was made. Component tests
+replace the Supabase client; the existing database suite verifies the unchanged entries schema and
+supersession constraints.
+
+| Check                                    | Result                                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Rule review and repeated Confirm         | One insert containing only the reviewed rule; no scenario or fill values                                  |
+| Proposed → approved → withdrawn          | Each change supersedes the current entry; all versions remain visible                                     |
+| Concurrent named-rule change             | Unique conflict reported; history refresh requested; no success claimed                                   |
+| Permission refusal and missing response  | Refusal allows correction; an unanswered save stays locked and is never reported as stored                |
+| Successful immutable entry               | No edit offered; Add another opens a blank draft and rules retain the current supersession head           |
+| Failed history refresh after uncertainty | Save stays locked; stale history remains inspectable and no successful refresh is claimed                 |
+| Observation review                       | Requires where and stated UTC time; review and history show stated and database times                     |
+| Open-stop observation                    | Displayed only as what was observed then, never current status                                            |
+| Persistence                              | Reloaded synthetic records retain rule history, observation provenance and retrospective labels           |
+| Keyboard and mobile                      | Native disclosure/select controls, focused review heading, and one-column facts/forms at 560 px and below |
 
 ## Verification of fill linking — 2026-11-14
 
