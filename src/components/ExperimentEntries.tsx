@@ -1,10 +1,14 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
 import {
+  afterClose,
+  checkCloseDraft,
   checkObservationDraft,
   checkRuleDraft,
   NAMED_RULES,
   recordExperimentEntry,
+  RULE_NAME,
   ruleVersions,
+  type CloseDraft,
   type EntryDraftErrors,
   type EntryOutcome,
   type ExperimentEntry,
@@ -16,15 +20,6 @@ import {
   type SpotExperimentRecord,
 } from '@/lib/spotExperiments';
 import { utcText } from '@/lib/utils';
-
-const RULE_NAME: Record<RuleName, string> = {
-  allocation_ceiling: 'Allocation ceiling',
-  stop: 'Stop',
-  horizon: 'Horizon',
-  target: 'Target',
-  exit: 'Exit',
-  other: 'Other',
-};
 
 const STATUS_NAME = { proposed: 'Proposal', approved: 'Approved', withdrawn: 'Withdrawn' } as const;
 const PLACE_NAME = { binance_interface: 'Binance interface', elsewhere: 'Elsewhere' } as const;
@@ -42,7 +37,14 @@ function Time({ value }: Readonly<{ value: string }>) {
   return <time dateTime={value}>{utcText(value)}</time>;
 }
 
-function Statement({ entry }: Readonly<{ entry: ExperimentEntry }>) {
+function AfterCloseTag() {
+  return <span className="market-scan-tag scan-stale">Recorded after the close</span>;
+}
+
+function Statement({
+  entry,
+  closedAt = null,
+}: Readonly<{ entry: ExperimentEntry; closedAt?: string | null }>) {
   return (
     <>
       {entry.statement}{' '}
@@ -50,32 +52,52 @@ function Statement({ entry }: Readonly<{ entry: ExperimentEntry }>) {
         (stated {entry.stated_at ? <Time value={entry.stated_at} /> : 'not stated'}; recorded{' '}
         <Time value={entry.recorded_at} />)
       </span>
+      {afterClose(entry.recorded_at, closedAt) && (
+        <>
+          {' '}
+          <AfterCloseTag />
+        </>
+      )}
     </>
   );
 }
 
-function RuleValue({ entry }: Readonly<{ entry: ExperimentEntry | null }>) {
+function RuleValue({
+  entry,
+  closedAt = null,
+}: Readonly<{ entry: ExperimentEntry | null; closedAt?: string | null }>) {
   if (!entry) return <>Not decided</>;
   const status = STATUS_NAME[entry.rule_status as keyof typeof STATUS_NAME];
   return (
     <>
-      <strong>{status}</strong> — <Statement entry={entry} />
+      <strong>{status}</strong> — <Statement entry={entry} closedAt={closedAt} />
       {entry.rule_status !== 'approved' && <> · Not decided</>}
     </>
   );
 }
 
-function Rules({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
+function Rules({
+  entries,
+  closedAt,
+}: Readonly<{ entries: ExperimentEntry[]; closedAt: string | null }>) {
   const rules = ruleVersions(entries);
   return (
     <>
       <h5 className="scan-effects-title">Rules</h5>
       <dl className="scan-facts">
         {NAMED_RULES.map((rule) => (
-          <Fact key={rule} name={RULE_NAME[rule]} value={<RuleValue entry={rules.named[rule]} />} />
+          <Fact
+            key={rule}
+            name={RULE_NAME[rule]}
+            value={<RuleValue entry={rules.named[rule]} closedAt={closedAt} />}
+          />
         ))}
         {rules.other.map((entry) => (
-          <Fact key={entry.id} name="Other" value={<RuleValue entry={entry} />} />
+          <Fact
+            key={entry.id}
+            name="Other"
+            value={<RuleValue entry={entry} closedAt={closedAt} />}
+          />
         ))}
       </dl>
       {rules.history.length > 0 && (
@@ -88,7 +110,7 @@ function Rules({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
                   {RULE_NAME[entry.rule as RuleName]} ·{' '}
                   {STATUS_NAME[entry.rule_status as keyof typeof STATUS_NAME]}
                 </strong>{' '}
-                — <Statement entry={entry} />
+                — <Statement entry={entry} closedAt={closedAt} />
               </li>
             ))}
           </ol>
@@ -98,7 +120,10 @@ function Rules({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
   );
 }
 
-function Observations({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
+function Observations({
+  entries,
+  closedAt,
+}: Readonly<{ entries: ExperimentEntry[]; closedAt: string | null }>) {
   const observations = entries
     .filter((entry) => entry.kind === 'observation')
     .sort(
@@ -118,6 +143,7 @@ function Observations({ entries }: Readonly<{ entries: ExperimentEntry[] }>) {
                 {Date.parse(entry.stated_at!) < Date.parse(entry.recorded_at) && (
                   <span className="market-scan-tag">Retrospective</span>
                 )}
+                {afterClose(entry.recorded_at, closedAt) && <AfterCloseTag />}
               </p>
               <p>{entry.statement}</p>
               <p className="market-scan-rule">
@@ -195,15 +221,18 @@ function Actions({
   state: SaveState;
   onConfirm: () => void;
   onEdit: () => void;
-  onAddAnother: () => void;
+  /** Omitted when only one such entry may exist. */
+  onAddAnother?: () => void;
   refreshState: RefreshState;
 }>) {
   if (state !== null && state !== 'saving' && state.state === 'recorded') {
     return (
       <>
-        <button type="button" className="portfolio-cash-btn" onClick={onAddAnother}>
-          Add another {noun}
-        </button>
+        {onAddAnother && (
+          <button type="button" className="portfolio-cash-btn" onClick={onAddAnother}>
+            Add another {noun}
+          </button>
+        )}
         <SaveOutcome state={state} noun={noun} refreshState={refreshState} />
       </>
     );
@@ -225,6 +254,46 @@ function Actions({
   );
 }
 
+/**
+ * One append-only save: it locks before the request leaves, claims success only from the returned
+ * row, and after an unanswered request refreshes the history but stays locked.
+ */
+function useEntrySave(
+  onRefresh: () => Promise<boolean>,
+  onRecorded?: (entry: ExperimentEntry) => void,
+) {
+  const [state, setState] = useState<SaveState>(null);
+  const [refreshState, setRefreshState] = useState<RefreshState>('idle');
+  const saving = useRef(false);
+  const confirm = (row: ExperimentEntryInsert) => {
+    if (saving.current) return;
+    saving.current = true;
+    setState('saving');
+    void (async () => {
+      const outcome = await recordExperimentEntry(row);
+      if (outcome.state === 'refused') saving.current = false;
+      if (outcome.state === 'unknown') setRefreshState('pending');
+      if (outcome.state === 'recorded') onRecorded?.(outcome.entry);
+      setState(outcome);
+      if (outcome.state === 'unknown') {
+        try {
+          setRefreshState((await onRefresh()) ? 'succeeded' : 'failed');
+        } catch {
+          setRefreshState('failed');
+        }
+      } else if (outcome.state !== 'refused') {
+        void onRefresh();
+      }
+    })();
+  };
+  const reset = () => {
+    saving.current = false;
+    setState(null);
+    setRefreshState('idle');
+  };
+  return { state, refreshState, confirm, reset };
+}
+
 function RuleComposer({
   experiment,
   onRefresh,
@@ -239,10 +308,8 @@ function RuleComposer({
   const [otherLine, setOtherLine] = useState('new');
   const [errors, setErrors] = useState<EntryDraftErrors & { form?: string }>({});
   const [review, setReview] = useState<ExperimentEntryInsert | null>(null);
-  const [state, setState] = useState<SaveState>(null);
-  const [refreshState, setRefreshState] = useState<RefreshState>('idle');
   const [knownEntry, setKnownEntry] = useState<ExperimentEntry | null>(null);
-  const saving = useRef(false);
+  const save = useEntrySave(onRefresh, setKnownEntry);
   const heading = useRef<HTMLHeadingElement>(null);
   const knownEntries =
     knownEntry && !experiment.spot_experiment_entries.some((entry) => entry.id === knownEntry.id)
@@ -270,8 +337,7 @@ function RuleComposer({
       return;
     }
     setErrors({});
-    setState(null);
-    setRefreshState('idle');
+    save.reset();
     setReview({
       experiment_id: experiment.id,
       kind: 'rule',
@@ -282,28 +348,6 @@ function RuleComposer({
       statement: check.statement,
       stated_at: check.statedAt,
     });
-  };
-
-  const confirm = () => {
-    if (!review || saving.current) return;
-    saving.current = true;
-    setState('saving');
-    void (async () => {
-      const outcome = await recordExperimentEntry(review);
-      if (outcome.state === 'refused') saving.current = false;
-      if (outcome.state === 'unknown') setRefreshState('pending');
-      if (outcome.state === 'recorded') setKnownEntry(outcome.entry);
-      setState(outcome);
-      if (outcome.state === 'unknown') {
-        try {
-          setRefreshState((await onRefresh()) ? 'succeeded' : 'failed');
-        } catch {
-          setRefreshState('failed');
-        }
-      } else if (outcome.state !== 'refused') {
-        void onRefresh();
-      }
-    })();
   };
 
   if (review) {
@@ -340,22 +384,20 @@ function RuleComposer({
         </p>
         <Actions
           noun="rule"
-          state={state}
-          onConfirm={confirm}
+          state={save.state}
+          onConfirm={() => save.confirm(review)}
           onEdit={() => {
-            saving.current = false;
-            setState(null);
-            setRefreshState('idle');
+            save.reset();
             setReview(null);
           }}
           onAddAnother={() => {
-            saving.current = false;
+            save.reset();
             setDraft({ rule: 'stop', status: 'proposed', statement: '', statedAt: '' });
             setOtherLine('new');
             setErrors({});
             setReview(null);
           }}
-          refreshState={refreshState}
+          refreshState={save.refreshState}
         />
       </section>
     );
@@ -464,9 +506,7 @@ function ObservationComposer({
   });
   const [errors, setErrors] = useState<EntryDraftErrors>({});
   const [review, setReview] = useState<ExperimentEntryInsert | null>(null);
-  const [state, setState] = useState<SaveState>(null);
-  const [refreshState, setRefreshState] = useState<RefreshState>('idle');
-  const saving = useRef(false);
+  const save = useEntrySave(onRefresh);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (review) heading.current?.focus();
@@ -480,8 +520,7 @@ function ObservationComposer({
       return;
     }
     setErrors({});
-    setState(null);
-    setRefreshState('idle');
+    save.reset();
     setReview({
       experiment_id: experiment.id,
       kind: 'observation',
@@ -493,27 +532,6 @@ function ObservationComposer({
       stated_at: check.statedAt,
     });
   };
-  const confirm = () => {
-    if (!review || saving.current) return;
-    saving.current = true;
-    setState('saving');
-    void (async () => {
-      const outcome = await recordExperimentEntry(review);
-      if (outcome.state === 'refused') saving.current = false;
-      if (outcome.state === 'unknown') setRefreshState('pending');
-      setState(outcome);
-      if (outcome.state === 'unknown') {
-        try {
-          setRefreshState((await onRefresh()) ? 'succeeded' : 'failed');
-        } catch {
-          setRefreshState('failed');
-        }
-      } else if (outcome.state !== 'refused') {
-        void onRefresh();
-      }
-    })();
-  };
-
   if (review) {
     return (
       <section className="spot-record-review" aria-label="Check observation before saving">
@@ -538,21 +556,19 @@ function ObservationComposer({
         </p>
         <Actions
           noun="observation"
-          state={state}
-          onConfirm={confirm}
+          state={save.state}
+          onConfirm={() => save.confirm(review)}
           onEdit={() => {
-            saving.current = false;
-            setState(null);
-            setRefreshState('idle');
+            save.reset();
             setReview(null);
           }}
           onAddAnother={() => {
-            saving.current = false;
+            save.reset();
             setDraft({ observedIn: 'binance_interface', statement: '', statedAt: '' });
             setErrors({});
             setReview(null);
           }}
-          refreshState={refreshState}
+          refreshState={save.refreshState}
         />
       </section>
     );
@@ -609,13 +625,160 @@ function ObservationComposer({
   );
 }
 
+/**
+ * The owner's explicit close: one append-only entry with a reason and an optional stated time.
+ * It places no order and proves nothing about the Binance position; later evidence stays visible.
+ */
+export function CloseComposer({
+  experiment,
+  onRefresh,
+  summary,
+}: Readonly<{
+  experiment: SpotExperimentRecord;
+  onRefresh: () => Promise<boolean>;
+  /** What the record holds now, shown in the review. */
+  summary: ReactNode;
+}>) {
+  const id = useId();
+  const [draft, setDraft] = useState<CloseDraft>({ statement: '', statedAt: '' });
+  const [errors, setErrors] = useState<EntryDraftErrors>({});
+  const [review, setReview] = useState<ExperimentEntryInsert | null>(null);
+  const save = useEntrySave(onRefresh);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (review) heading.current?.focus();
+  }, [review]);
+  const closed = experiment.spot_experiment_entries.some((entry) => entry.kind === 'close');
+
+  if (closed && !review) {
+    return (
+      <p className="spot-note">
+        Closing doesn&rsquo;t lock this record: rules, observations and fills added later still
+        appear, each marked as recorded after the close.
+      </p>
+    );
+  }
+
+  const submit = (event: SubmitEvent) => {
+    event.preventDefault();
+    const check = checkCloseDraft(draft, Date.now());
+    if (!check.ok) {
+      setErrors(check.errors);
+      return;
+    }
+    setErrors({});
+    save.reset();
+    setReview({
+      experiment_id: experiment.id,
+      kind: 'close',
+      rule: null,
+      rule_status: null,
+      supersedes: null,
+      observed_in: null,
+      statement: check.statement,
+      stated_at: check.statedAt,
+    });
+  };
+
+  return (
+    <details className="experiment-close">
+      <summary>Close experiment record</summary>
+      {review ? (
+        <section className="spot-record-review" aria-label="Check close before saving">
+          <h5 ref={heading} tabIndex={-1} className="scan-effects-title">
+            Check close before saving
+          </h5>
+          {review.stated_at && (
+            <p className="spot-standing">
+              <span className="market-scan-tag">Retrospective record</span>
+            </p>
+          )}
+          <dl className="scan-facts">
+            <Fact name="Experiment" value={`${experiment.symbol} · ${experiment.account_label}`} />
+            <Fact name="Reason" value={review.statement} />
+            <Fact
+              name="Stated time"
+              value={review.stated_at ? utcText(review.stated_at) : 'Not stated'}
+            />
+            <Fact name="Recorded time" value="Set by the database when it stores the entry" />
+          </dl>
+          <p className="market-scan-fit">
+            Closing this record places no order and sends nothing to Binance. It does not show that
+            the Binance position is closed: Popup reads no orders or positions, and linked fills are
+            copies the server did not verify.
+          </p>
+          <p className="market-scan-fit">
+            Only one close can be stored, and it cannot be edited or removed. The record stays open
+            to later rules, observations and fills, each marked as recorded after the close.
+          </p>
+          <section aria-label="What the record holds now">
+            <h5 className="scan-effects-title">What the record holds now</h5>
+            {summary}
+          </section>
+          <Actions
+            noun="close entry"
+            state={save.state}
+            onConfirm={() => save.confirm(review)}
+            onEdit={() => {
+              save.reset();
+              setReview(null);
+            }}
+            refreshState={save.refreshState}
+          />
+        </section>
+      ) : (
+        <form className="spot-inputs" noValidate onSubmit={submit}>
+          <label className="spot-field" htmlFor={`${id}-reason`}>
+            <span>Reason for closing</span>
+            <textarea
+              id={`${id}-reason`}
+              aria-label="Reason for closing"
+              className="portfolio-cash-input spot-textarea"
+              rows={3}
+              value={draft.statement}
+              aria-invalid={errors.statement ? true : undefined}
+              onChange={(event) =>
+                setDraft((value) => ({ ...value, statement: event.target.value }))
+              }
+            />
+            {errors.statement && <span className="spot-field-error">{errors.statement}</span>}
+          </label>
+          <label className="spot-field" htmlFor={`${id}-time`}>
+            <span>Close stated time (UTC, optional)</span>
+            <input
+              id={`${id}-time`}
+              aria-label="Close stated time (UTC, optional)"
+              className="portfolio-cash-input"
+              type="datetime-local"
+              value={draft.statedAt}
+              aria-invalid={errors.statedAt ? true : undefined}
+              onChange={(event) =>
+                setDraft((value) => ({ ...value, statedAt: event.target.value }))
+              }
+            />
+            {errors.statedAt && <span className="spot-field-error">{errors.statedAt}</span>}
+          </label>
+          <p className="market-scan-fit">
+            Closing places no order and does not show that the Binance position is closed.
+          </p>
+          <button type="submit" className="portfolio-cash-btn">
+            Review close
+          </button>
+        </form>
+      )}
+    </details>
+  );
+}
+
 export function ExperimentEntries({
   experiment,
   onRefresh,
 }: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
+  const closedAt =
+    experiment.spot_experiment_entries.find((entry) => entry.kind === 'close')?.recorded_at ?? null;
   return (
     <>
-      <Rules entries={experiment.spot_experiment_entries} />
+      <Rules entries={experiment.spot_experiment_entries} closedAt={closedAt} />
       <div className="experiment-entry-actions">
         <details>
           <summary>Add a rule</summary>
@@ -626,7 +789,7 @@ export function ExperimentEntries({
           <ObservationComposer experiment={experiment} onRefresh={onRefresh} />
         </details>
       </div>
-      <Observations entries={experiment.spot_experiment_entries} />
+      <Observations entries={experiment.spot_experiment_entries} closedAt={closedAt} />
     </>
   );
 }

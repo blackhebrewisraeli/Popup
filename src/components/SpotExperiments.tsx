@@ -1,17 +1,23 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { ExperimentEntries } from '@/components/ExperimentEntries';
+import { CloseComposer, ExperimentEntries } from '@/components/ExperimentEntries';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
+  afterClose,
   EXPERIMENT_LIMIT,
   ExperimentReadError,
   loadOwnerExperiments,
+  NAMED_RULES,
   parseEvidence,
+  RULE_NAME,
+  ruleVersions,
   type ExperimentEntry,
   type LinkedFill,
   type SpotExperimentRecord,
 } from '@/lib/spotExperiments';
 import { utcText } from '@/lib/utils';
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 const REPRODUCTION: Record<string, string> = {
   match: 'Match: reproduced offline when recorded, as the browser reported it',
@@ -46,7 +52,7 @@ function Statement({ entry }: Readonly<{ entry: ExperimentEntry }>) {
 
 /** One linked fill: the copied values, the read it came from, and when the database stored the link. */
 function Fill({ fill, closedAt }: Readonly<{ fill: LinkedFill; closedAt: string | null }>) {
-  const late = closedAt !== null && Date.parse(fill.recorded_at) > Date.parse(closedAt);
+  const late = afterClose(fill.recorded_at, closedAt);
   return (
     <li className="experiment-fill">
       <p className="spot-standing">
@@ -121,6 +127,87 @@ function Fills({ fills, closedAt }: Readonly<{ fills: LinkedFill[]; closedAt: st
   );
 }
 
+/**
+ * What the record holds, stated as counts and the owner's words only: no sale is inferred and
+ * nothing is totalled, valued or rated.
+ */
+function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) {
+  const entries = experiment.spot_experiment_entries;
+  const fills = experiment.spot_experiment_fills;
+  const close = entries.find((entry) => entry.kind === 'close');
+  const closedAt = close?.recorded_at ?? null;
+  const observations = entries.filter((entry) => entry.kind === 'observation');
+  const rules = ruleVersions(entries);
+  const approved = NAMED_RULES.filter((rule) => rules.named[rule]?.rule_status === 'approved');
+  const undecided = NAMED_RULES.filter((rule) => !approved.includes(rule));
+  const otherApproved = rules.other.filter((entry) => entry.rule_status === 'approved').length;
+  const ruleParts = [
+    approved.length > 0 && `Approved: ${approved.map((rule) => RULE_NAME[rule]).join(', ')}`,
+    undecided.length > 0 && `Not decided: ${undecided.map((rule) => RULE_NAME[rule]).join(', ')}`,
+    otherApproved > 0 && `Other approved: ${otherApproved}`,
+    `History: ${count(rules.history.length, 'entry', 'entries')}`,
+  ].filter(Boolean);
+  const buys = fills.filter((fill) => fill.side === 'buy').length;
+  const late = (items: { recorded_at: string }[]) =>
+    items.filter((item) => afterClose(item.recorded_at, closedAt)).length;
+  return (
+    <dl className="scan-facts">
+      <Fact
+        name="Decision"
+        value={
+          <>
+            {experiment.decision}{' '}
+            <span className="market-scan-rule">
+              (stated{' '}
+              {experiment.decision_stated_at ? (
+                <Time value={experiment.decision_stated_at} />
+              ) : (
+                'not stated'
+              )}
+              ; recorded <Time value={experiment.recorded_at} />)
+            </span>
+          </>
+        }
+      />
+      <Fact
+        name="Source scan"
+        value={`${experiment.source_scan_id} · reproduction: ${experiment.source_reproduction.replace('_', ' ')} · authenticity not established`}
+      />
+      <Fact name="Rules" value={ruleParts.join(' · ')} />
+      <Fact
+        name="Linked fills"
+        value={
+          fills.length === 0
+            ? 'None linked'
+            : `${fills.length} linked: ${buys} buy, ${fills.length - buys} sell. Only fills linked here; nothing is derived from them.`
+        }
+      />
+      <Fact
+        name="Observations"
+        value={observations.length === 0 ? 'None recorded' : `${observations.length} recorded`}
+      />
+      <Fact
+        name="Close"
+        value={close ? <Statement entry={close} /> : 'Not closed: no close recorded'}
+      />
+      {close && (
+        <Fact
+          name="Recorded after the close"
+          value={[
+            count(late(fills), 'linked fill', 'linked fills'),
+            count(
+              late(entries.filter((entry) => entry.kind === 'rule')),
+              'rule entry',
+              'rule entries',
+            ),
+            count(late(observations), 'observation', 'observations'),
+          ].join(', ')}
+        />
+      )}
+    </dl>
+  );
+}
+
 function Detail({
   experiment,
   onRefresh,
@@ -128,7 +215,6 @@ function Detail({
   const evidence = parseEvidence(experiment.source_evidence);
   const entries = experiment.spot_experiment_entries;
   const close = entries.find((entry) => entry.kind === 'close');
-  const observationCount = entries.filter((entry) => entry.kind === 'observation').length;
   return (
     <div className="experiment-detail">
       <dl className="scan-facts">
@@ -188,16 +274,15 @@ function Detail({
       <h5 className="scan-effects-title">Linked fills</h5>
       <Fills fills={experiment.spot_experiment_fills} closedAt={close?.recorded_at ?? null} />
 
-      <dl className="scan-facts">
-        <Fact
-          name="Observations"
-          value={observationCount === 0 ? 'None recorded' : `${observationCount} recorded`}
+      <h5 className="scan-effects-title">Record summary</h5>
+      <RecordSummary experiment={experiment} />
+      <div className="experiment-entry-actions">
+        <CloseComposer
+          experiment={experiment}
+          onRefresh={onRefresh}
+          summary={<RecordSummary experiment={experiment} />}
         />
-        <Fact
-          name="Close"
-          value={close ? <Statement entry={close} /> : 'Not closed: no close recorded'}
-        />
-      </dl>
+      </div>
     </div>
   );
 }

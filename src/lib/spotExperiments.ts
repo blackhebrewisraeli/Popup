@@ -52,6 +52,16 @@ export type RuleName = (typeof RULES)[number];
 export type RuleStatus = (typeof RULE_STATUSES)[number];
 export type ObservedIn = (typeof OBSERVED_IN)[number];
 
+/** How each rule is named on screen. */
+export const RULE_NAME: Record<RuleName, string> = {
+  allocation_ceiling: 'Allocation ceiling',
+  stop: 'Stop',
+  horizon: 'Horizon',
+  target: 'Target',
+  exit: 'Exit',
+  other: 'Other',
+};
+
 export interface RuleDraft {
   rule: RuleName;
   status: RuleStatus;
@@ -67,18 +77,29 @@ export interface ObservationDraft {
   statedAt: string;
 }
 
+export interface CloseDraft {
+  /** The owner's reason for closing. */
+  statement: string;
+  /** A `datetime-local` value read as UTC; empty when not stated. */
+  statedAt: string;
+}
+
 export type EntryDraftErrors = Partial<Record<'statement' | 'statedAt', string>>;
 
 function checkEntryText(
   statementInput: string,
   statedAtInput: string,
   now: number,
-  kind: 'rule' | 'observation',
+  kind: 'rule' | 'observation' | 'close',
 ): { statement: string; statedAt: string | null; errors: EntryDraftErrors } {
   const errors: EntryDraftErrors = {};
   const statement = statementInput.trim();
-  if (statement === '') errors.statement = `State the ${kind} in your own words.`;
-  else if ([...statement].length > MAX_STATEMENT) {
+  if (statement === '') {
+    errors.statement =
+      kind === 'close'
+        ? 'State why you are closing this record.'
+        : `State the ${kind} in your own words.`;
+  } else if ([...statement].length > MAX_STATEMENT) {
     errors.statement = `Use at most ${MAX_STATEMENT} characters.`;
   }
   let statedAt: string | null = null;
@@ -124,6 +145,25 @@ export function checkObservationDraft(draft: ObservationDraft, now: number): Obs
   return Object.keys(errors).length > 0
     ? { ok: false, errors }
     : { ok: true, observedIn: draft.observedIn, statement, statedAt: statedAt! };
+}
+
+/** Whether the database stored this after the experiment's close. A close never locks the record. */
+export const afterClose = (recordedAt: string, closedAt: string | null) =>
+  closedAt !== null && Date.parse(recordedAt) > Date.parse(closedAt);
+
+export type CloseDraftCheck =
+  | { ok: true; statement: string; statedAt: string | null }
+  | { ok: false; errors: EntryDraftErrors };
+
+/** A close needs the owner's reason; its stated time is optional and read as UTC. */
+export function checkCloseDraft(draft: CloseDraft, now: number): CloseDraftCheck {
+  const { statement, statedAt, errors } = checkEntryText(
+    draft.statement,
+    draft.statedAt,
+    now,
+    'close',
+  );
+  return Object.keys(errors).length > 0 ? { ok: false, errors } : { ok: true, statement, statedAt };
 }
 
 /**
@@ -504,7 +544,9 @@ export async function recordExperimentEntry(row: ExperimentEntryInsert): Promise
         return {
           state: 'conflict',
           message:
-            'The rule changed or this reviewed entry was already submitted. Refresh the experiment history before deciding what to do.',
+            row.kind === 'close'
+              ? 'This experiment already has a close entry: another close was stored first, or this reviewed close was already submitted. Only one is allowed. Refresh the experiment history before deciding what to do.'
+              : 'The rule changed or this reviewed entry was already submitted. Refresh the experiment history before deciding what to do.',
         };
       }
       return SERVER_ERROR_CODE.test(error.code)

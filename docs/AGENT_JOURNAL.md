@@ -21,6 +21,12 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-14 · Close a Manual Spot experiment record in Account · Draft PR, branch `feat/spot-experiment-close`.**
+  - **Changed:** **Close experiment record** stores the owner's one append-only close (reason, optional UTC stated time) after a review that repeats a factual record summary and says closing places no order and does not show the Binance position is closed ([closing](MANUAL_SPOT_EXPERIMENTS.md#closing-in-account)). Account shows that summary for every experiment. Rules, observations and fills recorded after a close stay visible and are marked so. The rule, observation and close forms share one save hook. Existing schema; no migration.
+  - **Evidence:** 7 new tests; typecheck, lint, build and the full suite pass. A scratch `zcclose` stack checked refusal, triple Confirm, a concurrent close, a dropped response, later evidence, reload, keyboard, 375 px and both themes with `ZCT*` fixtures ([verification](MANUAL_SPOT_EXPERIMENTS.md#verification-of-closing--2026-11-14)). Nothing touched production or Binance.
+  - **Not done:** no correction or reopening of a close. Production has not been checked, and no real experiment was closed.
+  - **Next:** owner review of the draft PR.
+
 - **2026-11-14 · Record Manual Spot experiments and view them in Account · Draft PR, branch `feat/record-spot-experiments`.**
   - **Changed:** the saved-scan route reports the snapshot file's SHA-256 from the bytes it reproduced. **Record experiment** in the Manual Spot scenario stores the owner's decision, account label and optional stated time with the copied evidence, after an explicit review ([recording](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan)). Account's Binance card lists experiments read-only ([viewing](MANUAL_SPOT_EXPERIMENTS.md#viewing-in-account)). `DB_CONTRACT` now requires `is_binance_spot_owner()`. No migration.
   - **Evidence:** 22 new unit tests; typecheck, lint and the full suite pass. A scratch `zcrecord` stack checked the access matrix, the embedded read and a browser record end to end with labeled `ZCT*` fixtures ([verification](MANUAL_SPOT_EXPERIMENTS.md#verification-of-the-recording-ui--2026-11-14)). Nothing touched production or Binance.
