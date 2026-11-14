@@ -1,15 +1,8 @@
 import { useId, useState, type ReactNode } from 'react';
+import { RecordSpotExperiment } from '@/components/RecordSpotExperiment';
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
-import {
-  clauseValue,
-  cohortFreshness,
-  explainResult,
-  resultAsOfLabel,
-  riskLabel,
-  symbolEvidence,
-  type Freshness,
-} from '@/lib/scanReview';
+import { resultAsOfLabel, riskLabel } from '@/lib/scanReview';
 import {
   decimalInput,
   EMPTY_SCENARIO,
@@ -21,7 +14,8 @@ import {
   type ScenarioField,
   type ScenarioInputs,
 } from '@/lib/spotScenario';
-import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
+import { candidateEvidence, riskReasons, type CandidateEvidence } from '@/lib/spotExperiments';
+import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
 
 const LABEL: Record<ScenarioField, string> = {
@@ -67,64 +61,39 @@ function standingText(
 
 /** The scan's own record of this pair: what any scenario below rests on, read-only. */
 function RecordedEvidence({
+  evidence,
   result,
   model,
   setups,
-  cohort,
-  scan,
-  scanId,
-  source,
   day,
-  freshness,
 }: Readonly<{
+  /** The same facts an experiment record copies. */
+  evidence: CandidateEvidence;
   result: ScanAssetResult;
   model: CanonicalScore;
   setups: ModelSetups;
-  cohort: ScanCohort;
-  scan: MarketScan;
-  scanId: string | undefined;
-  source: TradingViewDevSource;
   day: string;
-  freshness: Freshness | null;
 }>) {
   const risk = riskLabel({ model, setups });
-  const riskWhy = explainResult(model, setups)
-    .risk.clauses.filter((clause) => clause.met)
-    .map(clauseValue)
-    .join(', ');
-  const { coverage } = cohort;
-  const complete = scan.status === 'COMPLETE' && cohort.status === 'COMPLETE';
-  const incomplete = complete ? '' : `, incomplete scan (${coverage.supported} supported)`;
+  const riskWhy = riskReasons(model, setups);
+  const freshness = evidence.facts.find(([name]) => name === 'Freshness')?.[1];
   return (
     <>
       <h5 className="scan-effects-title">Recorded evidence it rests on</h5>
       <dl className="scan-facts">
-        <Fact name="Instrument" value={symbolEvidence(result, source)} />
-        <Fact name="Venue" value="Binance Spot, USDT pair" />
-        <Fact name="Scan" value={scanId ?? 'Not recorded'} />
-        <Fact
-          name="Model · timeframe"
-          value={`${model.version} · ${scan.timeframe.toUpperCase()}`}
-        />
-        <Fact name="Evaluated" value={day} />
-        <Fact
-          name="Technical rank"
-          value={`#${result.rank} of ${coverage.evaluated}${incomplete}`}
-        />
-        <Fact name="ZC LONG" value={setups.long ? 'Holds' : 'Does not hold'} />
-        <Fact name="ZC RISK" value={setups.risk ? `Holds: ${riskWhy}` : 'Does not hold'} />
-        <Fact
-          name="Freshness"
-          value={
-            <span className={cn(freshness?.stale && 'scan-stale')}>
-              {freshness?.detail ?? 'Not recorded'}
-            </span>
-          }
-        />
-        <Fact
-          name="Data quality"
-          value={`Evaluated on ${result.closedCandles} closed UTC days; scan ${complete ? 'complete' : 'incomplete'}`}
-        />
+        {evidence.facts.map(([name, value]) => (
+          <Fact
+            key={name}
+            name={name}
+            value={
+              name === 'Freshness' ? (
+                <span className={cn(evidence.stale && 'scan-stale')}>{value}</span>
+              ) : (
+                value
+              )
+            }
+          />
+        ))}
       </dl>
       <p className="spot-standing">
         {setups.long ? (
@@ -133,12 +102,12 @@ function RecordedEvidence({
           <span className="market-scan-tag">No Long setup</span>
         )}
         {risk && <span className="market-scan-tag is-risk">{risk}</span>}
-        {freshness?.stale && <span className="market-scan-tag scan-stale">Stale</span>}
+        {evidence.stale && <span className="market-scan-tag scan-stale">Stale</span>}
         <span>{standingText(result.ticker, model.version, setups, day, riskWhy)}</span>
       </p>
-      {freshness?.stale && (
+      {evidence.stale && (
         <p className="market-scan-fit scan-stale">
-          {freshness.detail}. The recorded close and setups describe that day, not the market now.
+          {freshness}. The recorded close and setups describe that day, not the market now.
         </p>
       )}
     </>
@@ -263,8 +232,9 @@ function promptText(check: Extract<ScenarioCheck, { ok: false }>): string {
 /**
  * The owner's own hypothetical arithmetic for one evaluated Binance Spot USDT pair, beside
  * the evidence it was read from. In component memory only: it reads no balance, quote or
- * exchange filter, sends nothing, saves nothing and offers no order. The caller keys it by
- * scan and asset, so another selection never inherits these values.
+ * exchange filter and offers no order, and its inputs and figures are never sent or saved.
+ * Record experiment stores only the owner's decision and this evidence, after review. The
+ * caller keys it by scan and asset, so another selection never inherits these values.
  */
 export function SpotScenario({
   result,
@@ -274,6 +244,7 @@ export function SpotScenario({
   scan,
   scanId,
   source,
+  saved,
 }: Readonly<{
   result: ScanAssetResult;
   model: CanonicalScore;
@@ -282,9 +253,14 @@ export function SpotScenario({
   scan: MarketScan;
   scanId: string | undefined;
   source: TradingViewDevSource;
+  /** A saved scan's read-back record; absent for the published view. */
+  saved: TradingViewSavedScan | undefined;
 }>) {
   const id = useId();
   const [inputs, setInputs] = useState<ScenarioInputs>(EMPTY_SCENARIO);
+  const [recording, setRecording] = useState(false);
+  const evidenceAt = (now: number) =>
+    candidateEvidence({ result, model, setups, cohort, scan, scanId, source, now });
   const check = planSpotScenario(inputs);
   const base = result.ticker.split('-')[0] ?? result.ticker;
   const symbol = result.instrument ?? result.ticker;
@@ -310,20 +286,17 @@ export function SpotScenario({
       </h4>
       <p className="market-scan-fit">
         Your own hypothetical arithmetic for {symbol} on Binance Spot. Popup reads no balance or
-        quote, places no orders and saves nothing; choosing another asset or scan clears it.
+        quote and places no orders. The scenario is never saved; choosing another asset or scan
+        clears it.
       </p>
       <details className="scan-guide-details">
         <summary>Plan a hypothetical scenario</summary>
         <RecordedEvidence
+          evidence={evidenceAt(Date.now())}
           result={result}
           model={model}
           setups={setups}
-          cohort={cohort}
-          scan={scan}
-          scanId={scanId}
-          source={source}
           day={day}
-          freshness={cohortFreshness(cohort, Date.now())}
         />
 
         <fieldset className="spot-inputs">
@@ -374,6 +347,20 @@ export function SpotScenario({
             </p>
           )}
         </div>
+      </details>
+      <details
+        className="scan-guide-details"
+        onToggle={(event) => setRecording(event.currentTarget.open)}
+      >
+        <summary>Record experiment</summary>
+        {/* Mounted only while open: nothing asks the database anything until the owner looks. */}
+        {recording && (
+          <RecordSpotExperiment
+            evidence={() => evidenceAt(Date.now())}
+            scanId={scanId}
+            saved={saved}
+          />
+        )}
       </details>
     </section>
   );

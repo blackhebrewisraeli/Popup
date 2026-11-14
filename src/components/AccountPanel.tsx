@@ -10,6 +10,7 @@ import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
+import { SpotExperiments } from '@/components/SpotExperiments';
 
 /** Same filenames the Paper Desk and Core dashboards export under. */
 const EXPORTS: { type: PortfolioType; filename: string }[] = [
@@ -114,7 +115,11 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
       </div>
 
       {/* Keyed by user so one account's snapshot can never render for another. */}
-      {user && <BinanceSpotBalances key={user.id} accountContext={user.id} />}
+      {user && (
+        <BinanceSpotBalances key={user.id} accountContext={user.id}>
+          <SpotExperiments userId={user.id} />
+        </BinanceSpotBalances>
+      )}
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />

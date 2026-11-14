@@ -65,6 +65,22 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Mirrors 20261114120000_manual_spot_experiments.sql (docs/MANUAL_SPOT_EXPERIMENTS.md).
+      binance_spot_owner: {
+        Row: {
+          singleton: boolean;
+          user_id: string;
+        };
+        Insert: {
+          singleton?: boolean;
+          user_id: string;
+        };
+        Update: {
+          singleton?: boolean;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       paper_order_batches: {
         Row: {
           budget: number;
@@ -165,6 +181,180 @@ export type Database = {
           created_at?: string;
           id?: string;
           snapshot?: Json;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      // Mirrors 20261114120000_manual_spot_experiments.sql. Clients insert content columns only.
+      spot_experiment_entries: {
+        Row: {
+          experiment_id: string;
+          id: string;
+          kind: string;
+          observed_in: string | null;
+          recorded_at: string;
+          rule: string | null;
+          rule_status: string | null;
+          stated_at: string | null;
+          statement: string;
+          supersedes: string | null;
+          user_id: string;
+        };
+        Insert: {
+          experiment_id: string;
+          id?: string;
+          kind: string;
+          observed_in?: string | null;
+          recorded_at?: string;
+          rule?: string | null;
+          rule_status?: string | null;
+          stated_at?: string | null;
+          statement: string;
+          supersedes?: string | null;
+          user_id?: string;
+        };
+        Update: {
+          experiment_id?: string;
+          id?: string;
+          kind?: string;
+          observed_in?: string | null;
+          recorded_at?: string;
+          rule?: string | null;
+          rule_status?: string | null;
+          stated_at?: string | null;
+          statement?: string;
+          supersedes?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'spot_experiment_entries_experiment_id_user_id_fkey';
+            columns: ['experiment_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'spot_experiments';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'spot_experiment_entries_supersedes_experiment_id_rule_fkey';
+            columns: ['supersedes', 'experiment_id', 'rule'];
+            isOneToOne: false;
+            referencedRelation: 'spot_experiment_entries';
+            referencedColumns: ['id', 'experiment_id', 'rule'];
+          },
+        ];
+      };
+      spot_experiment_fills: {
+        Row: {
+          account_label: string;
+          commission: string;
+          commission_asset: string;
+          coverage_complete: boolean;
+          experiment_id: string;
+          id: string;
+          order_id: string;
+          price: string;
+          quantity: string;
+          quote_quantity: string;
+          recorded_at: string;
+          retrieved_at: string;
+          side: string;
+          symbol: string;
+          trade_id: string;
+          trade_time_ms: number;
+          user_id: string;
+          window_end_ms: number;
+          window_start_ms: number;
+        };
+        Insert: {
+          account_label: string;
+          commission: string;
+          commission_asset: string;
+          coverage_complete: boolean;
+          experiment_id: string;
+          id?: string;
+          order_id: string;
+          price: string;
+          quantity: string;
+          quote_quantity: string;
+          recorded_at?: string;
+          retrieved_at: string;
+          side: string;
+          symbol: string;
+          trade_id: string;
+          trade_time_ms: number;
+          user_id?: string;
+          window_end_ms: number;
+          window_start_ms: number;
+        };
+        Update: {
+          account_label?: string;
+          commission?: string;
+          commission_asset?: string;
+          coverage_complete?: boolean;
+          experiment_id?: string;
+          id?: string;
+          order_id?: string;
+          price?: string;
+          quantity?: string;
+          quote_quantity?: string;
+          recorded_at?: string;
+          retrieved_at?: string;
+          side?: string;
+          symbol?: string;
+          trade_id?: string;
+          trade_time_ms?: number;
+          user_id?: string;
+          window_end_ms?: number;
+          window_start_ms?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'spot_experiment_fills_experiment_id_user_id_account_label__fkey';
+            columns: ['experiment_id', 'user_id', 'account_label', 'symbol'];
+            isOneToOne: false;
+            referencedRelation: 'spot_experiments';
+            referencedColumns: ['id', 'user_id', 'account_label', 'symbol'];
+          },
+        ];
+      };
+      spot_experiments: {
+        Row: {
+          account_label: string;
+          decision: string;
+          decision_stated_at: string | null;
+          id: string;
+          recorded_at: string;
+          source_evidence: Json;
+          source_reproduction: string;
+          source_scan_id: string;
+          source_snapshot_sha256: string;
+          symbol: string;
+          user_id: string;
+        };
+        Insert: {
+          account_label: string;
+          decision: string;
+          decision_stated_at?: string | null;
+          id?: string;
+          recorded_at?: string;
+          source_evidence: Json;
+          source_reproduction: string;
+          source_scan_id: string;
+          source_snapshot_sha256: string;
+          symbol: string;
+          user_id?: string;
+        };
+        Update: {
+          account_label?: string;
+          decision?: string;
+          decision_stated_at?: string | null;
+          id?: string;
+          recorded_at?: string;
+          source_evidence?: Json;
+          source_reproduction?: string;
+          source_scan_id?: string;
+          source_snapshot_sha256?: string;
+          symbol?: string;
           user_id?: string;
         };
         Relationships: [];
@@ -380,6 +570,10 @@ export type Database = {
       rotate_signal_webhook_token: {
         Args: never;
         Returns: string;
+      };
+      is_binance_spot_owner: {
+        Args: never;
+        Returns: boolean;
       };
     };
     Enums: {

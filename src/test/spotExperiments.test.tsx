@@ -1,0 +1,785 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+/**
+ * Labeled synthetic data only: ZCT pairs, invented candles, IDs, hashes and times. No request
+ * leaves the test; the Supabase client is replaced below.
+ */
+const db = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  inserts: [] as { table: string; row: Record<string, unknown> }[],
+  insertResult: vi.fn(),
+  listResult: vi.fn(),
+  listed: [] as { table: string; columns: string; filters: unknown[][] }[],
+}));
+vi.mock('@/lib/supabaseClient', () => ({
+  supabase: {
+    rpc: db.rpc,
+    from: (table: string) => ({
+      insert: (row: Record<string, unknown>) => {
+        db.inserts.push({ table, row });
+        return { select: () => ({ single: () => db.insertResult() }) };
+      },
+      select: (columns: string) => {
+        const read = { table, columns, filters: [] as unknown[][] };
+        db.listed.push(read);
+        const chain = {
+          eq: (...args: unknown[]) => (read.filters.push(['eq', ...args]), chain),
+          order: (...args: unknown[]) => (read.filters.push(['order', ...args]), chain),
+          limit: (...args: unknown[]) => (read.filters.push(['limit', ...args]), db.listResult()),
+        };
+        return chain;
+      },
+    }),
+  },
+}));
+const auth = vi.hoisted(() => ({ userId: null as string | null }));
+vi.mock('@/lib/authStore', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/authStore')>()),
+  useAuth: () => ({ user: auth.userId ? { id: auth.userId } : null }),
+}));
+
+import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
+import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { SpotExperiments } from '@/components/SpotExperiments';
+import type { Candle } from '@/lib/binance';
+import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
+import {
+  checkDraft,
+  currentRules,
+  experimentRow,
+  recordSpotExperiment,
+  spotSymbol,
+  type CandidateEvidence,
+  type ExperimentEntry,
+  type SpotExperimentRecord,
+} from '@/lib/spotExperiments';
+import {
+  parseSavedScanRead,
+  TRADINGVIEW_DEV_PROVIDER_ID,
+  TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+  type TradingViewDevSource,
+  type TradingViewSavedScan,
+} from '@/lib/tradingViewDevScan';
+
+const DAY = 86_400_000;
+const TODAY = Date.UTC(2026, 9, 28);
+const NOW = TODAY + 17 * 60 * 60_000;
+const SCAN_ID = '20261028T170000Z-0000c0de';
+const SHA = 'a1'.repeat(32);
+const OWNER = 'aaaaaaaa-0000-4000-8000-00000000000a';
+const DEV_AUTH = '00000000-0000-4000-8000-000000000001';
+const saved: TradingViewSavedScan = {
+  repositoryCommit: 'f'.repeat(40),
+  legacy: false,
+  view: null,
+  snapshotSha256: SHA,
+};
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+  auth.userId = OWNER;
+  db.inserts = [];
+  db.listed = [];
+  vi.spyOn(window, 'matchMedia').mockImplementation(
+    (query: string) =>
+      ({
+        matches: query === '(min-width: 1024px)',
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }) as unknown as MediaQueryList,
+  );
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  db.rpc.mockReset();
+  db.insertResult.mockReset();
+  db.listResult.mockReset();
+});
+
+function candles(path: (i: number) => number, spread: number, count = 199): Candle[] {
+  const first = TODAY - count * DAY;
+  return Array.from({ length: count }, (_, i) => {
+    const close = path(i);
+    return {
+      timestamp: first + i * DAY,
+      closeTime: first + i * DAY + DAY - 1,
+      open: close,
+      high: close * (1 + spread),
+      low: close * (1 - spread),
+      close,
+    };
+  });
+}
+
+const pair = (ticker: string, rows: Candle[]): ScanInput => {
+  const symbol = `BINANCE:${ticker.replace('-', '')}`;
+  return {
+    ticker,
+    instrument: symbol,
+    providerSymbol: { requested: symbol, validated: symbol },
+    candles: rows,
+  };
+};
+
+const source: TradingViewDevSource = {
+  tool: 'get_ohlcv',
+  interval: '1D',
+  retrieval: { startedAt: '2026-10-28T17:00:00.000Z', completedAt: '2026-10-28T17:02:00.000Z' },
+  symbols: { 'ZCTLONG-USDT': 'BINANCE:ZCTLONGUSDT', 'ZCTWAVE-USDT': 'BINANCE:ZCTWAVEUSDT' },
+  notice: null,
+  selectionRule: 'Labeled synthetic fixture universe.',
+  pineAlerts: null,
+};
+
+function cryptoScan(): MarketScan {
+  return evaluateScan(
+    [
+      pair(
+        'ZCTLONG-USDT',
+        candles((i) => 100 * Math.pow(0.995, Math.min(i, 192)), 0.005),
+      ),
+      pair(
+        'ZCTWAVE-USDT',
+        candles((i) => 100 + Math.sin(i / 6) * 8, 0.01),
+      ),
+    ],
+    {
+      evaluationTime: NOW,
+      universeSource: TRADINGVIEW_DEV_UNIVERSE_SOURCE,
+      cryptoProvider: TRADINGVIEW_DEV_PROVIDER_ID,
+    },
+  );
+}
+
+function wrap(children: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+/** Opens Record experiment; a details element announces `toggle` after the click, not during it. */
+async function openDisclosure(section: HTMLElement) {
+  fireEvent.click(within(section).getByText('Record experiment'));
+  await waitFor(() => expect(section.querySelector('.spot-record')).not.toBeNull());
+}
+
+/** The selected pair's scenario section with Record experiment opened. */
+async function openRecord(choice: { saved?: TradingViewSavedScan } = { saved }) {
+  render(
+    wrap(
+      <MarketScanSummary
+        scan={cryptoScan()}
+        completedAt={NOW}
+        scanning={false}
+        failed={false}
+        source={source}
+        scanId={SCAN_ID}
+        choice={choice}
+      />,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: /^ZCTLONG-USDT, rank/ }));
+  const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
+  await openDisclosure(section);
+  return section;
+}
+
+const field = (section: HTMLElement, label: RegExp) => within(section).getByLabelText(label);
+
+function fillDraft(
+  section: HTMLElement,
+  values: { decision?: string; label?: string; stated?: string },
+) {
+  if (values.decision !== undefined) {
+    fireEvent.change(field(section, /^Your decision/), { target: { value: values.decision } });
+  }
+  if (values.label !== undefined) {
+    fireEvent.change(field(section, /^Account label/), { target: { value: values.label } });
+  }
+  if (values.stated !== undefined) {
+    fireEvent.change(field(section, /^Stated decision time/), {
+      target: { value: values.stated },
+    });
+  }
+}
+
+const reviewButton = (section: HTMLElement) =>
+  within(section).getByRole('button', { name: 'Review record' });
+const confirmButton = (section: HTMLElement) =>
+  within(section).getByRole('button', { name: /^(Confirm and record|Recording…|Recorded)$/ });
+
+function fact(scope: HTMLElement, name: string) {
+  return within(scope).getAllByText(name, { selector: 'dt' })[0]?.nextElementSibling?.textContent;
+}
+
+/** A promise the test settles when it chooses. */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
+describe('the saved snapshot identity', () => {
+  it('is required, as 64 lowercase hex digits, on every saved scan read back', () => {
+    const view = {
+      kind: 'tradingview-dev-scan',
+      scanId: SCAN_ID,
+      importedAt: '2026-10-28T17:02:00.000Z',
+      source: { ...source, retrieval: null, notice: null, selectionRule: null, snapshotOnly: true },
+      scan: cryptoScan(),
+    };
+    const read = (snapshotSha256: unknown) => () =>
+      parseSavedScanRead({
+        state: 'VERIFIED',
+        view: { ...view, saved: { ...saved, snapshotSha256 } },
+      });
+    expect(read(SHA)()).toMatchObject({ state: 'VERIFIED' });
+    for (const bad of [undefined, 'A1'.repeat(32), 'a1'.repeat(31), `${SHA} `]) {
+      expect(read(bad)).toThrow('Not a TradingView development scan file.');
+    }
+  });
+});
+
+describe('an experiment draft', () => {
+  it('needs a decision and a label the database accepts, and a stated time no later than now', () => {
+    expect(checkDraft({ decision: ' \n', accountLabel: 'Main', statedAt: '' }, NOW)).toEqual({
+      ok: false,
+      errors: {
+        decision: 'Describe the decision you made, in your own words.',
+        accountLabel:
+          'Use 1 to 40 lowercase letters, digits, hyphens or underscores, starting with a letter or digit.',
+      },
+    });
+    for (const label of ['-main', 'a'.repeat(41), 'main account', '']) {
+      const check = checkDraft({ decision: 'x', accountLabel: label, statedAt: '' }, NOW);
+      expect(check.ok).toBe(false);
+    }
+    expect(
+      checkDraft({ decision: 'x'.repeat(1001), accountLabel: 'main', statedAt: '' }, NOW),
+    ).toMatchObject({ ok: false, errors: { decision: 'Use at most 1000 characters.' } });
+    expect(
+      checkDraft({ decision: 'x', accountLabel: 'main', statedAt: '2026-10-28T17:01' }, NOW),
+    ).toMatchObject({ ok: false, errors: { statedAt: expect.stringMatching(/in the future/) } });
+    expect(
+      checkDraft({ decision: 'x', accountLabel: 'main', statedAt: '2026-02-30T10:00' }, NOW),
+    ).toMatchObject({ ok: false, errors: { statedAt: expect.stringMatching(/valid UTC/) } });
+    // A datetime-local value is read as UTC, whatever the browser's zone.
+    expect(
+      checkDraft(
+        {
+          decision: '  Bought a small ZCT position.  ',
+          accountLabel: 'zct_main-1',
+          statedAt: '2026-10-28T09:30',
+        },
+        NOW,
+      ),
+    ).toEqual({
+      ok: true,
+      decision: 'Bought a small ZCT position.',
+      accountLabel: 'zct_main-1',
+      statedAt: '2026-10-28T09:30:00.000Z',
+    });
+  });
+
+  it('becomes a content-only row: never an ID, owner, recorded time, rule or scenario figure', () => {
+    const evidence: CandidateEvidence = {
+      version: 1,
+      instrument: 'BINANCE:ZCTLONGUSDT',
+      facts: [['Venue', 'Binance Spot, USDT pair']],
+      rank: 1,
+      evaluated: 2,
+      long: true,
+      risk: false,
+      stale: false,
+    };
+    const check = checkDraft(
+      { decision: 'Decided not to buy.', accountLabel: 'main', statedAt: '' },
+      NOW,
+    );
+    if (!check.ok) throw new Error('draft');
+    expect(experimentRow(check, evidence, SCAN_ID, saved)).toEqual({
+      account_label: 'main',
+      symbol: 'ZCTLONGUSDT',
+      source_scan_id: SCAN_ID,
+      source_snapshot_sha256: SHA,
+      source_reproduction: 'match',
+      source_evidence: evidence,
+      decision: 'Decided not to buy.',
+      decision_stated_at: null,
+    });
+    expect(spotSymbol(`BINANCE:${'Z'.repeat(21)}USDT`)).toBeNull();
+    expect(
+      experimentRow(check, { ...evidence, instrument: 'NASDAQ:AAPL' }, SCAN_ID, saved),
+    ).toBeNull();
+  });
+});
+
+describe('storing an experiment', () => {
+  const row = {
+    account_label: 'main',
+    symbol: 'ZCTLONGUSDT',
+    source_scan_id: SCAN_ID,
+    source_snapshot_sha256: SHA,
+    source_reproduction: 'match',
+    source_evidence: {},
+    decision: 'x',
+    decision_stated_at: null,
+  };
+
+  it('reports recorded only with the ID and time the database returned', async () => {
+    db.insertResult.mockResolvedValue({
+      data: {
+        id: 'e0000000-0000-4000-8000-000000000001',
+        recorded_at: '2026-10-28T17:00:01.5+00:00',
+      },
+      error: null,
+    });
+    expect(await recordSpotExperiment(row)).toEqual({
+      state: 'recorded',
+      id: 'e0000000-0000-4000-8000-000000000001',
+      recordedAt: '2026-10-28T17:00:01.5+00:00',
+    });
+    expect(db.inserts).toEqual([{ table: 'spot_experiments', row }]);
+    db.insertResult.mockResolvedValue({ data: null, error: null });
+    expect(await recordSpotExperiment(row)).toMatchObject({ state: 'unknown' });
+  });
+
+  it('tells a refusal the database answered from an outcome nobody knows', async () => {
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'new row violates row-level security policy' },
+    });
+    expect(await recordSpotExperiment(row)).toEqual({
+      state: 'refused',
+      message: expect.stringMatching(/^Permission denied: only the configured Binance owner/),
+    });
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '23514', message: 'violates check constraint' },
+    });
+    expect(await recordSpotExperiment(row)).toMatchObject({ state: 'refused' });
+    // supabase-js reports a dropped connection with an empty code.
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'TypeError: Failed to fetch' },
+    });
+    expect(await recordSpotExperiment(row)).toEqual({
+      state: 'unknown',
+      message: 'TypeError: Failed to fetch',
+    });
+    db.insertResult.mockRejectedValue(new Error('aborted'));
+    expect(await recordSpotExperiment(row)).toEqual({ state: 'unknown', message: 'aborted' });
+  });
+});
+
+describe('Record experiment in the Manual Spot scenario', () => {
+  it('asks nothing of the database until it is opened, and needs a saved scan', async () => {
+    render(
+      wrap(
+        <MarketScanSummary
+          scan={cryptoScan()}
+          completedAt={NOW}
+          scanning={false}
+          failed={false}
+          source={source}
+          scanId={SCAN_ID}
+        />,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^ZCTLONG-USDT, rank/ }));
+    expect(screen.getByText('Record experiment')).toBeInTheDocument();
+    expect(db.rpc).not.toHaveBeenCalled();
+    const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
+    await openDisclosure(section);
+    expect(section).toHaveTextContent(
+      `Recording needs a saved scan: choose ${SCAN_ID} under Scan shown`,
+    );
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(within(section).queryByLabelText(/^Your decision/)).not.toBeInTheDocument();
+  });
+
+  it('sends nothing for the ?devAuth stub', async () => {
+    auth.userId = DEV_AUTH;
+    const section = await openRecord();
+    expect(section).toHaveTextContent('The ?devAuth preview has no session, so it cannot record');
+    expect(within(section).queryByLabelText(/^Your decision/)).not.toBeInTheDocument();
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(db.inserts).toEqual([]);
+  });
+
+  it('sends nothing for a signed-out visitor', async () => {
+    auth.userId = null;
+    const section = await openRecord();
+    expect(section).toHaveTextContent('Sign in to record an experiment.');
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('offers no form when the database does not name this sign-in as the owner', async () => {
+    db.rpc.mockResolvedValue({ data: false, error: null });
+    const section = await openRecord();
+    expect(await within(section).findByText(/^Recording unavailable/)).toBeInTheDocument();
+    expect(db.rpc).toHaveBeenCalledWith('is_binance_spot_owner');
+    expect(within(section).queryByLabelText(/^Your decision/)).not.toBeInTheDocument();
+  });
+
+  it('says so when the owner check itself fails', async () => {
+    db.rpc.mockResolvedValue({ data: null, error: { code: '', message: 'Failed to fetch' } });
+    const section = await openRecord();
+    expect(await within(section).findByRole('alert')).toHaveTextContent(
+      'Couldn’t check whether this sign-in may record experiments (Failed to fetch)',
+    );
+    expect(within(section).queryByLabelText(/^Your decision/)).not.toBeInTheDocument();
+  });
+
+  it('checks the draft, shows exactly what will be stored, and stores it once on confirmation', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const section = await openRecord();
+    // Scenario inputs, typed first: none of them may reach the record.
+    fireEvent.click(within(section).getByText('Plan a hypothetical scenario'));
+    fireEvent.change(field(section, /^Available allocation/), { target: { value: '777' } });
+    fireEvent.change(field(section, /^Stop reference/), { target: { value: '41.5' } });
+
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(reviewButton(section));
+    expect(document.activeElement).toBe(field(section, /^Your decision/));
+    expect(section).toHaveTextContent('Describe the decision you made, in your own words.');
+    expect(db.inserts).toEqual([]);
+
+    fillDraft(section, { decision: 'Bought a small ZCT position.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    const review = within(section).getByRole('region', { name: 'Check before recording' });
+    expect(document.activeElement).toBe(within(review).getByText('Check before recording'));
+    expect(fact(review, 'Pair')).toBe('ZCTLONGUSDT');
+    expect(fact(review, 'Account label')).toBe('main');
+    expect(fact(review, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(review, 'Stated decision time')).toBe('Not stated');
+    expect(fact(review, 'Source scan')).toBe(SCAN_ID);
+    expect(fact(review, 'Snapshot SHA-256')).toBe(SHA);
+    expect(fact(review, 'Reproduction')).toMatch(/^Match/);
+    expect(fact(review, 'Authenticity')).toBe('Not established: local snapshots are unsigned');
+    expect(fact(review, 'Technical rank')).toMatch(/^#1 of 2/);
+    expect(review).toHaveTextContent(
+      'No rule is set, so allocation, stop, horizon, target and exit stay Not decided',
+    );
+    expect(review).not.toHaveTextContent('Retrospective record');
+    expect(db.inserts).toEqual([]);
+
+    const answer = deferred<unknown>();
+    db.insertResult.mockReturnValue(answer.promise);
+    fireEvent.click(confirmButton(section));
+    fireEvent.click(confirmButton(section));
+    expect(confirmButton(section)).toHaveTextContent('Recording…');
+    expect(confirmButton(section)).toHaveAttribute('aria-disabled', 'true');
+    expect(within(section).getByRole('button', { name: 'Edit' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(section).not.toHaveTextContent(/Recorded\./);
+    expect(db.inserts).toHaveLength(1);
+    const stored = db.inserts[0]?.row ?? {};
+    expect(Object.keys(stored).sort()).toEqual([
+      'account_label',
+      'decision',
+      'decision_stated_at',
+      'source_evidence',
+      'source_reproduction',
+      'source_scan_id',
+      'source_snapshot_sha256',
+      'symbol',
+    ]);
+    expect(JSON.stringify(stored)).not.toMatch(/777|41\.5/);
+    expect((stored['source_evidence'] as CandidateEvidence).facts).toContainEqual([
+      'Scan',
+      SCAN_ID,
+    ]);
+
+    await act(async () =>
+      answer.resolve({
+        data: {
+          id: 'e0000000-0000-4000-8000-000000000001',
+          recorded_at: '2026-10-28T17:00:01.5+00:00',
+        },
+        error: null,
+      }),
+    );
+    expect(section).toHaveTextContent(
+      'Recorded. The database stored experiment e0000000-0000-4000-8000-000000000001 at 2026-10-28 17:00:01.500 UTC',
+    );
+    expect(confirmButton(section)).toHaveTextContent('Recorded');
+    fireEvent.click(confirmButton(section));
+    expect(db.inserts).toHaveLength(1);
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Record another' }));
+    expect(field(section, /^Your decision/)).toHaveValue('');
+  });
+
+  it('keeps the draft after a refusal and allows another try, never claiming it was stored', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const section = await openRecord();
+    await within(section).findByLabelText(/^Your decision/);
+    fillDraft(section, { decision: 'Decided not to buy.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'new row violates row-level security policy' },
+    });
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(within(section).getByRole('alert')).toHaveTextContent(
+      'Not recorded. Permission denied: only the configured Binance owner can do this',
+    );
+    expect(section).not.toHaveTextContent(/Recorded\./);
+    expect(confirmButton(section)).not.toHaveAttribute('aria-disabled');
+    fireEvent.click(within(section).getByRole('button', { name: 'Edit' }));
+    expect(field(section, /^Your decision/)).toHaveValue('Decided not to buy.');
+  });
+
+  it('locks Confirm when no answer came back, until the owner reviews again', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const section = await openRecord();
+    await within(section).findByLabelText(/^Your decision/);
+    fillDraft(section, { decision: 'Decided not to buy.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Failed to fetch' },
+    });
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(within(section).getByRole('alert')).toHaveTextContent(
+      'No confirmation from the database (Failed to fetch). The experiment may or may not be stored',
+    );
+    expect(confirmButton(section)).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(confirmButton(section));
+    expect(db.inserts).toHaveLength(1);
+    fireEvent.click(within(section).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(reviewButton(section));
+    expect(confirmButton(section)).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('labels a stated decision time as a retrospective record, read as UTC', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const section = await openRecord();
+    await within(section).findByLabelText(/^Your decision/);
+    fillDraft(section, {
+      decision: 'Bought on the 27th.',
+      label: 'main',
+      stated: '2026-10-27T21:15',
+    });
+    fireEvent.click(reviewButton(section));
+    const review = within(section).getByRole('region', { name: 'Check before recording' });
+    expect(fact(review, 'Stated decision time')).toBe('2026-10-27 21:15:00 UTC');
+    expect(review).toHaveTextContent('Retrospective record');
+    db.insertResult.mockResolvedValue({
+      data: {
+        id: 'e0000000-0000-4000-8000-000000000002',
+        recorded_at: '2026-10-28T17:00:00+00:00',
+      },
+      error: null,
+    });
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(db.inserts[0]?.row['decision_stated_at']).toBe('2026-10-27T21:15:00.000Z');
+  });
+});
+
+function experiment(overrides: Partial<SpotExperimentRecord> = {}): SpotExperimentRecord {
+  return {
+    id: 'e0000000-0000-4000-8000-000000000001',
+    recorded_at: '2026-10-28T17:00:01.5+00:00',
+    account_label: 'main',
+    symbol: 'ZCTLONGUSDT',
+    source_scan_id: SCAN_ID,
+    source_snapshot_sha256: SHA,
+    source_reproduction: 'match',
+    source_evidence: {
+      version: 1,
+      instrument: 'BINANCE:ZCTLONGUSDT',
+      facts: [
+        ['Technical rank', '#1 of 2'],
+        ['Freshness', 'Synthetic freshness note'],
+      ],
+      rank: 1,
+      evaluated: 2,
+      long: true,
+      risk: false,
+      stale: true,
+    },
+    decision: 'Bought a small ZCT position.',
+    decision_stated_at: '2026-10-27T21:15:00+00:00',
+    spot_experiment_entries: [],
+    spot_experiment_fills: [],
+    ...overrides,
+  };
+}
+
+const entry = (overrides: Partial<ExperimentEntry>): ExperimentEntry => ({
+  id: 'r1',
+  kind: 'rule',
+  rule: 'stop',
+  rule_status: 'approved',
+  supersedes: null,
+  statement: 'Synthetic stop rule',
+  stated_at: null,
+  recorded_at: '2026-10-28T17:05:00+00:00',
+  ...overrides,
+});
+
+describe('current rules', () => {
+  it('decides a rule only by its current approved entry', () => {
+    const rules = currentRules([
+      entry({ id: 's1', rule: 'stop', statement: 'first' }),
+      entry({ id: 's2', rule: 'stop', supersedes: 's1', statement: 'second' }),
+      entry({ id: 't1', rule: 'target', rule_status: 'proposed' }),
+      entry({ id: 'h1', rule: 'horizon' }),
+      entry({ id: 'h2', rule: 'horizon', rule_status: 'withdrawn', supersedes: 'h1' }),
+      entry({ id: 'o1', rule: 'other', statement: 'other one' }),
+      entry({ id: 'o2', rule: 'other', statement: 'other two' }),
+      entry({ id: 'x1', kind: 'observation', rule: null, rule_status: null }),
+    ]);
+    expect(rules.named.stop?.statement).toBe('second');
+    expect(rules.named.target).toBeNull();
+    expect(rules.named.horizon).toBeNull();
+    expect(rules.named.allocation_ceiling).toBeNull();
+    expect(rules.other.map((rule) => rule.statement)).toEqual(['other one', 'other two']);
+  });
+});
+
+describe('Manual Spot experiments in Account', () => {
+  const renderList = (userId = OWNER) => render(wrap(<SpotExperiments userId={userId} />));
+
+  it('is loading until the database answers, and sends nothing for the ?devAuth stub', async () => {
+    const owner = deferred<unknown>();
+    db.rpc.mockReturnValue(owner.promise);
+    renderList();
+    expect(screen.getByText('Loading experiments…')).toBeInTheDocument();
+    await act(async () => owner.resolve({ data: false, error: null }));
+
+    db.rpc.mockClear();
+    renderList(DEV_AUTH);
+    expect(
+      screen.getByText('The ?devAuth preview has no session to read them with.'),
+    ).toBeInTheDocument();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('says why nothing is listed for a sign-in the database does not name, and reads no rows', async () => {
+    db.rpc.mockResolvedValue({ data: false, error: null });
+    renderList();
+    expect(
+      await screen.findByText(/^Unavailable: the database names no Binance owner/),
+    ).toBeInTheDocument();
+    expect(db.listed).toEqual([]);
+  });
+
+  it('is empty for an owner with no experiments', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [], error: null });
+    renderList();
+    expect(await screen.findByText(/^No experiments recorded yet/)).toBeInTheDocument();
+    expect(db.listed[0]).toMatchObject({
+      table: 'spot_experiments',
+      filters: [
+        ['eq', 'user_id', OWNER],
+        ['order', 'recorded_at', { ascending: false }],
+        ['order', 'id', { ascending: false }],
+        ['limit', 100],
+      ],
+    });
+    expect(db.listed[0]?.columns).toMatch(
+      /spot_experiment_entries\(.*\), spot_experiment_fills\(id\)$/,
+    );
+  });
+
+  it('names a permission refusal, and any other failure, without showing a list', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'permission denied for table spot_experiments' },
+    });
+    const { unmount } = renderList();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The database refused the read: permission denied (permission denied for table spot_experiments)',
+    );
+    unmount();
+    db.rpc.mockResolvedValue({ data: null, error: { code: '', message: 'Failed to fetch' } });
+    renderList();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't load experiments (Failed to fetch). Nothing is shown",
+    );
+  });
+
+  it('shows the recorded facts, provenance and both times; no rules is Not decided, no fills is No linked fills', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [experiment()], error: null });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    const summary = within(item).getByText('ZCTLONGUSDT').closest('summary');
+    expect(summary).toHaveTextContent('main · recorded 2026-10-28 17:00:01.500 UTC');
+    expect(summary).toHaveTextContent('Retrospective');
+    expect(summary).toHaveTextContent('Historical scan');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(item, 'Stated decision time')).toBe('2026-10-27 21:15:00 UTC, your statement');
+    expect(fact(item, 'Recorded')).toBe('2026-10-28 17:00:01.500 UTC, the database’s clock');
+    expect(fact(item, 'Scan')).toBe(SCAN_ID);
+    expect(fact(item, 'Snapshot SHA-256')).toBe(SHA);
+    expect(fact(item, 'Reproduction')).toMatch(/^Match: reproduced offline when recorded/);
+    expect(fact(item, 'Authenticity')).toBe('Not established: local snapshots are unsigned');
+    expect(fact(item, 'Technical rank')).toBe('#1 of 2');
+    for (const rule of ['Allocation ceiling', 'Stop', 'Horizon', 'Target', 'Exit']) {
+      expect(fact(item, rule)).toBe('Not decided');
+    }
+    expect(fact(item, 'Fills')).toBe('No linked fills');
+    expect(fact(item, 'Observations')).toBe('None recorded');
+    expect(fact(item, 'Close')).toBe('Not closed: no close recorded');
+    expect(item).not.toHaveTextContent(/P&L|profit|remaining|position size|order status/i);
+  });
+
+  it('shows an approved rule as the owner stated it, and refuses an unreadable evidence copy', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({
+      data: [
+        experiment({
+          decision_stated_at: null,
+          source_evidence: { facts: 'not a list' },
+          spot_experiment_entries: [entry({ stated_at: '2026-10-28T16:00:00+00:00' })],
+          spot_experiment_fills: [{ id: 'f1' }],
+        }),
+      ],
+      error: null,
+    });
+    renderList();
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    expect(within(item).getByText('ZCTLONGUSDT').closest('summary')).not.toHaveTextContent(
+      'Retrospective',
+    );
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    expect(fact(item, 'Stated decision time')).toBe('Not stated');
+    expect(fact(item, 'Stop')).toBe(
+      'Synthetic stop rule (stated 2026-10-28 16:00:00 UTC; recorded 2026-10-28 17:05:00 UTC)',
+    );
+    expect(fact(item, 'Target')).toBe('Not decided');
+    expect(fact(item, 'Fills')).toBe('1 linked (client-submitted copies)');
+    expect(item).toHaveTextContent('This copy is not in a form this view can read');
+  });
+
+  it('appears only inside the Binance card, which the owner alone sees', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [], error: null });
+    const hidden = render(
+      wrap(
+        <BinanceSpotBalances accountContext={OWNER} read={async () => ({ state: 'unavailable' })}>
+          <SpotExperiments userId={OWNER} />
+        </BinanceSpotBalances>,
+      ),
+    );
+    await act(async () => {});
+    expect(hidden.container).toBeEmptyDOMElement();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+});

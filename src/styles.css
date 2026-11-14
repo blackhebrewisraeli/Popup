@@ -1529,6 +1529,56 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Record experiment: the owner's decision about one pair, stored only after an explicit review. */
+.spot-record,
+.spot-record-review {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.spot-record .spot-inputs {
+  margin-top: 4px;
+}
+.spot-record .spot-inputs > .spot-field:first-child {
+  grid-column: 1 / -1;
+}
+.spot-record .spot-textarea {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+.spot-record-review > h5:focus {
+  outline: none;
+}
+.spot-record-review code,
+.experiment-detail code {
+  overflow-wrap: anywhere;
+}
+.spot-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* The narrow sheet is portaled out of .scan-review, so the review's button rules are repeated. */
+.spot-record-actions > .portfolio-cash-btn,
+.spot-record > div > .portfolio-cash-btn {
+  height: 30px;
+  font:
+    500 12.5px 'DM Sans',
+    sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.spot-record .portfolio-cash-btn[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.spot-record .portfolio-cash-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 @media (max-width: 760px) {
   .scan-guide,
   .scan-effects {
@@ -3716,6 +3766,48 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+/* Manual Spot experiments in the Binance card (docs/MANUAL_SPOT_EXPERIMENTS.md). */
+.spot-experiments {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.experiment-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.experiment-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.experiment-item > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.experiment-item > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.experiment-detail {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+@media (max-width: 560px) {
+  .experiment-detail .scan-facts,
+  .spot-record-review .scan-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* Owner-only Binance Spot balances (docs/BINANCE_SPOT_ACCOUNT.md). */
 .spot-card {

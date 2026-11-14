@@ -320,8 +320,9 @@ function SavedNote({ scanId, saved }: Readonly<{ scanId: string; saved: TradingV
   return (
     <p className="devscan-saved">
       Saved scan <code>{scanId}</code>, not the published view. It reproduced offline from its own
-      inputs, recorded at commit <code>{saved.repositoryCommit.slice(0, 7)}</code>.{' '}
-      {RECORDED[saved.view ?? 'none']}
+      inputs, recorded at commit <code>{saved.repositoryCommit.slice(0, 7)}</code>. Its file&rsquo;s
+      SHA-256, <code title={saved.snapshotSha256}>{saved.snapshotSha256.slice(0, 12)}…</code>, names
+      those bytes only: nothing signs them. {RECORDED[saved.view ?? 'none']}
       {saved.legacy &&
         ' Legacy evidence: recorded before exact TradingView symbols were kept, so it names none and is never a baseline.'}
     </p>

@@ -240,7 +240,7 @@ export class PortfolioChangedError extends PortfolioRejectedError {
 
 // A SQLSTATE or PostgREST code means Postgres answered; anything else (a
 // dropped connection, a gateway timeout) leaves the outcome unknown.
-const SERVER_ERROR_CODE = /^([0-9A-Z]{5}|PGRST\d+)$/;
+export const SERVER_ERROR_CODE = /^([0-9A-Z]{5}|PGRST\d+)$/;
 
 /**
  * Prices a proposal (`dryRun`) or books all of it in one transaction. A retry

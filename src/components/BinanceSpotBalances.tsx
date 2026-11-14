@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { BinanceSpotExecutions } from '@/components/BinanceSpotExecutions';
 import { BinanceSpotReconciliation } from '@/components/BinanceSpotReconciliation';
@@ -44,10 +44,13 @@ function failureText(failure: SpotFailure): string {
 export function BinanceSpotBalances({
   accountContext,
   read = readSpotAccount,
+  children,
 }: Readonly<{
   /** The signed-in owner, so a reconciliation never mixes reads made for different owners. */
   accountContext: string;
   read?: () => Promise<SpotRead>;
+  /** More owner-only sections, shown inside this card only when the card itself is shown. */
+  children?: ReactNode;
 }>) {
   const [view, setView] = useState(INITIAL_SPOT_VIEW);
   const [reading, setReading] = useState(false);
@@ -175,6 +178,7 @@ export function BinanceSpotBalances({
 
       <BinanceSpotExecutions />
       <BinanceSpotReconciliation key={accountContext} accountContext={accountContext} />
+      {children}
     </section>
   );
 }

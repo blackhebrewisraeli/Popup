@@ -41,8 +41,16 @@ const dismiss: CatalogFunction = {
   anon: false,
   authenticated: true,
 };
-const production = [portfolio, tactical, shared, rotate, dismiss];
-const others = [tactical, shared, rotate, dismiss];
+// 20261114120000: revoked from public and anon, granted to authenticated.
+const owner: CatalogFunction = {
+  name: 'is_binance_spot_owner',
+  args: [],
+  defaults: 0,
+  anon: false,
+  authenticated: true,
+};
+const production = [portfolio, tactical, shared, rotate, dismiss, owner];
+const others = [tactical, shared, rotate, dismiss, owner];
 
 // The function as 20261022130000 left it: no `expected`.
 const fiveArgPortfolio: CatalogFunction = {
@@ -89,16 +97,31 @@ describe('contractGaps', () => {
   });
 
   it('blocks this frontend on a database without dismiss_tactical_signal (20261028120000)', () => {
-    expect(gapsWith([portfolio, tactical, shared, rotate], ['20261028120000'])).toEqual([
+    expect(gapsWith([portfolio, tactical, shared, rotate, owner], ['20261028120000'])).toEqual([
       'migration 20261028120000 is not applied',
       'dismiss_tactical_signal(signal_id, reason): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
+    ]);
+  });
+
+  it('blocks this frontend on a database without is_binance_spot_owner (20261114120000)', () => {
+    expect(gapsWith([portfolio, tactical, shared, rotate, dismiss], ['20261114120000'])).toEqual([
+      'migration 20261114120000 is not applied',
+      'is_binance_spot_owner(): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
+    ]);
+  });
+
+  it('blocks an owner check that anon may execute', () => {
+    expect(
+      gapsWith([portfolio, tactical, shared, rotate, dismiss, { ...owner, anon: true }]),
+    ).toEqual([
+      'is_binance_spot_owner(): anon can execute it; the frontend needs authenticated only',
     ]);
   });
 
   it('blocks grants that differ from the roles the frontend uses', () => {
     const opened = { ...portfolio, anon: true };
     const closed = { ...shared, anon: false };
-    expect(gapsWith([opened, tactical, closed, rotate, dismiss])).toEqual([
+    expect(gapsWith([opened, tactical, closed, rotate, dismiss, owner])).toEqual([
       'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): anon can execute it; the frontend needs authenticated only',
       'get_shared_portfolio(share_id): anon cannot execute it; the frontend needs anon and authenticated only',
     ]);

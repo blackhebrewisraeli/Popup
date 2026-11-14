@@ -186,7 +186,13 @@ describe('readSavedScan', () => {
     if (read.state !== 'VERIFIED') throw new Error(read.state);
     expect(read.view.scan).toEqual(small.scan);
     expect(read.view.importedAt).toBe(small.completedAt);
-    expect(read.view.saved).toEqual({ repositoryCommit: COMMIT, legacy: false, view: null });
+    const bytes = await readFile(join(dir, `${small.scanId}.json`));
+    expect(read.view.saved).toEqual({
+      repositoryCommit: COMMIT,
+      legacy: false,
+      view: null,
+      snapshotSha256: createHash('sha256').update(bytes).digest('hex'),
+    });
     expect(read.view.source).toEqual({
       tool: 'get_ohlcv',
       interval: '1D',
@@ -209,6 +215,33 @@ describe('readSavedScan', () => {
     if (old.state !== 'VERIFIED') throw new Error(old.state);
     expect(old.view.saved?.legacy).toBe(true);
     expect(old.view.source.symbols).toEqual({});
+  });
+
+  it('hashes the file bytes it reproduced: identity, apart from reproduction', async () => {
+    const { dir, small } = await store();
+    const path = join(dir, `${small.scanId}.json`);
+    const read = async () => {
+      const result = parseSavedScanRead(await readSavedScan(dir, small.scanId));
+      if (result.state !== 'VERIFIED') throw new Error(result.state);
+      return result.view.saved?.snapshotSha256;
+    };
+    const first = await read();
+    expect(first).toBe(
+      createHash('sha256')
+        .update(await readFile(path))
+        .digest('hex'),
+    );
+    // The same JSON in other bytes still reproduces, under another hash: the hash names the
+    // bytes, and reproducing says nothing about which bytes they were.
+    await writeFile(path, `${JSON.stringify(JSON.parse(await readFile(path, 'utf8')), null, 1)}\n`);
+    const second = await read();
+    expect(second).toMatch(/^[0-9a-f]{64}$/);
+    expect(second).not.toBe(first);
+    expect(second).toBe(
+      createHash('sha256')
+        .update(await readFile(path))
+        .digest('hex'),
+    );
   });
 
   it('takes source and comparison from a recorded view of exactly that scan', async () => {

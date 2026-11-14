@@ -707,7 +707,12 @@ describe('Markets source: saved scans', () => {
       pineAlerts: null,
       snapshotOnly: true,
     },
-    saved: { repositoryCommit: 'a'.repeat(40), legacy: true, view: null },
+    saved: {
+      repositoryCommit: 'a'.repeat(40),
+      legacy: true,
+      view: null,
+      snapshotSha256: 'a'.repeat(64),
+    },
   };
   /** Labeled fixture standing in for the 90: exact symbols, with its preserved view's source. */
   const LARGE: DevScan = {
@@ -720,7 +725,12 @@ describe('Markets source: saved scans', () => {
       ]),
     ),
     scanId: '20261027T180000Z-00000090',
-    saved: { repositoryCommit: 'b'.repeat(40), legacy: false, view: 'preserved' },
+    saved: {
+      repositoryCommit: 'b'.repeat(40),
+      legacy: false,
+      view: 'preserved',
+      snapshotSha256: 'b'.repeat(64),
+    },
   };
   const entry = (view: DevScan) => ({
     scanId: view.scanId,
@@ -974,7 +984,12 @@ describe('Research selection across a full page reload', () => {
   const SAVED: DevScan = {
     ...importOf([equity('AAPL', rising), equity('MSFT', wave)]),
     scanId: '20261027T170000Z-000000aa',
-    saved: { repositoryCommit: 'c'.repeat(40), legacy: false, view: 'preserved' },
+    saved: {
+      repositoryCommit: 'c'.repeat(40),
+      legacy: false,
+      view: 'preserved',
+      snapshotSha256: 'c'.repeat(64),
+    },
   };
   /** Labeled fixture: a scan published later in place of IMPORT. */
   const LATER: DevScan = {
