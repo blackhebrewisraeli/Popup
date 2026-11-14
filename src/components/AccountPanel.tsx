@@ -7,6 +7,7 @@ import { LEDGER_NAMES, type PortfolioType } from '@/lib/portfolioAccounting';
 import { downloadCsv, tradeLedgerCsv } from '@/lib/tradeLedger';
 import { loadWalkForward, walkForwardCsv } from '@/lib/engine/walkForwardLogger';
 import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
+import { LeverageSimulation } from '@/components/LeverageSimulation';
 import { PineScriptModal } from '@/components/PineScriptModal';
 import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
@@ -120,6 +121,9 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
           <SpotExperiments userId={user.id} />
         </BinanceSpotBalances>
       )}
+
+      {/* Offline arithmetic, outside the Binance card; keyed so typed numbers never cross accounts. */}
+      <LeverageSimulation key={`leverage-${user?.id ?? 'signed-out'}`} />
 
       <hr className="zone-divider" />
       <PortfolioDashboard assets={assets} portfolioType="real_tracking" />
