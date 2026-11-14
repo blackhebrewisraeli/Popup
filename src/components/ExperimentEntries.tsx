@@ -288,19 +288,22 @@ function RuleComposer({
     if (!review || saving.current) return;
     saving.current = true;
     setState('saving');
-    void recordExperimentEntry(review).then((outcome) => {
+    void (async () => {
+      const outcome = await recordExperimentEntry(review);
       if (outcome.state === 'refused') saving.current = false;
       if (outcome.state === 'unknown') setRefreshState('pending');
       if (outcome.state === 'recorded') setKnownEntry(outcome.entry);
       setState(outcome);
       if (outcome.state === 'unknown') {
-        void onRefresh()
-          .then((ok) => setRefreshState(ok ? 'succeeded' : 'failed'))
-          .catch(() => setRefreshState('failed'));
+        try {
+          setRefreshState((await onRefresh()) ? 'succeeded' : 'failed');
+        } catch {
+          setRefreshState('failed');
+        }
       } else if (outcome.state !== 'refused') {
         void onRefresh();
       }
-    });
+    })();
   };
 
   if (review) {
@@ -326,13 +329,7 @@ function RuleComposer({
           <Fact
             name="Replaces"
             value={
-              replaced ? (
-                <>
-                  <RuleValue entry={replaced} />
-                </>
-              ) : (
-                'No earlier entry: starts a new rule line'
-              )
+              replaced ? <RuleValue entry={replaced} /> : 'No earlier entry: starts a new rule line'
             }
           />
           <Fact name="Recorded time" value="Set by the database when it stores the entry" />
@@ -367,7 +364,7 @@ function RuleComposer({
   return (
     <form className="spot-inputs" noValidate onSubmit={submit}>
       <label className="spot-field" htmlFor={`${id}-rule`}>
-        Rule
+        <span>Rule</span>
         <select
           id={`${id}-rule`}
           className="portfolio-cash-input"
@@ -386,7 +383,7 @@ function RuleComposer({
       </label>
       {draft.rule === 'other' && versions.other.length > 0 && (
         <label className="spot-field" htmlFor={`${id}-line`}>
-          Rule line
+          <span>Rule line</span>
           <select
             id={`${id}-line`}
             className="portfolio-cash-input"
@@ -403,7 +400,7 @@ function RuleComposer({
         </label>
       )}
       <label className="spot-field" htmlFor={`${id}-status`}>
-        Status
+        <span>Status</span>
         <select
           id={`${id}-status`}
           className="portfolio-cash-input"
@@ -418,7 +415,7 @@ function RuleComposer({
         </select>
       </label>
       <label className="spot-field" htmlFor={`${id}-statement`}>
-        Rule statement
+        <span>Rule statement</span>
         <textarea
           id={`${id}-statement`}
           aria-label="Rule statement"
@@ -431,7 +428,7 @@ function RuleComposer({
         {errors.statement && <span className="spot-field-error">{errors.statement}</span>}
       </label>
       <label className="spot-field" htmlFor={`${id}-time`}>
-        Rule stated time (UTC, optional)
+        <span>Rule stated time (UTC, optional)</span>
         <input
           id={`${id}-time`}
           aria-label="Rule stated time (UTC, optional)"
@@ -500,18 +497,21 @@ function ObservationComposer({
     if (!review || saving.current) return;
     saving.current = true;
     setState('saving');
-    void recordExperimentEntry(review).then((outcome) => {
+    void (async () => {
+      const outcome = await recordExperimentEntry(review);
       if (outcome.state === 'refused') saving.current = false;
       if (outcome.state === 'unknown') setRefreshState('pending');
       setState(outcome);
       if (outcome.state === 'unknown') {
-        void onRefresh()
-          .then((ok) => setRefreshState(ok ? 'succeeded' : 'failed'))
-          .catch(() => setRefreshState('failed'));
+        try {
+          setRefreshState((await onRefresh()) ? 'succeeded' : 'failed');
+        } catch {
+          setRefreshState('failed');
+        }
       } else if (outcome.state !== 'refused') {
         void onRefresh();
       }
-    });
+    })();
   };
 
   if (review) {
@@ -560,7 +560,7 @@ function ObservationComposer({
   return (
     <form className="spot-inputs" noValidate onSubmit={submit}>
       <label className="spot-field" htmlFor={`${id}-place`}>
-        Observed in
+        <span>Observed in</span>
         <select
           id={`${id}-place`}
           className="portfolio-cash-input"
@@ -577,7 +577,7 @@ function ObservationComposer({
         </select>
       </label>
       <label className="spot-field" htmlFor={`${id}-statement`}>
-        Observation
+        <span>Observation</span>
         <textarea
           id={`${id}-statement`}
           aria-label="Observation"
@@ -590,7 +590,7 @@ function ObservationComposer({
         {errors.statement && <span className="spot-field-error">{errors.statement}</span>}
       </label>
       <label className="spot-field" htmlFor={`${id}-time`}>
-        Observed at (UTC)
+        <span>Observed at (UTC)</span>
         <input
           id={`${id}-time`}
           aria-label="Observed at (UTC)"
