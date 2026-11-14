@@ -68,7 +68,11 @@ export type LiquidationReference =
       note: string;
     }
   | {
-      status: 'collateral_exhausted' | 'no_positive_solution' | 'not_below_entry';
+      status:
+        | 'collateral_exhausted'
+        | 'no_positive_solution'
+        | 'not_below_entry'
+        | 'negative_requirement';
       collateralBeforeMove: string;
     }
   | { status: 'bracket_mismatch'; collateralBeforeMove: string; notionalAtReference: string };
@@ -250,8 +254,8 @@ interface Position {
 
 /**
  * Solves C′ + Q(P − E) = Q·P·m − A for P (docs/LEVERAGE_SIMULATION.md), and gives P only when
- * the assumptions hold together: C′ > 0, a positive solution, P below entry, and the notional
- * at P inside the bracket the owner entered.
+ * the assumptions hold together: C′ > 0, a positive solution, P below entry, a maintenance
+ * requirement of zero or more at P, and the notional at P inside the bracket the owner entered.
  */
 function liquidationReference(
   position: Position,
@@ -269,6 +273,13 @@ function liquidationReference(
   // P* in 1e-8 price units is numerator / perUnit; compare prices by cross-multiplying.
   const perUnit = quantity * oneMinusRate;
   if (numerator >= entry * perUnit) return { status: 'not_below_entry', collateralBeforeMove };
+
+  // The requirement at P* is Q·P*·m − A = numerator·m / (1 − m) − A, and it equals equity
+  // there. Below zero, equity was already exhausted at a higher price, so P* is no liquidation
+  // reference. Exactly zero is kept: there the reference is where equity reaches zero.
+  if (numerator * maintenanceRate < maintenanceAmount * E14 * oneMinusRate) {
+    return { status: 'negative_requirement', collateralBeforeMove };
+  }
 
   // Notional at P* = (Q·E − C′ − A) / (1 − m); in 1e-8 units it is numerator / notionalDivisor.
   const notionalDivisor = oneMinusRate * E8;

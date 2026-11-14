@@ -23,7 +23,7 @@ whether to act, and where; Popup places no orders.
 
 - **2026-11-14 · Offline perpetual long scenario engine · Draft PR, branch `feat/perpetual-scenario-engine`.**
   - **Changed:** `src/lib/perpetualScenario.ts` works out one isolated USDT-margined perpetual long from owner-typed inputs only: quantity, notional, fees, a signed carrying cost, equity at a hypothetical exit fill, net result and change against starting collateral. It also gives a simplified liquidation reference, both zero-cost and after costs, only when the inputs and the entered bracket hold together ([contract, derivations and limits](LEVERAGE_SIMULATION.md)). No UI, storage, network, scanner change or Spot integration.
-  - **Evidence:** 43 tests cover the module fully. Fixture values were cross-checked with an independent exact-fraction computation. Typecheck, lint, build and the full suite pass. No Binance request and no production access.
+  - **Evidence:** 48 tests cover the module fully, including the negative-requirement refusal found in review. Fixture values were cross-checked with an independent exact-fraction computation. Typecheck, lint, build and the full suite pass. No Binance request and no production access.
   - **Not done:** no UI, no Isolated Margin model, no market data. Outputs are not Binance-verified liquidation prices or achievable executions.
   - **Next:** owner review of the draft PR.
 

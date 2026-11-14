@@ -222,6 +222,59 @@ describe('simulatePerpetualLong: liquidation reference self-consistency', () => 
     });
   });
 
+  it('refuses the review reproduction: P* = 0.78 has requirement and equity of −1', () => {
+    // m = 0, A = 1: P* = (50 − 10 − 1) / 50 = 0.78, where 50 × 0.78 × 0 − 1 = −1.
+    const negative = { status: 'negative_requirement', collateralBeforeMove: '10' };
+    const { liquidation } = scenarioOf({ maintenanceRatePercent: '0', maintenanceAmount: '1' });
+    expect(liquidation.zeroCost).toEqual(negative);
+    expect(liquidation.afterCosts).toEqual(negative);
+    // Equity is already exhausted at 0.80, above that solution.
+    const atZero = scenarioOf({ maintenanceRatePercent: '0', maintenanceAmount: '1', exit: '0.8' });
+    expect(atZero.equityAtExit).toBe('0');
+    expect(atZero.collateralExhausted).toBe(true);
+  });
+
+  it('refuses a positive rate whose maintenance amount exceeds rate × notional at P*', () => {
+    // m = 1%, A = 0.5: P* = 39.5 / 49.5; requirement 39.5 / 0.99 × 0.01 − 0.5 ≈ −0.101.
+    expect(
+      scenarioOf({ maintenanceRatePercent: '1', maintenanceAmount: '0.5' }).liquidation.zeroCost,
+    ).toEqual({ status: 'negative_requirement', collateralBeforeMove: '10' });
+  });
+
+  it.each([
+    // m = 1%, A = 0.4: P* = 39.6 / 49.5 = 0.8, requirement 40 × 0.01 − 0.4 = 0.
+    ['1', '0.4'],
+    // m = 0, A = 0: P* = 40 / 50 = 0.8, requirement 0.
+    ['0', '0'],
+  ])(
+    'keeps the zero-requirement boundary (m %s%%, A %s) as the equity-zero price',
+    (rate, amount) => {
+      expect(
+        scenarioOf({ maintenanceRatePercent: rate, maintenanceAmount: amount }).liquidation
+          .zeroCost,
+      ).toMatchObject({
+        status: 'reference',
+        exact: { numerator: '4', denominator: '5' },
+        price: '0.8',
+        notionalAtReference: '40',
+      });
+    },
+  );
+
+  it('checks the after-cost reference on its own: a credit can push it negative', () => {
+    // C′ = 10.1: P* = 39.5 / 49.5, requirement 39.5 / 0.99 × 0.01 − 0.4 ≈ −0.001.
+    const { liquidation } = scenarioOf({
+      maintenanceRatePercent: '1',
+      maintenanceAmount: '0.4',
+      carryingCost: '-0.1',
+    });
+    expect(liquidation.zeroCost).toMatchObject({ status: 'reference', price: '0.8' });
+    expect(liquidation.afterCosts).toEqual({
+      status: 'negative_requirement',
+      collateralBeforeMove: '10.1',
+    });
+  });
+
   it('reports a bracket mismatch with the notional the bracket would have to cover', () => {
     expect(scenarioOf({ bracketFloor: '50', bracketCap: '250' }).liquidation.zeroCost).toEqual({
       status: 'bracket_mismatch',

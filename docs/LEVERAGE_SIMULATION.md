@@ -97,7 +97,17 @@ price is given:
 | `collateral_exhausted` | C′ ≤ 0: costs use up the collateral before any price move                                        |
 | `no_positive_solution` | Q × E − C′ − A ≤ 0: the equation has no price above 0. This does not mean "cannot be liquidated" |
 | `not_below_entry`      | P* ≥ E: equity at entry is already at or below the requirement                                   |
+| `negative_requirement` | Q × P* × m − A < 0: the maintenance amount exceeds rate × notional at P*                         |
 | `bracket_mismatch`     | The notional at P* is outside [floor, cap]: the rate and amount entered don't apply there        |
+
+**Requirement of zero or more.** At P*, equity equals the requirement. If the requirement there is
+negative, equity is negative too, so it reached zero at a higher price than P*. P* is then no
+liquidation point, and no reference is given. The check is
+`(Q × E − C′ − A) × m ÷ (1 − m) ≥ A`, cross-multiplied in exact integers. Exactly zero is kept: P*
+is then the price where equity reaches zero. Example: C 10, notional 50, entry 1, m 0, A 1 solves
+to P* = 0.78, where requirement and equity are both −1, while equity is already 0 at 0.80. Nothing
+is clamped. It applies to the zero-cost and the after-cost reference separately; a carrying credit
+raises C′ and can turn one negative while the other is not.
 
 Bounds are inclusive at both ends. Binance's convention at an exact bracket boundary is not
 verified. The maintenance requirement is evaluated at the notional at P*, not at entry.
@@ -144,6 +154,10 @@ All values are invented. None is a quote, balance, rate or recommendation.
 | Leverage 2×, 5×, 10× on C 10                      | Losses 0.8, 2, 4; references 50/99, 80/99, 10/11                       |
 | Fees 0.05 % each, carrying cost +0.105            | Equity 7.846, −21.54 %; after-cost reference 4013/4950                 |
 | Carrying credit −0.105                            | Equity 8.105, −18.95 %; after-cost reference 7979/9900                 |
+| m 0, A 1 (review reproduction)                    | `negative_requirement` for both references; equity 0 at exit 0.80      |
+| m 1 %, A 0.5                                      | `negative_requirement`: requirement ≈ −0.101 at P* = 39.5/49.5         |
+| m 1 %, A 0.4, or m 0, A 0                         | Zero requirement: reference 4/5 = 0.8, notional 40                     |
+| m 1 %, A 0.4, carrying credit −0.1                | Zero-cost reference 0.8; after-cost `negative_requirement`             |
 | Spot planner, allocation 50, same move            | Same quantity and absolute loss (2); 4 % of cash vs 20 % of collateral |
 
 ## Sources
