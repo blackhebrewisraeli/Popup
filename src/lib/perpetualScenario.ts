@@ -124,8 +124,11 @@ function formatScaled(n: bigint, digits: number): string {
   const sign = n < 0n ? '-' : '';
   const abs = n < 0n ? -n : n;
   const unit = 10n ** BigInt(digits);
-  const fraction = (abs % unit).toString().padStart(digits, '0').replace(/0+$/, '');
-  return `${sign}${abs / unit}${fraction ? `.${fraction}` : ''}`;
+  const padded = (abs % unit).toString().padStart(digits, '0');
+  let end = padded.length;
+  while (end > 0 && padded[end - 1] === '0') end -= 1;
+  const whole = `${sign}${abs / unit}`;
+  return end === 0 ? whole : `${whole}.${padded.slice(0, end)}`;
 }
 
 const usdt = (scaled: bigint) => formatScaled(scaled, USDT_DIGITS);
