@@ -191,9 +191,7 @@ export function PerpetualFilterComparison({
   }, [receivedAt, stale]);
 
   const current =
-    comparison && comparison.inputs === inputs && comparison.snapshot === snapshot?.snapshot
-      ? comparison
-      : null;
+    comparison?.inputs === inputs && comparison.snapshot === snapshot?.snapshot ? comparison : null;
   const missing = needs(check.ok, facts, stale ? null : snapshot);
 
   const compare = () => {
@@ -229,6 +227,11 @@ export function PerpetualFilterComparison({
     status = parts.join(' ');
   }
 
+  let receivedText = 'None: no validated TRXUSDT contract snapshot';
+  if (receivedAt !== null) {
+    receivedText = `${formatUtc(receivedAt)} · this device’s clock${stale ? ' · stale' : ''}`;
+  }
+
   return (
     <section
       className="portfolio-workspace-card leverage-card perp-compare-card"
@@ -248,14 +251,7 @@ export function PerpetualFilterComparison({
       </div>
 
       <dl className="scan-facts perp-facts-source">
-        <Fact
-          name="Contract snapshot received"
-          value={
-            receivedAt === null
-              ? 'None: no validated TRXUSDT contract snapshot'
-              : `${formatUtc(receivedAt)} · this device’s clock${stale ? ' · stale' : ''}`
-          }
-        />
+        <Fact name="Contract snapshot received" value={receivedText} />
         <Fact name="Staleness" value={POLICY} />
       </dl>
 
