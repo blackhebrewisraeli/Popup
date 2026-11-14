@@ -616,7 +616,9 @@ describe('Linked fills in Account', () => {
           spot_experiment_entries: [
             {
               id: 'c1',
+              experiment_id: EXP_A,
               kind: 'close',
+              observed_in: null,
               rule: null,
               rule_status: null,
               supersedes: null,
