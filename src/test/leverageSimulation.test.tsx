@@ -508,4 +508,23 @@ describe('Account placement', () => {
     expect(card).not.toContainElement(section());
     for (const box of within(section()).getAllByRole('textbox')) expect(box).toHaveValue('');
   });
+
+  it('puts the public perpetual facts right after the simulation, unread until asked', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const { AccountPanel } = await import('@/components/AccountPanel');
+      render(<AccountPanel assets={[]} />);
+      const facts = screen.getByRole('region', {
+        name: /^TRXUSDT perpetual: public contract data/,
+      });
+      const card = screen.getByRole('region', { name: 'Binance Spot card' });
+      expect(card).not.toContainElement(facts);
+      expect(section()).not.toContainElement(facts);
+      expect(section().nextElementSibling).toBe(facts);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

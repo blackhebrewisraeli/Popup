@@ -4,15 +4,19 @@
 perpetual **long**. It does arithmetic on numbers the owner types. It is not a Binance execution
 model, an eligibility check or a liquidation calculator.
 
-**Stage: engine and an offline Account section.** [Account](#in-account) shows the engine's figures
-for numbers typed there. There is no storage, network request, account access, scanner change or
-link to the Manual Spot record.
+**Stage: engine, an offline Account section and a public contract-facts panel.**
+[Account](#in-account) shows the engine's figures for numbers typed there. The simulation makes no
+network request and has no storage, account access, scanner change or link to the Manual Spot
+record. Beside it, a separate [public contract data](#public-contract-data) panel reads public
+facts about the TRXUSDT perpetual, only when asked, and never fills the simulation.
 
 ## Boundaries
 
 - **No market data and no defaults.** Every rate, threshold and amount is an input. The engine
   holds no leverage, fee, funding, maintenance-margin or bracket value of its own, and suggests
   none. 5× appears only in tests, as a requested scenario.
+  The public contract data panel shows market facts beside the simulation but does not pass any
+  of them into it.
 - **No account inference.** It assumes nothing about position mode, margin mode settings,
   Multi-Assets mode, auto-add margin, Portfolio Margin, VIP tier or eligibility.
 - **No funding schedule.** Carrying cost is one signed amount for the whole holding period.
@@ -201,6 +205,110 @@ reads nothing, so it needs no owner check.
 
   Not checked: a screen reader, Safari, a physical phone.
 
+## Public contract data
+
+**TRXUSDT perpetual: public contract data** (`src/components/PerpetualContractFacts.tsx` over
+`src/lib/perpetualContractFacts.ts`) is its own card in Account, right after the Leverage simulation
+card. It is informational only. It describes one fixed instrument, the Binance USDⓈ-M **TRXUSDT
+perpetual**. That is a different instrument from Spot TRXUSDT, and the panel shares no code or price
+source with the Spot scanner (`src/lib/binance.ts`) or the Binance Spot card.
+
+### Requests
+
+Nothing is requested until **Read public contract data** is pressed. Each accepted press sends one
+GET to each endpoint, concurrently, from the browser to `https://fapi.binance.com`:
+
+| Group                | Endpoint                               | Provider time shown                                        |
+| -------------------- | -------------------------------------- | ---------------------------------------------------------- |
+| Contract and filters | `/fapi/v1/exchangeInfo`                | None. `serverTime` is documented as "ignore" and not used. |
+| Mark price, funding  | `/fapi/v1/premiumIndex?symbol=TRXUSDT` | `time`                                                     |
+| Last price           | `/fapi/v2/ticker/price?symbol=TRXUSDT` | `time`, documented as the transaction time                 |
+| Funding schedule     | `/fapi/v1/fundingInfo`                 | None in the response                                       |
+
+- **Unsigned and bare.** Requests carry no key, signature, custom header or cookie
+  (`credentials: 'omit'`), use `cache: 'no-store'`, send no referrer and refuse redirects
+  (`redirect: 'error'`). There is no proxy and no Supabase call.
+- **Bounded.** Each request stops after 10 seconds. Nothing retries or refreshes on its own.
+- **One read at a time.** While a read is in flight the button is `aria-disabled` and presses are
+  ignored. Unmounting the card aborts the requests, and a late answer is discarded.
+- **Cleared on a new read.** A press removes the previous snapshot at once; nothing old is shown as
+  current. Nothing is saved, so a reload starts empty.
+
+### What is shown
+
+Every group shows its **source** (method and full URL), the time it was **received** on this
+device's clock, and the **provider time** when the response has one. One is never substituted for
+another.
+
+- **Contract and filters.** Symbol, contract type, pair, status, base, quote and margin asset as
+  reported. The contract is supported only as `TRXUSDT`, pair `TRXUSDT`, `PERPETUAL`, base `TRX`,
+  quote and margin `USDT`, status `TRADING`. Then `PRICE_FILTER` (tick size, minimum and maximum
+  price), `LOT_SIZE` and `MARKET_LOT_SIZE` (step, minimum and maximum quantity), `MIN_NOTIONAL`, and
+  the reported `liquidationFee` rate, labelled context only. `maintMarginPercent` and
+  `requiredMarginPercent`, documented as "ignore", are never read.
+- **Mark price** from premiumIndex and **last price** from ticker/price v2, in separate groups.
+- **Reported funding rate** (`lastFundingRate`, which Binance documents as the latest funding rate)
+  and the **next funding time**. The panel says the rate is reported, not settled, that nothing
+  says it will settle unchanged, and that it is not the simulation's holding-period carrying cost.
+- **Funding schedule** from fundingInfo: interval, cap and floor as published. fundingInfo lists
+  only contracts whose cap, floor or interval was adjusted. When TRXUSDT is absent the panel says
+  so and shows no interval; it never assumes 8 hours.
+- **Not read: account parameters.** Trading fee rates and the maintenance-margin bracket always read
+  "Account-specific — not read; enter manually." Public fee schedules and public bracket tables are
+  not shown or used.
+
+**Exact values.** Provider decimals are kept as their strings. A rate is also shown as a percentage
+by moving the decimal point two places (`0.012500` → `1.2500 %`, `-0.00058793` → `-0.058793 %`), so
+no digit is lost or added. Values that are not plain decimals (for example `1e-5` or a number) are
+malformed. Times are milliseconds, written as UTC.
+
+### Failures
+
+Each group fails on its own and says why; nothing from a failed group is shown.
+
+| Case                                 | Shown                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| No response (CORS, region, offline)  | The browser received no response; the browser does not say which cause.                     |
+| Timeout                              | No complete response within 10 seconds.                                                     |
+| HTTP error                           | The status code, for example HTTP 451. No interpretation is added.                          |
+| Malformed body                       | The field that does not have the documented shape, or "not JSON".                           |
+| A missing or malformed filter        | Marked in its own row; the other filters still show.                                        |
+| Unsupported identity or status       | Each mismatch is listed; filters, prices and funding are withheld.                          |
+| TRXUSDT not listed in exchangeInfo   | Unsupported contract; everything else is withheld.                                          |
+| exchangeInfo failed, others answered | "Contract not confirmed"; the other groups are checked only against their own symbol field. |
+| TRXUSDT not listed in fundingInfo    | "Not published for TRXUSDT"; no interval, cap or floor.                                     |
+
+### Not in this increment
+
+No prefilling of the simulation, no change to its inputs, no quantity rounding to the contract step,
+no order-validity verdict and no comparison against the filters. No other symbol, no scanner change,
+no signed endpoint, no account data.
+
+### Verification (2026-11-14)
+
+- **Fields** checked against the official USDⓈ-M documentation the same day (exchangeInfo,
+  premiumIndex, ticker/price v2, fundingInfo, filter definitions, HTTP return codes), and against
+  public TRXUSDT responses read the same day.
+- **Tests:** `src/test/perpetualContractFacts.test.ts` (parsing, identity and status mismatches,
+  malformed shapes, missing fundingInfo, timestamps, exact percent conversion, the four exact
+  requests and their options, partial failures, timeout, cancellation) and
+  `src/test/perpetualContractFactsPanel.test.tsx` (no request before the press, provenance and both
+  clocks, mark versus last price, funding wording, fees and brackets, partial and malformed
+  failures, unsupported contract, missing fundingInfo, timeout, ignored presses in flight, clearing
+  on a new read, unmount, no storage, and an untouched simulation). An Account test checks the
+  card sits right after the simulation, outside the Binance card, with no request on load.
+  Eight deliberate mutations were tried; seven failed a test. Removing the late-answer guard is not
+  observable, because overlapping reads are already refused and React ignores updates after
+  unmount.
+- **Browser:** the local dev server with Supabase pointed at an unused port. Before the first load,
+  Playwright aborted every request and WebSocket not served by that server and answered the four
+  fapi endpoints from fixtures. Checked: no fapi request on load; exactly four GETs per press;
+  Tab from the simulation reaches the button, Enter reads, focus stays with a visible outline; a
+  partial failure (HTTP 451, a dropped connection, fundingInfo without TRXUSDT); an unsupported
+  margin asset and status; 375 px with no horizontal overflow; light and dark themes.
+
+  Not checked: a live request to Binance from the hosted app, a screen reader, Safari, a phone.
+
 ## Acceptance fixtures
 
 All values are invented. None is a quote, balance, rate or recommendation.
@@ -226,3 +334,11 @@ Read 2026-11-14:
 [Futures liquidation protocols](https://www.binance.com/en/support/faq/binance-futures-liquidation-protocols-360033525271),
 [Funding rates](https://www.binance.com/en/support/faq/introduction-to-binance-futures-funding-rates-360033525031),
 [New Algo Order](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order).
+
+For the public contract data, also read 2026-11-14:
+[General info](https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info),
+[Common definitions and filters](https://developers.binance.com/docs/derivatives/usds-margined-futures/common-definition),
+[Exchange information](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Exchange-Information),
+[Mark price](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Mark-Price),
+[Symbol price ticker v2](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Symbol-Price-Ticker-v2),
+[Funding rate info](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-Info).

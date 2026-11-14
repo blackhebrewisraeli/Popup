@@ -448,8 +448,8 @@ export function LeverageSimulation() {
         </h3>
         <p className="spot-note">
           Hypothetical arithmetic for one isolated, USDT-margined perpetual long, from numbers you
-          type. Popup reads no balance, price, rate or account setting, and it suggests no leverage
-          and rates no risk. Nothing here is saved or sent; reloading the page clears it.
+          type. This simulation reads no balance, price, rate or account setting, and it suggests no
+          leverage and rates no risk. Nothing here is saved or sent; reloading the page clears it.
         </p>
       </div>
 
