@@ -93,6 +93,11 @@ Popup deliberately narrows that contract:
   labels the prior in-memory result without changing its coverage status. A successful explicit new
   retrieval starts a new evidence state. Changing the pair, the range, or either custom time
   clears it; a late answer cannot replace a newer selection. Logout or account change unmounts and clears the private state.
+- An optional **Account label** belongs to the retrieval: the owner's own name for this Binance
+  account, as in their [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md#linking-fills-from-the-execution-view).
+  It is needed only to link a consistent row to an experiment, is checked against the database's
+  format before anything is requested, and, like the pair and range, clears the result when it
+  changes. It does not identify the account to Binance, and it is never sent to the function.
 - Deposits, withdrawals, transfers and conversions are separate account events outside this slice.
   Executions alone cannot reconstruct balances.
 

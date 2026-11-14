@@ -9539,3 +9539,45 @@ button.paper-ticker:hover {
     transition: none !important; /* NOSONAR(S9423) */
   }
 }
+/* Fill linking: the Experiment cell of an execution row, and linked fills in Account. */
+.spot-link-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.spot-link-btn:focus-visible,
+.spot-execution-table [tabindex='-1']:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.spot-link-panel .spot-field {
+  max-width: 560px;
+}
+/* Focus lands on the heading; keep it clear of the sticky header. */
+.spot-link-panel > h5 {
+  scroll-margin: 80px 0 16px;
+}
+.experiment-fills {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.experiment-fill {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.experiment-fill code {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .experiment-fill .scan-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
