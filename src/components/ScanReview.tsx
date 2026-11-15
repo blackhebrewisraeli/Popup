@@ -10,6 +10,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
 import { ScanChanges, type BaselineChoice } from '@/components/ScanChanges';
+import { Button } from '@/components/ui/button';
 import { Segmented } from '@/components/Segmented';
 import { SpotScenario } from '@/components/SpotScenario';
 import {
@@ -27,7 +28,7 @@ import { exactSymbol, type ScanComparison } from '@/lib/scanChanges';
 import { RISK_PROFILE_POLICIES, type RiskProfile } from '@/lib/portfolioBuilder';
 import {
   ageLabel,
-  candidateNotes,
+  candidateStatus,
   CLASS_LABEL,
   clauseShortfall,
   clauseValue,
@@ -404,7 +405,10 @@ function Comparison({
   );
 }
 
-/** One candidate: the row opens its existing evidence, as a ranked row does. */
+/**
+ * One candidate: rank, score, Long status and model Risk status in plain words, the blend
+ * terms behind a disclosure, and a button that opens its existing evidence.
+ */
 function Candidate({
   result,
   evaluated,
@@ -420,38 +424,107 @@ function Candidate({
   evidenceId: string;
   onSelect: (ticker: string, opener: HTMLElement) => void;
 }>) {
-  const notesId = useId();
+  const statusId = useId();
   if (!result.model || !result.setups) return null;
-  const { largest, against } = candidateNotes(explainResult(result.model, result.setups));
-  const setup = result.setups.long || result.setups.risk;
+  const { long, risk, terms } = candidateStatus(explainResult(result.model, result.setups));
   return (
-    <li>
+    <li className={cn('scan-candidate', selected && 'is-selected')}>
+      <p className="scan-candidate-head">
+        <span className="market-scan-ticker">{result.ticker}</span>
+        <span className="scan-row-symbol">
+          {exactSymbol(result) ?? result.instrument ?? 'Instrument not recorded'}
+        </span>
+      </p>
+      <dl id={statusId} className="scan-candidate-status">
+        <div>
+          <dt>Rank</dt>
+          <dd>
+            {result.rank} of {evaluated} evaluated
+          </dd>
+        </div>
+        <div>
+          <dt>Score</dt>
+          <dd>{result.model.signal_score} of 100</dd>
+        </div>
+        <div>
+          <dt>Long</dt>
+          <dd>
+            <span className={cn('scan-candidate-state', long.holds && 'is-long')}>
+              {long.label}
+            </span>{' '}
+            <span className="scan-candidate-detail">({long.detail})</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Model Risk</dt>
+          <dd>
+            <span className={cn('scan-candidate-state', risk.holds && 'is-risk')}>
+              {risk.label}
+            </span>{' '}
+            <span className="scan-candidate-detail">({risk.detail})</span>
+          </dd>
+        </div>
+      </dl>
+      <details className="scan-candidate-terms">
+        <summary>Score contributions</summary>
+        <p className="market-scan-fit">
+          Each factor&rsquo;s component score × its weight in the recorded blend, largest first.
+        </p>
+        <ul className="market-scan-fit">
+          {terms.map((term) => (
+            <li key={term}>{term}</li>
+          ))}
+        </ul>
+      </details>
       <button
         type="button"
-        className={cn('scan-changes-row', selected && 'is-selected')}
+        className="portfolio-cash-btn scan-candidate-open"
         aria-label={`Open evidence: ${result.ticker}, rank ${result.rank} of ${evaluated}, score ${result.model.signal_score}, ${setupWords(result)}`}
-        aria-describedby={notesId}
+        aria-describedby={statusId}
         aria-current={selected ? 'true' : undefined}
         aria-controls={wide ? evidenceId : undefined}
         aria-haspopup={wide ? undefined : 'dialog'}
         onClick={(event) => onSelect(result.ticker, event.currentTarget)}
       >
-        <span className="market-scan-rank">
-          #{result.rank} of {evaluated}
-        </span>
-        <span className="market-scan-ticker">{result.ticker}</span>
-        <span className="scan-row-symbol">
-          {exactSymbol(result) ?? result.instrument ?? 'Instrument not recorded'}
-        </span>
-        <span className="market-scan-fit">Score {result.model.signal_score}</span>
-        {setup ? <SetupTags result={result} /> : <span className="market-scan-tag">No setup</span>}
-        <span id={notesId} className="market-scan-fit scan-candidate-notes">
-          <span className="block">Largest term: {largest}</span>
-          <span className="block">Against: {against}</span>
-        </span>
-        <span className="scan-candidate-open">Open evidence</span>
+        Open evidence
       </button>
     </li>
+  );
+}
+
+/** Rank, score, Long and model Risk in plain words, with the model's own thresholds. */
+function CandidateKey({ modelVersion }: Readonly<{ modelVersion: string }>) {
+  return (
+    <dl className="scan-candidate-key">
+      <div>
+        <dt>Rank</dt>
+        <dd>
+          Order by score among the pairs evaluated in this scan only. Not a buy recommendation.
+        </dd>
+      </div>
+      <div>
+        <dt>Score</dt>
+        <dd>
+          0–100: how closely the readings match model {modelVersion}&rsquo;s technical conditions.
+          Not a probability of profit.
+        </dd>
+      </div>
+      <div>
+        <dt>Long</dt>
+        <dd>
+          Long conditions are met only when score ≥ {LONG_SETUP_MIN_SCORE} and MACD momentum ≥{' '}
+          {percent(FLAT_MOMENTUM)} of price, both on the last closed daily candle.
+        </dd>
+      </div>
+      <div>
+        <dt>Model Risk</dt>
+        <dd>
+          A model Risk flag means high volatility (ATR ≥ {ratio(REGIME_HIGH_VOLATILITY)} of price),
+          a low score (≤ {RISK_SETUP_MAX_SCORE}), or both. It describes recorded readings; it is not
+          a sell signal or a forecast.
+        </dd>
+      </div>
+    </dl>
   );
 }
 
@@ -468,6 +541,7 @@ function Candidates({
   selected,
   wide,
   evidenceId,
+  primary,
   onSelect,
 }: Readonly<{
   cohort: ScanCohort;
@@ -476,6 +550,8 @@ function Candidates({
   selected: string | null;
   wide: boolean;
   evidenceId: string;
+  /** The first ranked class carries the review's one Start review action. */
+  primary: boolean;
   onSelect: (ticker: string, opener: HTMLElement) => void;
 }>) {
   const titleId = useId();
@@ -490,12 +566,13 @@ function Candidates({
 
   let longNote: string | null = null;
   if (candidates.length > 0 && !candidates.some((result) => result.setups?.long)) {
-    const lower = longs === 1 ? 'asset does' : 'assets do';
+    const lower = longs === 1 ? 'asset meets' : 'assets meet';
     longNote =
       longs === 0
-        ? `None holds ZC LONG: no evaluated ${noun} met it in this scan. These are the highest ranks only, not model-qualified Long setups.`
-        : `None of these holds ZC LONG; ${longs} lower-ranked ${lower} (Long setups).`;
+        ? `Long conditions not met by any evaluated ${noun} in this scan. These are the highest ranks only, not Long setups.`
+        : `Long conditions not met by any of these; ${longs} lower-ranked ${lower} them (Long setups).`;
   }
+  const first = candidates[0];
 
   return (
     <section className="scan-candidates" aria-labelledby={titleId}>
@@ -531,7 +608,25 @@ function Candidates({
             of profit or an executable order, and research has not shown that a higher rank predicts
             a better outcome. The view and filters do not change this list.
           </p>
-          <ul className="market-scan-list scan-changes-list" aria-label={`${label} candidates`}>
+          {primary && first && (
+            <div className="scan-start">
+              <Button
+                type="button"
+                size="sm"
+                aria-controls={wide ? evidenceId : undefined}
+                aria-haspopup={wide ? undefined : 'dialog'}
+                onClick={(event) => onSelect(first.ticker, event.currentTarget)}
+              >
+                Start review: #{first.rank} {first.ticker}
+              </Button>
+              <p className="market-scan-fit">
+                Opens the evidence for the highest-ranked candidate. Reviewing evidence is not a
+                decision to buy, and a rank is not a buy recommendation.
+              </p>
+            </div>
+          )}
+          <CandidateKey modelVersion={scan.modelVersion} />
+          <ul className="market-scan-list scan-candidate-list" aria-label={`${label} candidates`}>
             {candidates.map((result) => (
               <Candidate
                 key={result.ticker}
@@ -547,8 +642,8 @@ function Candidates({
           {longNote && <p className="market-scan-fit">{longNote}</p>}
           {risks > 0 && (
             <p className="market-scan-fit">
-              {risks} of {candidates.length} carry a Risk warning, named on each; a high rank does
-              not resolve it.
+              {risks} of {candidates.length} carry a model Risk flag, named on each; a high rank
+              does not remove it.
             </p>
           )}
         </>
@@ -1350,7 +1445,7 @@ export function ScanReview({
       </p>
       <div className={cn('scan-desk', wide && 'is-wide')}>
         <div className="scan-desk-list">
-          {cohorts.map((cohort) => (
+          {cohorts.map((cohort, index) => (
             <Candidates
               key={cohort.assetClass}
               cohort={cohort}
@@ -1359,6 +1454,7 @@ export function ScanReview({
               selected={selected}
               wide={wide}
               evidenceId={evidenceId}
+              primary={index === 0}
               onSelect={select}
             />
           ))}

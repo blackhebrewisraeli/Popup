@@ -82,6 +82,13 @@ const DAY_BASIS: Record<ScanCohort['assetClass'], string> = {
   forex: 'not scanned',
 };
 
+/** What a scan's evaluated members are called in running text. */
+const CLASS_NOUN: Record<ScanCohort['assetClass'], string> = {
+  crypto: 'crypto',
+  equity: 'equities & ETFs',
+  forex: 'forex',
+};
+
 /** One fact in the scan header: a label, its value, and an optional quieter line under it. */
 function Fact({
   label,
@@ -270,6 +277,70 @@ function RetrievedFact({ retrieval }: Readonly<{ retrieval: TradingViewDevSource
 }
 
 /**
+ * Which scan this is, before anything in it: a live check computed in this browser (never
+ * saved, no scan ID) or a saved TradingView scan read from a local file. It states study
+ * eligibility as separate, never as a property of being saved.
+ */
+function ViewingNote({
+  scan,
+  completedAt,
+  scanning,
+  source,
+  scanId,
+}: Readonly<{
+  scan: MarketScan;
+  completedAt: number;
+  scanning: boolean;
+  source: TradingViewDevSource | undefined;
+  scanId: string | undefined;
+}>) {
+  const scanned = scan.cohorts.filter((cohort) => cohort.status !== 'UNSUPPORTED');
+  const classes = scanned.map((cohort) => CLASS_NOUN[cohort.assetClass]).join(' + ');
+  const asOf = scanned.map(dataAsOfLabel).filter(Boolean).join('; ') || 'no candle evaluated';
+  const scope = `${scan.coverage.evaluated} of ${scan.coverage.supported} ${classes || 'assets'} evaluated`;
+  if (source) {
+    const retrieved = source.retrieval
+      ? `retrieved ${retrievalLabel(source.retrieval)}`
+      : 'retrieval time not recorded';
+    return (
+      <div className="scan-viewing is-saved" role="note" aria-label="What this view shows">
+        <p className="scan-viewing-title">
+          <strong>Saved TradingView scan</strong>{' '}
+          {scanId ? <code>{scanId}</code> : <span>scan ID not recorded</span>}
+        </p>
+        <p>
+          {sourcesLabel(scan)} · {asOf} · {scope} · {retrieved}
+        </p>
+        <p className="market-scan-sub">
+          Read from a local file; it does not refresh. Study eligibility is checked separately:
+          being saved does not make a scan part of any study.
+        </p>
+      </div>
+    );
+  }
+  const sample = scan.universe.source !== 'assets_status';
+  return (
+    <div className="scan-viewing is-live" role="note" aria-label="What this view shows">
+      <p className="scan-viewing-title">
+        <strong>{sample ? 'Sample preview check' : 'Live browser check'}</strong>{' '}
+        <span>not saved, no scan ID</span>
+      </p>
+      <p>
+        {sourcesLabel(scan)} · {asOf} · {scope} ·{' '}
+        {scanning
+          ? 'Re-scanning in this browser'
+          : `computed in this browser at ${UTC_TIME.format(completedAt)} UTC`}
+      </p>
+      {import.meta.env.DEV && (
+        <p className="market-scan-sub">
+          Saved TradingView scans are under Dev source: TradingView import.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
  * What a Markets scan covered and found: universe, coverage, freshness, and
  * every evaluated asset for review, each explainable from its recorded values.
  * Setups are chart conditions, not orders — there is nothing to execute here.
@@ -350,6 +421,13 @@ export function MarketScanSummary({
             </span>
           </p>
         </div>
+        <ViewingNote
+          scan={scan}
+          completedAt={completedAt}
+          scanning={scanning}
+          source={source}
+          scanId={scanId}
+        />
         <dl className="market-scan-stats">
           <Fact
             label="Source"

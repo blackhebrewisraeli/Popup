@@ -1259,18 +1259,140 @@ body {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
-/* Candidates to review first: the changes row, with its two evidence lines on their own row. */
+/* Candidates to review first: one Start review action, a plain key, then one card per candidate. */
 .scan-candidates-meta {
   margin: 0 0 8px;
 }
-.scan-candidate-notes {
-  flex-basis: 100%;
+.scan-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 0 0 12px;
+}
+.scan-start .market-scan-fit {
+  flex: 1 1 260px;
+  margin: 0;
+}
+.scan-start button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.scan-candidate-key,
+.scan-candidate-status {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.scan-candidate-key {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+  color: var(--muted-foreground);
+}
+.scan-candidate-key > div,
+.scan-candidate-status > div {
+  display: contents;
+}
+.scan-candidate-key dt,
+.scan-candidate-status dt {
+  font:
+    600 10px/1.9 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.scan-candidate-key dd,
+.scan-candidate-status dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.scan-candidate-list {
+  gap: 0;
+  margin-top: 6px;
+}
+.scan-candidate {
+  display: grid;
+  gap: 6px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.scan-candidate.is-selected {
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+.scan-candidate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0;
+}
+.scan-candidate-state {
+  font-weight: 600;
+}
+.scan-candidate-state.is-long {
+  color: color-mix(in oklch, var(--signal-green) 72%, var(--foreground));
+}
+.scan-candidate-state.is-risk {
+  color: var(--signal-red);
+}
+.scan-candidate-detail {
+  color: var(--muted-foreground);
+}
+.scan-candidate-terms > summary {
+  width: fit-content;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.scan-candidate-terms > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.scan-candidate-terms > .market-scan-fit {
+  margin: 6px 0 0;
+}
+.scan-candidate-terms ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  list-style: disc;
 }
 .scan-candidate-open {
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  justify-self: start;
+}
+/* Which scan this is: a live browser check or a saved TradingView scan, before anything in it. */
+.scan-viewing {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--muted-foreground);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.scan-viewing.is-saved {
+  border-left-color: var(--primary);
+}
+.scan-viewing p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.scan-viewing-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-size: 14px;
+}
+.scan-viewing-title > span {
+  color: var(--muted-foreground);
 }
 .scan-guide {
   display: grid;

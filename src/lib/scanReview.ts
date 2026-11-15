@@ -428,7 +428,7 @@ export function rowReason({ long, risk }: ScanExplanation): string {
       .map(met)
       .join('; ');
   const unmet = long.clauses.filter((clause) => !clause.met);
-  return `Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`;
+  return `Long conditions not met: ${unmet.map(clauseShortfall).join('; ')}`;
 }
 
 /** Candidates listed per asset class (docs/MARKET_SCANNER.md#candidates-to-review-first). */
@@ -456,27 +456,48 @@ function termLine(factor: FactorLine): string {
   return `${factor.label} (${factor.reading}): ${Math.round(factor.score)} × ${Math.round(factor.weight * 100)}%`;
 }
 
+/** One recorded setup state in plain words, with its exact thresholds and recorded values. */
+export interface StatusLine {
+  holds: boolean;
+  label: string;
+  detail: string;
+}
+
 /**
- * A candidate's two lines, from its recorded explanation only: the largest term of its
- * score's blend, and what stands against it (each Risk clause that holds, each ZC LONG
- * clause not met; for a Long setup with no Risk warning, the smallest term).
+ * A candidate's Long and model Risk status, and its score's blend terms (largest first), from
+ * its recorded explanation only. The thresholds are the clauses' own rules, never restated.
  */
-export function candidateNotes(explanation: ScanExplanation): { largest: string; against: string } {
+export function candidateStatus(explanation: ScanExplanation): {
+  long: StatusLine;
+  risk: StatusLine;
+  terms: string[];
+} {
   const { long, risk } = explanation;
-  // Stable sort: equal terms keep the factors' display order.
-  const byTerm = [...explanation.factors].sort((a, b) => blendTerm(b) - blendTerm(a));
-  const against: string[] = [];
-  const held = risk.holds ? risk.clauses.filter((clause) => clause.met) : [];
-  if (held.length > 0) against.push(`ZC RISK holds: ${held.map(clauseValue).join(', ')}`);
-  if (!long.holds) {
-    const unmet = long.clauses.filter((clause) => !clause.met);
-    against.push(`Short of ZC LONG: ${unmet.map(clauseShortfall).join('; ')}`);
+  const rules = (check: SetupCheck, join: string) =>
+    check.clauses.map((clause) => `${clause.label} ${clause.rule}`).join(join);
+  const recorded = (check: SetupCheck) =>
+    check.clauses.map((clause) => `${clause.label} ${clause.actual}`).join(', ');
+  const flagged = riskClauses(explanation);
+  let riskWords = 'No model Risk flag';
+  if (risk.holds) {
+    riskWords =
+      flagged.length > 0
+        ? `Model Risk flag: ${flagged.join(' and ').toLowerCase()}`
+        : 'Model Risk flag';
   }
-  const smallest = byTerm.at(-1);
-  if (against.length === 0 && smallest) against.push(`Smallest term ${termLine(smallest)}`);
   return {
-    largest: byTerm[0] ? termLine(byTerm[0]) : 'Not recorded',
-    against: against.join('. '),
+    long: {
+      holds: long.holds,
+      label: long.holds ? 'Long conditions met' : 'Long conditions not met',
+      detail: `needs ${rules(long, ' and ')}; recorded ${recorded(long)}`,
+    },
+    risk: {
+      holds: risk.holds,
+      label: riskWords,
+      detail: `flagged at ${rules(risk, ' or ')}; recorded ${recorded(risk)}`,
+    },
+    // Stable sort: equal terms keep the factors' display order.
+    terms: [...explanation.factors].sort((a, b) => blendTerm(b) - blendTerm(a)).map(termLine),
   };
 }
 

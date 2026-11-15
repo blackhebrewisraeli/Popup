@@ -169,7 +169,7 @@ function wrap(children: ReactNode) {
 
 /** Opens Record experiment; a details element announces `toggle` after the click, not during it. */
 async function openDisclosure(section: HTMLElement) {
-  fireEvent.click(within(section).getByText('Record experiment'));
+  fireEvent.click(within(section).getByText('Record experiment (saves to Account)'));
   await waitFor(() => expect(section.querySelector('.spot-record')).not.toBeNull());
 }
 
@@ -397,7 +397,7 @@ describe('Record experiment in the Manual Spot scenario', () => {
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: /^ZCTLONG-USDT, rank/ }));
-    expect(screen.getByText('Record experiment')).toBeInTheDocument();
+    expect(screen.getByText('Record experiment (saves to Account)')).toBeInTheDocument();
     expect(db.rpc).not.toHaveBeenCalled();
     const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
     await openDisclosure(section);

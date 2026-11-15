@@ -136,8 +136,9 @@ scan ID, account label or fill belongs in code, tests or docs.
 
 ## Recording from a saved scan
 
-**Record experiment** sits under **Plan a hypothetical scenario** in a TradingView crypto pair's
-evidence. It asks the database nothing until it is opened.
+**Record experiment (saves to Account)** sits under **Plan a hypothetical scenario** in a
+TradingView crypto pair's evidence. It asks the database nothing until it is opened, and it saves
+only when the owner presses **Confirm and record** after **Review record**.
 
 - **A saved scan only.** Choose the scan under **Scan shown**. The local saved-scan route
   (`vite dev` only) reproduces the snapshot offline and reports `snapshotSha256`, the SHA-256 of the

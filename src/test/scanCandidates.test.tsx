@@ -156,7 +156,7 @@ const list = () => screen.getByRole('list', { name: 'Crypto candidates' });
 /** Each candidate's ticker and rank, from its accessible name. */
 const shown = () =>
   within(list())
-    .getAllByRole('button')
+    .getAllByRole('button', { name: /^Open evidence: / })
     .map((button) =>
       /^Open evidence: (\S+), rank (\d+ of \d+)/
         .exec(button.getAttribute('aria-label') ?? '')!
@@ -166,6 +166,10 @@ const candidate = (ticker: string) =>
   within(list()).getByRole('button', { name: new RegExp(`^Open evidence: ${ticker},`) });
 const candidates = () =>
   screen.getByRole('region', { name: /^(Candidates to review first|Historical top ranks)/ });
+/** A candidate's whole card: its status lines, disclosure and Open evidence button. */
+const card = (ticker: string) => candidate(ticker).closest('li')!;
+const start = () => screen.getByRole('button', { name: /^Start review: / });
+const viewing = () => screen.getByRole('note', { name: 'What this view shows' });
 
 describe('Candidates to review first', () => {
   it('lists the top five evaluated in recorded rank, with instrument, score, setup and evidence lines', () => {
@@ -188,14 +192,18 @@ describe('Candidates to review first', () => {
     expect(candidate('CALM-USDT')).toHaveAccessibleName(
       'Open evidence: CALM-USDT, rank 3 of 7, score 75, No setup',
     );
-    const both = candidate('BOTH-USDT');
-    expect(both).toHaveTextContent('BINANCE:BOTHUSDT');
-    expect(both).toHaveTextContent('Risk: high volatility');
-    expect(both).toHaveAccessibleDescription(
-      /^Largest term: \w[\w ]+ \(.+\): \d+ × \d+% Against: ZC RISK holds: High volatility \(ATR \d+\.\d\d%\)$/,
+    expect(card('BOTH-USDT')).toHaveTextContent('BINANCE:BOTHUSDT');
+    expect(candidate('BOTH-USDT')).toHaveAccessibleDescription(
+      /^Rank 2 of 7 evaluated Score 79 of 100 Long Long conditions met \(needs Score ≥ 78 and MACD momentum ≥ \+0\.05% of price; recorded Score 79, MACD momentum \+\d\.\d\d%\) Model Risk Model Risk flag: high volatility \(flagged at ATR ≥ 4\.00% of price or Score ≤ 28; recorded ATR \d+\.\d\d%, Score 79\)$/,
     );
     expect(candidate('CALM-USDT')).toHaveAccessibleDescription(
-      'Largest term: Mean Reversion (RSI(14) 27.0): 95 × 50% Against: Short of ZC LONG: Score 75, needs ≥ 78; MACD momentum -0.41%, needs ≥ +0.05% of price',
+      /^Rank 3 of 7 evaluated Score 75 of 100 Long Long conditions not met \(needs Score ≥ 78 and MACD momentum ≥ \+0\.05% of price; recorded Score 75, MACD momentum -0\.41%\) Model Risk No model Risk flag \(flagged at ATR ≥ 4\.00% of price or Score ≤ 28; recorded ATR \d\.\d\d%, Score 75\)$/,
+    );
+    // The blend terms are details on demand, largest first.
+    const terms = within(card('CALM-USDT')).getByText('Score contributions').closest('details')!;
+    expect(terms.open).toBe(false);
+    expect(within(terms).getAllByRole('listitem')[0]).toHaveTextContent(
+      'Mean Reversion (RSI(14) 27.0): 95 × 50%',
     );
     // The short history is neither listed nor silently dropped.
     expect(within(list()).queryByText('YOUNG-USDT')).not.toBeInTheDocument();
@@ -203,13 +211,14 @@ describe('Candidates to review first', () => {
       '1 of 8 supported crypto were not evaluated this scan and cannot appear here.',
     );
     expect(candidates()).toHaveTextContent(
-      '1 of 5 carry a Risk warning, named on each; a high rank does not resolve it.',
+      '1 of 5 carry a model Risk flag, named on each; a high rank does not remove it.',
     );
     expect(candidates()).toHaveTextContent(
       'Ranked on candles to 27 Oct close (UTC): the top 5 of 7 evaluated',
     );
     expect(candidates()).toHaveTextContent('Scan 20261028T170000Z-synthetic');
-    expect(candidates()).not.toHaveTextContent(/None (of these )?holds ZC LONG/);
+    expect(candidates()).not.toHaveTextContent(/Long conditions not met by any/);
+    expect(candidates()).not.toHaveTextContent(/ZC LONG|ZC RISK|Short of/);
   });
 
   it('keeps a top rank without Long, names every Risk clause, and says no Long exists', () => {
@@ -225,18 +234,17 @@ describe('Candidates to review first', () => {
       /^Open evidence: DROP-USDT, rank 1 of 5, score 55, Risk: high volatility$/,
     );
     expect(candidate('DROP-USDT')).toHaveAccessibleDescription(
-      /Against: ZC RISK holds: High volatility \(ATR \d+\.\d\d%\)\. Short of ZC LONG: Score 55, needs ≥ 78/,
+      /Long conditions not met \(needs Score ≥ 78 and MACD momentum ≥ \+0\.05% of price; recorded Score 55, .*Model Risk flag: high volatility \(/,
     );
     for (const ticker of ['SWING-USDT', 'PUMP-USDT']) {
-      expect(candidate(ticker)).toHaveTextContent('Risk: high volatility and low score');
       expect(candidate(ticker)).toHaveAccessibleDescription(
-        /ZC RISK holds: High volatility \(ATR \d+\.\d\d%\), Low score \(Score \d+\)/,
+        /Model Risk flag: high volatility and low score \(flagged at ATR ≥ 4\.00% of price or Score ≤ 28; recorded ATR \d+\.\d\d%, Score \d+\)$/,
       );
     }
     expect(candidates()).toHaveTextContent(
-      'None holds ZC LONG: no evaluated crypto met it in this scan. These are the highest ranks only, not model-qualified Long setups.',
+      'Long conditions not met by any evaluated crypto in this scan. These are the highest ranks only, not Long setups.',
     );
-    expect(candidates()).toHaveTextContent('4 of 5 carry a Risk warning');
+    expect(candidates()).toHaveTextContent('4 of 5 carry a model Risk flag');
     expect(candidates().textContent).not.toMatch(/recommended|buy now|opportunit|affordable/i);
   });
 
@@ -250,7 +258,7 @@ describe('Candidates to review first', () => {
     expect(both.setups?.long).toBe(true);
     expect(shown().map(([ticker]) => ticker)).not.toContain('BOTH-USDT');
     expect(candidates()).toHaveTextContent(
-      'None of these holds ZC LONG; 1 lower-ranked asset does (Long setups).',
+      'Long conditions not met by any of these; 1 lower-ranked asset meets them (Long setups).',
     );
   });
 
@@ -280,6 +288,56 @@ describe('Candidates to review first', () => {
     renderScan(MIXED);
     expect(candidates()).not.toHaveTextContent('Historical');
     screen.getByRole('region', { name: /^Candidates to review first/ });
+  });
+
+  it('offers one Start review that opens the top candidate beside the list on a wide screen', () => {
+    wideScreen();
+    const { panel } = renderScan(NO_LONG);
+    expect(within(panel).getAllByRole('button', { name: /^Start review: / })).toHaveLength(1);
+    expect(start()).toHaveAccessibleName('Start review: #1 DROP-USDT');
+    expect(candidates()).toHaveTextContent(
+      'Opens the evidence for the highest-ranked candidate. Reviewing evidence is not a decision to buy, and a rank is not a buy recommendation.',
+    );
+    fireEvent.click(start());
+    const evidence = within(panel).getByRole('region', { name: 'DROP-USDT evidence' });
+    expect(start()).toHaveAttribute('aria-controls', evidence.id);
+    expect(candidate('DROP-USDT')).toHaveAttribute('aria-current', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the top candidate’s sheet from Start review on a narrow screen and returns focus', () => {
+    renderScan(MIXED);
+    start().focus();
+    fireEvent.click(start());
+    expect(screen.getByRole('dialog', { name: 'LONG-USDT explanation' })).toHaveTextContent(
+      '#1 of 7',
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(start()).toHaveFocus();
+  });
+
+  it('explains rank, score, Long and model Risk with the model’s own thresholds', () => {
+    renderScan(MIXED);
+    expect(candidates()).toHaveTextContent(
+      'LongLong conditions are met only when score ≥ 78 and MACD momentum ≥ +0.05% of price, both on the last closed daily candle.',
+    );
+    expect(candidates()).toHaveTextContent(
+      'Model RiskA model Risk flag means high volatility (ATR ≥ 4.00% of price), a low score (≤ 28), or both.',
+    );
+    expect(card('LONG-USDT')).toHaveTextContent('LongLong conditions met');
+    expect(card('CALM-USDT')).toHaveTextContent('Model RiskNo model Risk flag');
+  });
+
+  it('names a saved scan, its cutoff, scope and retrieval, and keeps study eligibility separate', () => {
+    renderScan(MIXED);
+    expect(viewing()).toHaveTextContent(
+      'Saved TradingView scan 20261028T170000Z-synthetic' +
+        'TradingView MCP get_ohlcv · candles to 27 Oct close (UTC) · 7 of 8 crypto evaluated · retrieved 28 Oct, 17:00–17:02 UTC',
+    );
+    expect(viewing()).toHaveTextContent(
+      'Study eligibility is checked separately: being saved does not make a scan part of any study.',
+    );
   });
 
   it('labels the same scan historical once a newer UTC day has closed', () => {
@@ -351,7 +409,9 @@ describe('Candidates to review first', () => {
     const summary = within(sheet).getByText('Plan a hypothetical scenario', {
       selector: 'summary',
     });
-    const record = within(sheet).getByText('Record experiment', { selector: 'summary' });
+    const record = within(sheet).getByText('Record experiment (saves to Account)', {
+      selector: 'summary',
+    });
     const press = (shiftKey = false) =>
       fireEvent.keyDown(window, { key: 'Tab', shiftKey, cancelable: true });
     expect(close).toHaveFocus();
@@ -425,6 +485,12 @@ describe('Candidates to review first', () => {
     );
     const { rerender } = render(summary(market([PAIRS.CALM, PAIRS.WAVE])));
     expect(shown().map(([ticker]) => ticker)).toEqual(['CALM-USDT', 'WAVE-USDT']);
+    // A live browser check: never saved, no scan ID, and computed when this page scanned.
+    expect(viewing()).toHaveTextContent(
+      'Live browser check not saved, no scan ID' +
+        'Binance spot klines · candles to 27 Oct close (UTC) · 2 of 2 crypto evaluated · computed in this browser at 28 Oct, 17:00 UTC',
+    );
+    expect(viewing().querySelector('code')).toBeNull();
     // No scan ID and no stale verdict: the header states source, data time and freshness.
     expect(candidates().querySelector('.scan-candidates-meta')).toBeNull();
     rerender(summary(market([PAIRS.CALM, PAIRS.WAVE, PAIRS.LONG])));
