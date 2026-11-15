@@ -92,7 +92,10 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@1dedf2c611547ede7232d26866dd3c56ab903bbb # v1.7.3
         with:
-          version: latest
+          # An explicit version downloads the release asset directly. `latest` first asks
+          # the GitHub API, unauthenticated, and fails the job when that rate limit is hit.
+          # 3.1.0 is the release the last green runs installed; change it deliberately.
+          version: 3.1.0
 
       # Starts an empty local Postgres and applies supabase/migrations in order,
       # so a migration that depends on schema made outside that folder fails here.
