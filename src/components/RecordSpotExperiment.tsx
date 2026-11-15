@@ -453,8 +453,10 @@ export function RecordSpotExperiment({
   return (
     <div className="spot-record">
       <p className="market-scan-fit">
-        Stores your decision, this candidate&rsquo;s evidence and the scan&rsquo;s identity for the
-        configured Binance owner, after you check it. It places no order and links no fill.
+        Saves a record to Account only when you press Confirm and record after Review record: your
+        decision text, this candidate&rsquo;s evidence and the scan&rsquo;s identity, for the
+        configured Binance owner. Opening this section saves nothing. It places no order and links
+        no fill.
       </p>
       {body}
     </div>

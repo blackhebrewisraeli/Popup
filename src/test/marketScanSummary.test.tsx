@@ -205,9 +205,10 @@ describe('MarketScanSummary', () => {
     for (const scope of [panel, screen.getByRole('dialog')]) {
       expect(within(scope).queryByRole('link')).not.toBeInTheDocument();
       for (const button of within(scope).queryAllByRole('button')) {
-        // A row or a candidate opens its own evidence; the rest are Close, Reset and Clear.
+        // A row, a candidate or Start review opens existing evidence; the rest are Close, Reset
+        // and Clear.
         expect(button).toHaveAccessibleName(
-          /^(Close|Reset|Clear|BTC-USD, rank 1, score \d+|Open evidence: BTC-USD, rank 1 of 1, score \d+)/,
+          /^(Close|Reset|Clear|BTC-USD, rank 1, score \d+|Open evidence: BTC-USD, rank 1 of 1, score \d+|Start review: #1 BTC-USD$)/,
         );
       }
       expect(scope.textContent).not.toMatch(/trade now|buy now|place order|broker/i);
@@ -295,7 +296,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(rows).toHaveLength(evaluated.length);
     expect(rows[0]).toHaveTextContent(`#1${evaluated[0]!.ticker}`);
     expect(rows[0]).toHaveTextContent(source.symbols[evaluated[0]!.ticker]!);
-    expect(rows[0]).toHaveTextContent(/Short of ZC LONG: Score \d+, needs ≥ 78/);
+    expect(rows[0]).toHaveTextContent(/Long conditions not met: Score \d+, needs ≥ 78/);
     const failures = within(panel).getByRole('region', { name: 'Not evaluated this scan' });
     expect(within(failures).getByText(/HTTP 429/)).toBeInTheDocument();
     const notes = within(panel).getByRole('region', { name: 'Source and limitations' });
@@ -739,7 +740,7 @@ describe('Scan review: views, explanation and comparison', () => {
       /^Score \d+ ≥ 78, MACD momentum \+\d\.\d\d% ≥ \+0\.05% of price$/,
     );
     expect(setups('BTC-USD')).toEqual({ long: false, risk: false });
-    expect(reason('BTC-USD')).toMatch(/^Short of ZC LONG: Score \d+, needs ≥ 78/);
+    expect(reason('BTC-USD')).toMatch(/^Long conditions not met: Score \d+, needs ≥ 78/);
     expect(setups('SPY').risk).toBe(true);
     expect(reason('SPY')).toMatch(/High volatility: ATR \d+\.\d\d% ≥ 4\.00% of price$/);
   });

@@ -285,9 +285,10 @@ export function SpotScenario({
         Manual Spot scenario
       </h4>
       <p className="market-scan-fit">
-        Your own hypothetical arithmetic for {symbol} on Binance Spot. Popup reads no balance or
-        quote and places no orders. The scenario is never saved; choosing another asset or scan
-        clears it.
+        Optional, and separate from reviewing the evidence above: a review is not a trading
+        decision. The scenario is your own hypothetical arithmetic for {symbol} on Binance Spot.
+        Popup reads no balance or quote and places no orders. The scenario is never saved; choosing
+        another asset or scan clears it.
       </p>
       <details className="scan-guide-details">
         <summary>Plan a hypothetical scenario</summary>
@@ -352,7 +353,7 @@ export function SpotScenario({
         className="scan-guide-details"
         onToggle={(event) => setRecording(event.currentTarget.open)}
       >
-        <summary>Record experiment</summary>
+        <summary>Record experiment (saves to Account)</summary>
         {/* Mounted only while open: nothing asks the database anything until the owner looks. */}
         {recording && (
           <RecordSpotExperiment

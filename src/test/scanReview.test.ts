@@ -11,7 +11,7 @@ import {
 } from '@/lib/canonicalModel';
 import { evaluateScan, type ScanAssetResult, type ScanInput } from '@/lib/marketScanner';
 import {
-  candidateNotes,
+  candidateStatus,
   cohortFreshness,
   explainResult,
   matchesFilters,
@@ -544,10 +544,10 @@ describe('shortlist (candidates to review first)', () => {
   });
 });
 
-describe('candidateNotes', () => {
-  const notes = (inputs: FactorInputs, score?: number) => {
+describe('candidateStatus', () => {
+  const status = (inputs: FactorInputs, score?: number) => {
     const { model: m, setups } = recorded(inputs, score);
-    return { m, ...candidateNotes(explainResult(m, setups)) };
+    return { m, ...candidateStatus(explainResult(m, setups)) };
   };
   const largestTerm = (m: CanonicalScore) => {
     const c = m.components;
@@ -559,38 +559,50 @@ describe('candidateNotes', () => {
     return [...terms].sort((a, b) => b[1] - a[1])[0]![0];
   };
 
-  it('names the largest term of the recorded blend with its reading', () => {
+  it('lists every term of the recorded blend with its reading, largest first', () => {
     for (const inputs of Object.values(READINGS)) {
-      const { m, largest } = notes(inputs);
-      expect(largest.startsWith(`${largestTerm(m)} (`)).toBe(true);
-      expect(largest).toMatch(/\): \d+ × \d+%$/);
+      const { m, terms } = status(inputs);
+      expect(terms).toHaveLength(3);
+      expect(terms[0]!.startsWith(`${largestTerm(m)} (`)).toBe(true);
+      for (const term of terms) expect(term).toMatch(/\): \d+ × \d+%$/);
     }
     // The term, not the component: volatility scores 90 here but carries 20%.
-    expect(notes(READINGS.neither).largest).toBe('Momentum (MACD hist +0.20% of price): 60 × 40%');
-  });
-
-  it('puts a high-volatility Risk and the Long shortfall against a candidate without Long', () => {
-    expect(notes(READINGS.highVolatilityOnly).against).toBe(
-      'ZC RISK holds: High volatility (ATR 5.00%). Short of ZC LONG: Score 43, needs ≥ 78',
+    expect(status(READINGS.neither).terms[0]).toBe(
+      'Momentum (MACD hist +0.20% of price): 60 × 40%',
     );
   });
 
-  it('names both Risk clauses when both hold', () => {
-    expect(notes(READINGS.both).against).toMatch(
-      /^ZC RISK holds: High volatility \(ATR 6\.00%\), Low score \(Score 4\)\. Short of ZC LONG: Score 4, needs ≥ 78; MACD momentum -1\.00%, needs ≥ \+0\.05% of price$/,
-    );
+  it('states Long with both of its exact thresholds and the recorded values', () => {
+    expect(status(READINGS.neither).long).toEqual({
+      holds: false,
+      label: 'Long conditions not met',
+      detail:
+        'needs Score ≥ 78 and MACD momentum ≥ +0.05% of price; recorded Score 64, MACD momentum +0.20%',
+    });
+    const { m, long } = status({ ...calm, momentumPercent: 0.002 }, 80);
+    expect(modelSetups(m).long).toBe(true);
+    expect(long.label).toBe('Long conditions met');
+    expect(long.detail).toMatch(/^needs Score ≥ 78 and MACD momentum ≥ \+0\.05% of price; /);
   });
 
-  it('keeps a Risk clause beside a Long setup, and names no Long shortfall', () => {
-    expect(notes(READINGS.longAndHighVolatility).against).toBe(
-      'ZC RISK holds: High volatility (ATR 4.03%)',
-    );
+  it('says "No model Risk flag" with the Risk thresholds when none holds', () => {
+    expect(status(READINGS.neither).risk).toEqual({
+      holds: false,
+      label: 'No model Risk flag',
+      detail: 'flagged at ATR ≥ 4.00% of price or Score ≤ 28; recorded ATR 1.00%, Score 64',
+    });
   });
 
-  it('falls back to the smallest term only for a Long setup with no Risk warning', () => {
-    const { m, against } = notes({ ...calm, momentumPercent: 0.002 }, 80);
-    expect(modelSetups(m)).toEqual({ long: true, risk: false });
-    expect(against).toMatch(/^Smallest term (Mean Reversion|Momentum|Volatility Regime) \(/);
-    expect(notes(READINGS.neither).against).toBe('Short of ZC LONG: Score 64, needs ≥ 78');
+  it('names the clause that holds a model Risk flag, beside Long or not', () => {
+    expect(status(READINGS.highVolatilityOnly).risk.label).toBe('Model Risk flag: high volatility');
+    expect(status(READINGS.highVolatilityOnly).long.label).toBe('Long conditions not met');
+    expect(status(READINGS.both).risk).toEqual({
+      holds: true,
+      label: 'Model Risk flag: high volatility and low score',
+      detail: 'flagged at ATR ≥ 4.00% of price or Score ≤ 28; recorded ATR 6.00%, Score 4',
+    });
+    const both = status(READINGS.longAndHighVolatility);
+    expect(both.long.holds).toBe(true);
+    expect(both.risk.label).toBe('Model Risk flag: high volatility');
   });
 });

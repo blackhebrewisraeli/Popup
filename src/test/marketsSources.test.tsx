@@ -223,7 +223,7 @@ describe('Markets source: market data or the local TradingView import', () => {
       const reason = row.querySelector('.scan-row-reason')?.textContent;
       if (result.setups!.risk)
         expect(reason).toMatch(/^(Low score: Score \d+ ≤ 28|High volatility: ATR )/);
-      else expect(reason).toMatch(/^Short of ZC LONG: /);
+      else expect(reason).toMatch(/^Long conditions not met: /);
       expect(row.querySelector('.is-long') !== null).toBe(result.setups!.long);
       expect(row.querySelector('.is-risk') !== null).toBe(result.setups!.risk);
       if (!result.setups!.long && !result.setups!.risk) expect(row).toHaveTextContent('No setup');

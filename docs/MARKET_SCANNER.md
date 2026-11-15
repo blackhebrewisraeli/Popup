@@ -134,7 +134,19 @@ filters, selection and comparison. The scan offers no order, broker or paper-tra
 stay in the directory and on the Paper Desk.
 
 Each scan (the live Market scan and the TradingView development scan) heads with its source,
-timeframe, data as of (with freshness and any cache age) and coverage, stated once for the scan. A
+timeframe, data as of (with freshness and any cache age) and coverage, stated once for the scan.
+Above those facts, a **What this view shows** note says which scan it is, so the two can never be
+mistaken for each other:
+
+- **Live browser check** (or **Sample preview check**): not saved, no scan ID; its candle source,
+  data as of, evaluated scope and when this browser computed it. Under `vite dev` it adds that
+  saved TradingView scans are under **Dev source: TradingView import**.
+- **Saved TradingView scan** with its scan ID (or "scan ID not recorded"): its candle source, data
+  as of, evaluated scope and retrieval window (or "retrieval time not recorded"). It says the file
+  does not refresh and that study eligibility is checked separately: being saved does not make a
+  scan part of any study.
+
+The note is display only. It changes no default source, selection or stored state. A
 cohort repeats its own status and data time only when a scan has more than one; the coverage
 breakdown by class appears only then too. The results come in three views: **Long setups** (ZC LONG
 holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every evaluated asset by rank; most meet
@@ -197,17 +209,28 @@ Selection contract (`shortlist` in `src/lib/scanReview.ts`):
 - **Nothing new:** no score, threshold, weight, composite, allocation or recommendation is
   computed. The owner's budget plays no part.
 
+The first ranked class offers one primary **Start review: #1 TICKER** button. It opens the existing
+evidence for the highest-ranked candidate, exactly as that candidate's **Open evidence** does, and
+says that reviewing evidence is not a decision to buy and a rank is not a buy recommendation. A
+short key above the list explains rank, score, Long conditions (score ≥ 78 and MACD momentum
+≥ +0.05% of price, from `LONG_SETUP_MIN_SCORE` and `FLAT_MOMENTUM`) and the model Risk flag (ATR
+≥ 4.00% of price or score ≤ 28) with the model's own constants.
+
 Each candidate shows its exact instrument (the TradingView symbol requested and confirmed by the
-response, otherwise the recorded instrument), rank of the evaluated count, score, setup tags with
-named Risk clauses, and two lines from its recorded values only:
+response, otherwise the recorded instrument) and four plain lines from its recorded values only
+(`candidateStatus`):
 
-- **Largest term:** the factor with the largest weight × component score in the recorded blend,
-  with its reading.
-- **Against:** each Risk clause that holds and each ZC LONG clause not met, with the recorded
-  value; for a Long setup with no Risk warning, the factor with the smallest term.
+- **Rank:** its rank of the evaluated count.
+- **Score:** its score of 100.
+- **Long:** **Long conditions met** or **Long conditions not met**, with every ZC LONG clause's
+  threshold and recorded value.
+- **Model Risk:** **No model Risk flag** or **Model Risk flag:** with each clause that holds, and
+  every ZC RISK clause's threshold and recorded value.
 
-**Open evidence** selects the asset as a ranked row does: the existing evidence opens beside the
-list or in the sheet, and for an evaluated TradingView crypto pair that evidence ends with the
+**Score contributions**, a native disclosure, holds each factor's component score × weight in the
+recorded blend, largest first. **Open evidence** selects the asset as a ranked row does: the
+existing evidence opens beside the list or in the sheet, and for an evaluated TradingView crypto
+pair that evidence ends with the
 [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) under its current rules,
 with empty inputs.
 
@@ -220,7 +243,8 @@ Scan state comes from the existing rules:
   presented as a current shortlist.
 - **Nothing evaluated:** no list; it says no asset of the class was evaluated.
 - **Incomplete:** it says how many members were not evaluated and that they cannot appear.
-- **No Long:** when no candidate holds ZC LONG it says so, and whether a lower-ranked asset does.
+- **No Long:** when no candidate meets the Long conditions it says so, and whether a lower-ranked
+  asset does.
 - **Switching** scan, universe or source starts the review over, so candidates, evidence and any
   scenario come from the scan shown only. A Market data rescan recomputes the list from the new
   scan.
