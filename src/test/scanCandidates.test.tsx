@@ -561,3 +561,170 @@ describe('Candidates to review first', () => {
     });
   });
 });
+
+describe('Evidence: an open summary, then closed sections', () => {
+  const SECTIONS = [
+    'Model conditions',
+    'Indicators and score calculation',
+    'Score contributions relative to the Long threshold',
+    'Data provenance and limitations',
+  ];
+  const row = (ticker: string) =>
+    screen.getByRole('button', { name: new RegExp(`^${ticker}, rank`) });
+  const evidenceOf = (ticker: string) => screen.getByRole('region', { name: `${ticker} evidence` });
+  /** The evidence review alone: the summary and its sections, not the optional scenario. */
+  const reviewOf = (evidence: HTMLElement) =>
+    evidence.querySelector<HTMLElement>('.scan-evidence-review')!;
+  const section = (evidence: HTMLElement, title: string) =>
+    within(evidence).getByText(title, { selector: 'summary' }).parentElement as HTMLDetailsElement;
+  const fact = (scope: HTMLElement, name: string) =>
+    within(scope).getByText(name, { selector: 'dt' }).nextElementSibling?.textContent;
+  const count = (text: string, phrase: string) => text.split(phrase).length - 1;
+
+  it('summarizes the asset in the open and keeps the full evidence in four closed sections', () => {
+    wideScreen();
+    const { scan } = renderScan(MIXED);
+    fireEvent.click(row('DROP-USDT'));
+    const evidence = evidenceOf('DROP-USDT');
+    const drop = scan.results.find((result) => result.ticker === 'DROP-USDT')!;
+    const summary = within(evidence).getByRole('region', { name: 'Summary' });
+    expect(summary.closest('details')).toBeNull();
+    expect(fact(summary, 'Instrument')).toBe('BINANCE:DROPUSDT');
+    expect(fact(summary, 'Last evaluated')).toBe('27 Oct candle (UTC)');
+    expect(fact(summary, 'Rank')).toBe(`${drop.rank} of 7 evaluated`);
+    expect(fact(summary, 'Score')).toBe(`${drop.model!.signal_score} of 100`);
+    expect(fact(summary, 'Long')).toMatch(/^Long conditions not met \(needs Score ≥ 78 and /);
+    expect(fact(summary, 'Model Risk')).toMatch(/^Model Risk flag: high volatility \(flagged at /);
+    expect(fact(summary, 'Main reasons')).toContain(drop.model!.rationale);
+    expect(fact(summary, 'Main reasons')).toContain(
+      'momentum is MACD’s direction; the High-volatility regime is a classification that selects the factor weights, not a direction',
+    );
+
+    const sections = [...evidence.querySelectorAll('details.scan-evidence-section')];
+    expect(
+      sections.map((details) => details.querySelector(':scope > summary')?.textContent),
+    ).toEqual(SECTIONS);
+    expect(sections.every((details) => !(details as HTMLDetailsElement).open)).toBe(true);
+    // A native disclosure: its summary opens and closes it.
+    const conditions = section(evidence, 'Model conditions');
+    fireEvent.click(within(conditions).getByText('Model conditions'));
+    expect(conditions.open).toBe(true);
+    fireEvent.click(within(conditions).getByText('Model conditions'));
+    expect(conditions.open).toBe(false);
+  });
+
+  it('gives each fact one place and says what “supports” refers to', () => {
+    wideScreen();
+    const { scan } = renderScan(MIXED);
+    fireEvent.click(row('DROP-USDT'));
+    const evidence = evidenceOf('DROP-USDT');
+    const review = reviewOf(evidence);
+    const drop = scan.results.find((result) => result.ticker === 'DROP-USDT')!;
+    for (const name of ['Instrument', 'Last evaluated', 'Window', 'Fetched']) {
+      expect(within(review).getAllByText(name, { selector: 'dt' })).toHaveLength(1);
+    }
+    const text = review.textContent ?? '';
+    expect(count(text, 'No TradingView alert existed on BINANCE:DROPUSDT when checked')).toBe(1);
+    expect(count(text, 'Pine alerts only on the bar a condition turns true')).toBe(1);
+
+    // ZC RISK held by the regime alone: said under Model conditions, not as factor points.
+    const conditions = section(evidence, 'Model conditions');
+    expect(conditions).toHaveTextContent(
+      'sets the High-volatility regime, which holds ZC RISK on its own',
+    );
+    expect(conditions).toHaveTextContent('Toward the model Risk flag');
+    expect(conditions).toHaveTextContent('Toward and away refer only to ZC RISK’s clauses.');
+
+    // The contributions are always against 78, and say what supports and weakens mean.
+    const contributions = section(evidence, 'Score contributions relative to the Long threshold');
+    const m = drop.model!.components;
+    const margin =
+      m.weights.rsi * m.rsiScore +
+      m.weights.momentum * m.momentumScore +
+      m.weights.volatility * m.volatilityScore -
+      78;
+    expect(contributions).toHaveTextContent(
+      `Together they come to −${Math.abs(margin).toFixed(1)}, the unrounded score’s margin from 78.`,
+    );
+    expect(within(contributions).getByText('Weakens: component below 78')).toBeInTheDocument();
+    const lines = [...contributions.querySelectorAll('li')].map((item) => item.textContent);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) expect(line).toMatch(/pts vs 78$/);
+    expect(contributions).toHaveTextContent(
+      '“Supports” and “weakens” describe only this arithmetic: whether a factor lifts the blended score toward 78 or holds it below. They say nothing about price direction, a trade or a forecast.',
+    );
+    expect(contributions).toHaveTextContent(
+      'ZC LONG’s other clause, MACD momentum ≥ +0.05% of price, is under Model conditions.',
+    );
+  });
+
+  it('keeps regime apart from momentum and profile rules apart from suitability', () => {
+    wideScreen();
+    renderScan(MIXED);
+    fireEvent.click(row('CALM-USDT'));
+    const indicators = section(evidenceOf('CALM-USDT'), 'Indicators and score calculation');
+    expect(fact(indicators, 'MACD hist / price')).toMatch(
+      /^[+-]\d\.\d\d% · (Bullish|Bearish|Flat) momentum$/,
+    );
+    expect(fact(indicators, 'Regime (selects the weights)')).toMatch(/^\S+: ATR /);
+    expect(fact(indicators, 'Risk-profile rules')).toMatch(
+      /^Meets (the \S+( · \S+)* profile rules|no profile’s rules)$/,
+    );
+    expect(indicators).toHaveTextContent(
+      'Meeting them is not an assessment of whether the asset suits you.',
+    );
+    expect(indicators.textContent).not.toMatch(/\bFits\b/);
+    const filter = screen.getByRole('combobox', { name: /^Filter by risk-profile rules/ });
+    expect([...filter.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
+      'Any profile rules',
+      'Meets conservative rules',
+      'Meets moderate rules',
+      'Meets aggressive rules',
+      'Meets no profile’s rules',
+    ]);
+  });
+
+  it('keeps stale, incomplete and unconfirmed-symbol warnings in the open summary', () => {
+    vi.setSystemTime(NOW + 2 * DAY);
+    wideScreen();
+    // Labeled synthetic: an import without TradingView's confirmation of the symbol.
+    renderScan([
+      ...MIXED,
+      { ticker: 'OLD-USDT', instrument: 'BINANCE:OLDUSDT', candles: PAIRS.CALM.candles ?? [] },
+    ]);
+    fireEvent.click(row('OLD-USDT'));
+    const evidence = evidenceOf('OLD-USDT');
+    const summary = within(evidence).getByRole('region', { name: 'Summary' });
+    const warnings = [...summary.querySelectorAll('.scan-evidence-warnings > li')];
+    expect(warnings.map((item) => item.textContent)).toEqual([
+      expect.stringMatching(
+        /^Historical Stale: latest candle closed \d+h \d\dm ago; a newer UTC day has closed, and this scan does not refresh\.$/,
+      ),
+      'This scan is incomplete: the rank is among 8 evaluated, not all 9 supported.',
+      'TradingView symbol: Not recorded in this scan’s evidence. The view lists BINANCE:OLDUSDT, unverified.',
+    ]);
+    // Each warning has one place in the review: the limitations no longer repeat them.
+    const text = reviewOf(evidence).textContent ?? '';
+    expect(count(text, 'a newer UTC day has closed')).toBe(1);
+    expect(count(text, 'This scan is incomplete')).toBe(1);
+  });
+
+  it('puts the optional scenario after the review, outside every evidence section', () => {
+    wideScreen();
+    renderScan(MIXED);
+    fireEvent.click(row('LONG-USDT'));
+    const evidence = evidenceOf('LONG-USDT');
+    const review = reviewOf(evidence);
+    const scenario = within(evidence).getByRole('region', { name: 'Manual Spot scenario' });
+    expect(review.contains(scenario)).toBe(false);
+    expect(scenario.parentElement?.closest('details')).toBeNull();
+    expect(
+      review.compareDocumentPosition(scenario) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(scenario).toHaveTextContent('Optional, and separate from reviewing the evidence above');
+    // Its two disclosures stay as they were: planning, then the explicit save.
+    expect([...scenario.querySelectorAll('summary')].map((summary) => summary.textContent)).toEqual(
+      ['Plan a hypothetical scenario', 'Record experiment (saves to Account)'],
+    );
+  });
+});

@@ -6,6 +6,7 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
@@ -16,6 +17,7 @@ import { SpotScenario } from '@/components/SpotScenario';
 import {
   FLAT_MOMENTUM,
   LONG_SETUP_MIN_SCORE,
+  momentumBias,
   REGIME_HIGH_VOLATILITY,
   REGIME_LABELS,
   RISK_SETUP_MAX_SCORE,
@@ -36,6 +38,7 @@ import {
   dataAsOfLabel,
   explainResult,
   filtersActive,
+  longContributions,
   matchesFilters,
   NO_FILTERS,
   percent,
@@ -110,11 +113,17 @@ function SetupTags({ result }: Readonly<{ result: ScanAssetResult }>) {
   );
 }
 
+/**
+ * Which portfolio-builder profiles' technical rules (score, regime, momentum) the recorded
+ * reading meets. A rule match, never a judgment that the asset suits anyone.
+ */
 function profileFit(result: ScanAssetResult): string {
   const profiles = Object.entries(result.riskProfiles ?? {})
     .filter(([, fits]) => fits)
     .map(([profile]) => profile);
-  return profiles.length > 0 ? `Fits ${profiles.join(' · ')} profile` : 'Fits no risk profile';
+  return profiles.length > 0
+    ? `Meets the ${profiles.join(' · ')} profile rules`
+    : 'Meets no profile’s rules';
 }
 
 /** Rank, score, setup and Pine alert are four different things; say so once, above the results. */
@@ -334,7 +343,7 @@ function Comparison({
         return `${factor.reading(model.inputs)} → ${score} × ${weight}%`;
       }),
     ),
-    field('Risk profiles', ({ result }) => profileFit(result)),
+    field('Risk-profile rules', ({ result }) => profileFit(result)),
     field('Last evaluated', ({ result }) => resultAsOfLabel(result)),
     field('Window', ({ result }) => `${result.closedCandles} closed`),
     field('Fetched', ({ result }) => fetchedLabel(result, scan)),
@@ -853,46 +862,103 @@ export function ClauseList({ check }: Readonly<{ check: SetupCheck }>) {
   );
 }
 
-function FactorEffects({ explanation }: Readonly<{ explanation: ScanExplanation }>) {
-  const name = explanation.focus === 'long' ? 'ZC LONG' : 'ZC RISK';
-  const comparator = explanation.focus === 'long' ? '≥' : '≤';
-  const margin = Number(explanation.margin.toFixed(1)) || 0;
+/** "+12.3" or "−4.0": a margin to one decimal, never "-0.0". */
+function signedMargin(margin: number): string {
+  const value = Number(margin.toFixed(1)) || 0;
+  return `${value >= 0 ? '+' : '−'}${Math.abs(value).toFixed(1)}`;
+}
+
+/** Two titled lists side by side: what moves toward a threshold and what moves away. */
+function Effects({
+  toward,
+  away,
+}: Readonly<{
+  toward: { title: string; lines: readonly string[]; empty: string };
+  away: { title: string; lines: readonly string[]; empty: string };
+}>) {
   return (
-    <>
+    <div className="scan-effects">
+      {[toward, away].map(({ title, lines, empty }) => (
+        <div key={title}>
+          <h5 className="scan-effects-title">{title}</h5>
+          {lines.length > 0 ? (
+            <ul className="market-scan-notes">
+              {lines.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="market-scan-empty">{empty}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What holds or does not hold ZC RISK when it is the setup the explanation weighs: the
+ * high-volatility regime by itself, or each factor's points against score ≤ 28.
+ */
+function RiskEffects({ explanation }: Readonly<{ explanation: ScanExplanation }>) {
+  return (
+    <div className="scan-check-effects">
       {explanation.weighed && (
         <p className="market-scan-fit">
-          Weighed against {name}&rsquo;s score {comparator} {explanation.threshold}. Each
-          factor&rsquo;s points are its weight × its distance from {explanation.threshold}; together
-          they come to {margin >= 0 ? '+' : '−'}
-          {Math.abs(margin).toFixed(1)}, the unrounded score&rsquo;s margin.
+          Weighed against ZC RISK&rsquo;s score ≤ {explanation.threshold}. Each factor&rsquo;s
+          points are its weight × its distance from {explanation.threshold}; together they come to{' '}
+          {signedMargin(explanation.margin)}, the unrounded score&rsquo;s margin.
         </p>
       )}
-      <div className="scan-effects">
-        <div>
-          <h5 className="scan-effects-title">Supports</h5>
-          {explanation.supports.length > 0 ? (
-            <ul className="market-scan-notes">
-              {explanation.supports.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="market-scan-empty">Nothing recorded supports it.</p>
-          )}
-        </div>
-        <div>
-          <h5 className="scan-effects-title">Weakens</h5>
-          {explanation.weakens.length > 0 ? (
-            <ul className="market-scan-notes">
-              {explanation.weakens.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="market-scan-empty">Nothing recorded weakens it.</p>
-          )}
-        </div>
-      </div>
+      <Effects
+        toward={{
+          title: 'Toward the model Risk flag',
+          lines: explanation.supports,
+          empty: 'Nothing recorded moves toward it.',
+        }}
+        away={{
+          title: 'Away from it',
+          lines: explanation.weakens,
+          empty: 'Nothing recorded moves away from it.',
+        }}
+      />
+      <p className="market-scan-fit">
+        Toward and away refer only to ZC RISK&rsquo;s clauses. The flag describes recorded readings;
+        it is not a sell signal or a forecast.
+      </p>
+    </div>
+  );
+}
+
+/** Each factor's points against ZC LONG's score threshold, and what "supports" means here. */
+function LongContributions({ explanation }: Readonly<{ explanation: ScanExplanation }>) {
+  const { margin, supports, weakens } = longContributions(explanation);
+  const gate = explanation.long.clauses[1];
+  return (
+    <>
+      <p className="market-scan-fit">
+        Each factor&rsquo;s points are its weight × (its component score − {LONG_SETUP_MIN_SCORE}),
+        where {LONG_SETUP_MIN_SCORE} is ZC LONG&rsquo;s score threshold. Together they come to{' '}
+        {signedMargin(margin)}, the unrounded score&rsquo;s margin from {LONG_SETUP_MIN_SCORE}.
+      </p>
+      <Effects
+        toward={{
+          title: `Supports: component above ${LONG_SETUP_MIN_SCORE}`,
+          lines: supports,
+          empty: `No component is above ${LONG_SETUP_MIN_SCORE}.`,
+        }}
+        away={{
+          title: `Weakens: component below ${LONG_SETUP_MIN_SCORE}`,
+          lines: weakens,
+          empty: `No component is below ${LONG_SETUP_MIN_SCORE}.`,
+        }}
+      />
+      <p className="market-scan-fit">
+        &ldquo;Supports&rdquo; and &ldquo;weakens&rdquo; describe only this arithmetic: whether a
+        factor lifts the blended score toward {LONG_SETUP_MIN_SCORE} or holds it below. They say
+        nothing about price direction, a trade or a forecast.
+        {gate && ` ZC LONG’s other clause, ${gate.label} ${gate.rule}, is under Model conditions.`}
+      </p>
     </>
   );
 }
@@ -925,16 +991,32 @@ function limitations(
   items.push(
     `The score rests on the last ${result.closedCandles} closed ${equity ? 'sessions' : 'daily candles'}; the Pine HUD sees 200 bars at a close, so its readings can differ.`,
     'No liquidity filter is applied.',
+    pineAlertNote(source, result.ticker),
   );
+  return items;
+}
+
+/**
+ * The warnings a reader must not miss, kept in the open summary rather than a closed section:
+ * stale data, an incomplete scan and a TradingView symbol the evidence did not confirm.
+ */
+function warnings(
+  result: ScanAssetResult,
+  cohort: ScanCohort,
+  scan: MarketScan,
+  source: TradingViewDevSource | undefined,
+): { stale: string | null; others: string[] } {
+  const freshness = cohortFreshness(cohort, Date.now());
+  const others: string[] = [];
   if (scan.status !== 'COMPLETE' || cohort.status !== 'COMPLETE') {
-    items.push(
+    others.push(
       `This scan is incomplete: the rank is among ${cohort.coverage.evaluated} evaluated, not all ${cohort.coverage.supported} supported.`,
     );
   }
-  const freshness = cohortFreshness(cohort, Date.now());
-  if (freshness?.stale) items.push(`${freshness.detail}.`);
-  items.push(pineAlertNote(source, result.ticker));
-  return items;
+  if (source && !exactSymbol(result)) {
+    others.push(`TradingView symbol: ${symbolEvidence(result, source)}`);
+  }
+  return { stale: freshness?.stale ? `${freshness.detail}.` : null, others };
 }
 
 /** One evaluated asset and where it sits in its cohort. */
@@ -961,13 +1043,114 @@ function EvidenceTitle({
   );
 }
 
+/** One part of the full evidence, closed until the reader opens it. */
+function EvidenceSection({ title, children }: Readonly<{ title: string; children: ReactNode }>) {
+  return (
+    <details className="scan-guide-details scan-evidence-section">
+      <summary>{title}</summary>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * What a reader needs before opening anything: the asset, its evaluated day, rank and
+ * score, its Long and model Risk status, the model's own reading, and every warning about
+ * stale data, an incomplete scan or an unconfirmed symbol. Always open.
+ */
+function EvidenceSummary({
+  selection: { result, model, cohort },
+  explanation,
+  scan,
+  source,
+  titleId,
+}: Readonly<{
+  selection: Selection;
+  explanation: ScanExplanation;
+  scan: MarketScan;
+  source: TradingViewDevSource | undefined;
+  titleId: string;
+}>) {
+  const { long, risk } = candidateStatus(explanation);
+  const { stale, others } = warnings(result, cohort, scan, source);
+  const status = (line: typeof long, tone: string) => (
+    <>
+      <span className={cn('scan-candidate-state', line.holds && tone)}>{line.label}</span>{' '}
+      <span className="scan-candidate-detail">({line.detail})</span>
+    </>
+  );
+  return (
+    <section aria-labelledby={`${titleId}-summary`} className="scan-evidence-summary">
+      <div className="scan-evidence-summary-head">
+        <h4 id={`${titleId}-summary`} className="quant-breakdown-title">
+          Summary
+        </h4>
+        {source && <span className="market-scan-status market-scan-dev">Historical import</span>}
+      </div>
+      {(stale || others.length > 0) && (
+        <ul className="scan-evidence-warnings">
+          {stale && (
+            <li>
+              <span className="market-scan-status market-scan-partial">Historical</span>{' '}
+              <span className="scan-stale">{stale}</span>
+            </li>
+          )}
+          {others.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+      <dl className="scan-candidate-status">
+        <div>
+          <dt>Instrument</dt>
+          <dd>{result.instrument ?? 'Not recorded'}</dd>
+        </div>
+        <div>
+          <dt>Last evaluated</dt>
+          <dd>{resultAsOfLabel(result)}</dd>
+        </div>
+        <div>
+          <dt>Rank</dt>
+          <dd>
+            {result.rank} of {cohort.coverage.evaluated} evaluated
+          </dd>
+        </div>
+        <div>
+          <dt>Score</dt>
+          <dd>{model.signal_score} of 100</dd>
+        </div>
+        <div>
+          <dt>Long</dt>
+          <dd>{status(long, 'is-long')}</dd>
+        </div>
+        <div>
+          <dt>Model Risk</dt>
+          <dd>{status(risk, 'is-risk')}</dd>
+        </div>
+        <div>
+          <dt>Main reasons</dt>
+          <dd>
+            <span className="quant-rationale">{model.rationale}</span>{' '}
+            <span className="scan-candidate-detail">
+              (momentum is MACD&rsquo;s direction; the {REGIME_LABELS[model.regime]} regime is a
+              classification that selects the factor weights, not a direction)
+            </span>
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 /**
  * One evaluated asset, explained from its recorded values only. Nothing here is an
- * action. `scanFacts` repeats the scan's source, model and time for the sheet, which
- * covers the scan header; beside the list the header already shows them.
+ * action. The summary stays open; each full section is closed until opened, and every
+ * fact has one place. `scanFacts` repeats the scan's source, model and time for the sheet,
+ * which covers the scan header; beside the list the header already shows them. The
+ * optional Manual Spot scenario comes after the evidence, apart from it.
  */
 function Evidence({
-  selection: { result, model, setups, cohort },
+  selection,
   scan,
   scanId,
   source,
@@ -981,6 +1164,7 @@ function Evidence({
   saved: TradingViewSavedScan | undefined;
   scanFacts: boolean;
 }>) {
+  const { result, model, setups, cohort } = selection;
   const titleId = useId();
   const explanation = explainResult(model, setups);
   const raw = model.components.weights;
@@ -994,12 +1178,10 @@ function Evidence({
       'Source',
       PROVIDER_LABEL[cohort.provider ?? ''] ?? cohort.provider ?? 'Not recorded',
     ]),
-    ['Instrument', result.instrument ?? 'Not recorded'],
     ...(source ? [['TradingView symbol', symbolEvidence(result, source)] as [string, string]] : []),
     ...scanRow(['Timeframe', `${scan.timeframe.toUpperCase()} · ${cohort.calendar}`]),
     ...scanRow(['Model', `${model.version} · scanner ${scan.scannerVersion}`]),
     ...scanRow(['Candle policy', cohort.candlePolicyVersion ?? 'Not recorded']),
-    ['Last evaluated', resultAsOfLabel(result)],
     [
       'Window',
       `${result.closedCandles} closed ${cohort.assetClass === 'equity' ? 'sessions' : 'candles'}`,
@@ -1010,99 +1192,84 @@ function Evidence({
 
   return (
     <div className="scan-explain-body">
-      <div className="quant-insight-summary">
-        <span className="quant-breakdown-score" title="Signal Score (0–100)">
-          {model.signal_score}
-        </span>
-        <span className="regime-badge" data-regime={model.regime}>
-          {REGIME_LABELS[model.regime]}
-        </span>
-        <SetupTags result={result} />
-        {!result.setups?.long && !result.setups?.risk && (
-          <span className="market-scan-tag">No setup</span>
-        )}
-        {source && <span className="market-scan-status market-scan-dev">Historical import</span>}
-      </div>
-      <p className="quant-rationale">{model.rationale}</p>
+      <div className="scan-evidence-review">
+        <EvidenceSummary
+          selection={selection}
+          explanation={explanation}
+          scan={scan}
+          source={source}
+          titleId={titleId}
+        />
 
-      <section aria-labelledby={`${titleId}-setups`}>
-        <h4 id={`${titleId}-setups`} className="quant-breakdown-title">
-          Setup conditions on the last closed bar
-        </h4>
-        <ClauseList check={explanation.long} />
-        <ClauseList check={explanation.risk} />
-        <p className="market-scan-fit">
-          A standing condition, not a transition: Pine alerts only on the bar a condition turns
-          true. {pineAlertNote(source, result.ticker)}
-        </p>
-      </section>
+        <EvidenceSection title="Model conditions">
+          <ClauseList check={explanation.long} />
+          <ClauseList check={explanation.risk} />
+          {explanation.focus === 'risk' && <RiskEffects explanation={explanation} />}
+          <p className="market-scan-fit">
+            Each is a standing condition on the last closed bar, not a transition: Pine alerts only
+            on the bar a condition turns true.
+          </p>
+        </EvidenceSection>
 
-      <section aria-labelledby={`${titleId}-readings`}>
-        <h4 id={`${titleId}-readings`} className="quant-breakdown-title">
-          Readings and factor scores
-        </h4>
-        <dl className="scan-facts">
-          <div>
-            <dt>RSI(14)</dt>
-            <dd>{model.inputs.rsi.toFixed(1)}</dd>
-          </div>
-          <div>
-            <dt>MACD hist / price</dt>
-            <dd>{percent(model.inputs.momentumPercent)}</dd>
-          </div>
-          <div>
-            <dt>ATR(14) / price</dt>
-            <dd>{ratio(model.inputs.volatilityPercent)}</dd>
-          </div>
-          <div>
-            <dt>Regime</dt>
-            <dd>
-              {REGIME_LABELS[model.regime]}: {explanation.regimeRule}
-            </dd>
-          </div>
-          <div>
-            <dt>Risk profiles</dt>
-            <dd>{profileFit(result)}</dd>
-          </div>
-        </dl>
-        <FactorBars model={model} />
-        <p className="market-scan-fit">
-          Score {model.signal_score} is the weighted blend {unrounded.toFixed(1)}, rounded. Weights
-          are the {REGIME_LABELS[model.regime].toLowerCase()} regime&rsquo;s.
-        </p>
-      </section>
-
-      <section aria-labelledby={`${titleId}-effects`}>
-        <h4 id={`${titleId}-effects`} className="quant-breakdown-title">
-          What supports and weakens it
-        </h4>
-        <FactorEffects explanation={explanation} />
-      </section>
-
-      <section aria-labelledby={`${titleId}-source`}>
-        <h4 id={`${titleId}-source`} className="quant-breakdown-title">
-          {scanFacts ? 'Source and freshness' : 'This asset’s data'}
-        </h4>
-        <dl className="scan-facts">
-          {sourceRows.map(([name, value]) => (
-            <div key={name}>
-              <dt>{name}</dt>
-              <dd>{value}</dd>
+        <EvidenceSection title="Indicators and score calculation">
+          <dl className="scan-facts">
+            <div>
+              <dt>RSI(14)</dt>
+              <dd>{model.inputs.rsi.toFixed(1)}</dd>
             </div>
-          ))}
-        </dl>
-      </section>
+            <div>
+              <dt>MACD hist / price</dt>
+              <dd>
+                {percent(model.inputs.momentumPercent)} ·{' '}
+                {momentumBias(model.inputs.momentumPercent)} momentum
+              </dd>
+            </div>
+            <div>
+              <dt>ATR(14) / price</dt>
+              <dd>{ratio(model.inputs.volatilityPercent)}</dd>
+            </div>
+            <div>
+              <dt>Regime (selects the weights)</dt>
+              <dd>
+                {REGIME_LABELS[model.regime]}: {explanation.regimeRule}
+              </dd>
+            </div>
+            <div>
+              <dt>Risk-profile rules</dt>
+              <dd>{profileFit(result)}</dd>
+            </div>
+          </dl>
+          <FactorBars model={model} />
+          <p className="market-scan-fit">
+            Score {model.signal_score} is the weighted blend {unrounded.toFixed(1)}, rounded.
+            Weights are the {REGIME_LABELS[model.regime].toLowerCase()} regime&rsquo;s.
+          </p>
+          <p className="market-scan-fit">
+            Risk-profile rules are the portfolio builder&rsquo;s technical thresholds on score,
+            regime and momentum. Meeting them is not an assessment of whether the asset suits you.
+          </p>
+        </EvidenceSection>
 
-      <section aria-labelledby={`${titleId}-limits`}>
-        <h4 id={`${titleId}-limits`} className="quant-breakdown-title">
-          Limitations
-        </h4>
-        <ul className="market-scan-notes">
-          {limitations(result, cohort, scan, source).map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-      </section>
+        <EvidenceSection title="Score contributions relative to the Long threshold">
+          <LongContributions explanation={explanation} />
+        </EvidenceSection>
+
+        <EvidenceSection title="Data provenance and limitations">
+          <dl className="scan-facts">
+            {sourceRows.map(([name, value]) => (
+              <div key={name}>
+                <dt>{name}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <ul className="market-scan-notes">
+            {limitations(result, cohort, scan, source).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </EvidenceSection>
+      </div>
 
       {plansSpot(result, source) && (
         // Keyed by scan and asset: another selection starts from empty inputs, never these.
@@ -1256,8 +1423,9 @@ function EvidencePanel({
         </>
       ) : (
         <p className="scan-evidence-empty">
-          Select an asset to read its evidence: the setup conditions on its last closed bar, its
-          readings and factor weights, its data and its limitations. Up and Down move between rows.
+          Select an asset to read its evidence: a summary, then its model conditions, indicators and
+          score calculation, score contributions relative to the Long threshold, and data provenance
+          and limitations. Up and Down move between rows.
         </p>
       )}
     </section>
@@ -1416,17 +1584,17 @@ export function ScanReview({
           <select
             className="portfolio-cash-input"
             name="scan-profile"
-            aria-label="Filter by risk-profile fit"
+            aria-label="Filter by risk-profile rules (technical, not suitability)"
             value={filters.profile}
             onChange={(event) => set('profile', event.target.value as ScanFilters['profile'])}
           >
-            <option value="any">Any profile fit</option>
+            <option value="any">Any profile rules</option>
             {PROFILE_OPTIONS.map((profile) => (
               <option key={profile} value={profile}>
-                Fits {profile}
+                Meets {profile} rules
               </option>
             ))}
-            <option value="none">Fits no profile</option>
+            <option value="none">Meets no profile’s rules</option>
           </select>
           {filtersActive(filters) && (
             <button
