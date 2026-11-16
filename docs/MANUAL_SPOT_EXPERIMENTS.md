@@ -208,6 +208,9 @@ only when the owner presses **Confirm and record** after **Review record**.
 
 **Manual Spot experiments** sits inside Account's **Binance Spot** card, so only the owner the
 `binance-spot-account` function recognizes sees it. The database still decides what it shows.
+The workspace banner links to it at `/account#spot-experiments` for every sign-in. Once the card
+renders, the heading takes focus. Until then the card's place says the check is running, and for
+anyone else it says the section is not available.
 
 - **States.** Loading, empty, unavailable (the database names no owner, or another one), refused
   (permission denied), and failed. A failure never shows an empty list in its place.

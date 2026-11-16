@@ -309,7 +309,7 @@ function ProposalFooter({
         disabled={!plan || !!planError || busy}
         aria-busy={pending}
       >
-        {pending ? 'Booking orders…' : 'Simulate on Paper Desk'} <Rocket size={16} />
+        {pending ? 'Booking paper orders…' : 'Simulate on Paper Desk'} <Rocket size={16} />
       </button>
     </footer>
   );

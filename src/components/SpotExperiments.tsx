@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { CloseComposer, ExperimentEntries } from '@/components/ExperimentEntries';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
@@ -11,6 +11,7 @@ import {
   parseEvidence,
   RULE_NAME,
   ruleVersions,
+  SPOT_EXPERIMENTS_ANCHOR,
   type ExperimentEntry,
   type LinkedFill,
   type SpotExperimentRecord,
@@ -344,7 +345,23 @@ function failureText(error: Error): string {
  * The owner's Manual Spot experiments, read-only, inside the Binance Spot card. The database
  * decides access; a sign-in it does not name as the owner sees why, never an empty list.
  */
-export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
+export function SpotExperiments({
+  userId,
+  reveal = false,
+}: Readonly<{
+  userId: string;
+  /** The workspace link asked for this section: scroll to it and focus its heading. */
+  reveal?: boolean;
+}>) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // On mount too: the Binance card renders this section only after its owner check answers,
+  // well after the link was followed. Back/forward to the link reveals it again.
+  useEffect(() => {
+    const heading = headingRef.current;
+    if (!reveal || !heading) return;
+    heading.scrollIntoView({ block: 'start' });
+    heading.focus({ preventScroll: true });
+  }, [reveal]);
   const devAuth = isDevAuthUser(userId);
   const query = useQuery({
     queryKey: ['spot-experiments', userId],
@@ -387,13 +404,24 @@ export function SpotExperiments({ userId }: Readonly<{ userId: string }>) {
   }
 
   return (
-    <section aria-labelledby="spot-experiments-title" className="spot-experiments">
-      <h4 id="spot-experiments-title" className="portfolio-section-title">
+    <section
+      id={SPOT_EXPERIMENTS_ANCHOR}
+      aria-labelledby="spot-experiments-title"
+      className="spot-experiments"
+    >
+      <h4
+        id="spot-experiments-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className="portfolio-section-title"
+      >
         Manual Spot experiments
       </h4>
       <p className="spot-note">
-        Your recorded decisions and the scans they came from. Separate from the paper Signal Journal
-        and every Popup ledger: nothing here is a position, total or order status.
+        Your recorded decisions on real Spot trades you place yourself on Binance, and the scans
+        they came from. Recording or linking stores a record only; Popup places no order. Separate
+        from the paper Signal Journal and every Popup ledger: nothing here is a position, total or
+        order status.
       </p>
       {body}
     </section>
