@@ -25,6 +25,9 @@ import { supabase } from '@/lib/supabaseClient';
 import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { utcInputTime } from '@/lib/utils';
 
+/** Manual Spot experiments' id in Account: the workspace banner links to `/account#spot-experiments`. */
+export const SPOT_EXPERIMENTS_ANCHOR = 'spot-experiments';
+
 type Tables = Database['public']['Tables'];
 export type SpotExperimentInsert = Required<
   Pick<

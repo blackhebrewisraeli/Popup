@@ -1,4 +1,4 @@
-import { useMatch, useNavigate } from '@tanstack/react-router';
+import { Link, useLocation, useMatch, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from 'react';
 import {
@@ -59,6 +59,7 @@ import { useAuth } from '@/lib/authStore';
 import { usePortfolio } from '@/lib/portfolioStore';
 import { useHydrationState } from '@/lib/hydrationStore';
 import { CLOSED_BETA } from '@/lib/closedBeta';
+import { SPOT_EXPERIMENTS_ANCHOR } from '@/lib/spotExperiments';
 import { recordWalkForward } from '@/lib/engine/walkForwardLogger';
 import { computePortfolioValuation } from '@/lib/portfolioAccounting';
 import { useBinanceWebSocket } from '@/hooks/useBinanceWebSocket';
@@ -508,6 +509,35 @@ export function ResearchZone({
   );
 }
 
+/**
+ * Paper and portfolio-builder fills are simulated; Manual Spot experiments are records of real
+ * trades the owner places by hand. Its link is shown to every sign-in: Account still gates them.
+ */
+export function ClosedBetaBanner() {
+  return (
+    <p className="beta-banner">
+      <strong>Closed beta</strong> · Paper Desk and Build Portfolio trades are simulated.{' '}
+      <Link to="/account" hash={SPOT_EXPERIMENTS_ANCHOR}>
+        Manual Spot experiments
+      </Link>{' '}
+      record real trades you place yourself on Binance; Popup only reads Binance and places no
+      orders.
+    </p>
+  );
+}
+
+/** Account, told whether the URL asks for Manual Spot experiments (direct load, link, back/forward). */
+export function AccountZone({ assets }: Readonly<{ assets: Asset[] }>) {
+  const revealSpotExperiments = useLocation({
+    select: (location) => location.hash === SPOT_EXPERIMENTS_ANCHOR,
+  });
+  return (
+    <Suspense fallback={zoneFallback}>
+      <AccountPanel assets={assets} revealSpotExperiments={revealSpotExperiments} />
+    </Suspense>
+  );
+}
+
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
@@ -573,12 +603,7 @@ function Terminal() {
 
   const page = (
     <div className="min-h-screen text-foreground">
-      {CLOSED_BETA && (
-        <p className="beta-banner">
-          <strong>Closed Beta: Paper Evaluation Period</strong> · Every system runs in simulated
-          execution. No real orders, no real money.
-        </p>
-      )}
+      {CLOSED_BETA && <ClosedBetaBanner />}
       <header className="terminal-header">
         <div className="page-width flex h-full items-center justify-between gap-3 sm:gap-4">
           <a href="/" className="flex shrink-0 items-center gap-2.5" aria-label="Popup home">
@@ -690,11 +715,7 @@ function Terminal() {
             <PortfolioDashboard assets={baseAssets} portfolioType="long_term_sim" />
           </Suspense>
         )}
-        {view === 'account' && (
-          <Suspense fallback={zoneFallback}>
-            <AccountPanel assets={baseAssets} />
-          </Suspense>
-        )}
+        {view === 'account' && <AccountZone assets={baseAssets} />}
         {view === 'research' && (
           <ResearchZone
             pending={query.isPending && !preview}

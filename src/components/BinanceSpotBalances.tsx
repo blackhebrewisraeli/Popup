@@ -44,15 +44,23 @@ function failureText(failure: SpotFailure): string {
 export function BinanceSpotBalances({
   accountContext,
   read = readSpotAccount,
+  requested = false,
   children,
 }: Readonly<{
   /** The signed-in owner, so a reconciliation never mixes reads made for different owners. */
   accountContext: string;
   read?: () => Promise<SpotRead>;
+  /**
+   * The workspace link asked for Manual Spot experiments: while the owner check is out, or once
+   * it hides the card, say so in its place instead of leaving the link's destination blank.
+   */
+  requested?: boolean;
   /** More owner-only sections, shown inside this card only when the card itself is shown. */
   children?: ReactNode;
 }>) {
   const [view, setView] = useState(INITIAL_SPOT_VIEW);
+  const noticeRef = useRef<HTMLOutputElement>(null);
+  const gated = view.access === 'unknown' || view.access === 'hidden';
   const [reading, setReading] = useState(false);
   const [pausedUntil, setPausedUntil] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -94,7 +102,24 @@ export function BinanceSpotBalances({
     };
   }, [refresh]);
 
-  if (view.access === 'unknown' || view.access === 'hidden') return null;
+  // The notice sits below the Account cards, off screen on a phone; bring it to the reader.
+  useEffect(() => {
+    const notice = noticeRef.current;
+    if (!requested || !gated || !notice) return;
+    notice.scrollIntoView({ block: 'center' });
+    notice.focus({ preventScroll: true });
+  }, [requested, gated]);
+
+  if (gated) {
+    if (!requested) return null;
+    return (
+      <output ref={noticeRef} tabIndex={-1} className="spot-note spot-gate">
+        {view.access === 'unknown'
+          ? 'Checking whether this sign-in can open Manual Spot experiments…'
+          : 'Manual Spot experiments are not available for this sign-in.'}
+      </output>
+    );
+  }
 
   const { snapshot, failure } = view;
   const paused = now < pausedUntil;

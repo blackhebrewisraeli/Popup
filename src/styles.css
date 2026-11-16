@@ -1871,6 +1871,17 @@ body {
   background: color-mix(in oklch, var(--brand-blue) 9%, var(--background));
   border-bottom: 1px solid color-mix(in oklch, var(--brand-blue) 30%, transparent);
 }
+.beta-banner a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.beta-banner a:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .error-banner {
   display: flex;
   align-items: center;
@@ -3943,6 +3954,11 @@ body {
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
+/* Where the banner's link lands: clear of the 72px sticky header. */
+.spot-experiments,
+.spot-experiments > h4 {
+  scroll-margin-top: 88px;
+}
 .experiment-list {
   display: grid;
   gap: 8px;
@@ -4017,6 +4033,11 @@ body {
 .spot-card {
   display: grid;
   gap: 14px;
+  margin-top: 24px;
+}
+/* In the card's place when the banner link asked for it and the owner check is out or hid it. */
+.spot-note.spot-gate {
+  display: block;
   margin-top: 24px;
 }
 .spot-head {

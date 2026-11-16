@@ -45,6 +45,7 @@ import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { SpotExperiments } from '@/components/SpotExperiments';
 import type { Candle } from '@/lib/binance';
+import type { SpotRead } from '@/lib/binanceSpotAccount';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
 import {
   checkCloseDraft,
@@ -55,6 +56,7 @@ import {
   experimentRow,
   recordExperimentEntry,
   recordSpotExperiment,
+  SPOT_EXPERIMENTS_ANCHOR,
   spotSymbol,
   type CandidateEvidence,
   type ExperimentEntry,
@@ -1192,6 +1194,100 @@ describe('Manual Spot experiments in Account', () => {
     await act(async () => {});
     expect(hidden.container).toBeEmptyDOMElement();
     expect(db.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe('arriving from the workspace link to Manual Spot experiments', () => {
+  let scrolled: Element[] = [];
+  beforeEach(() => {
+    scrolled = [];
+    // jsdom has no layout, so no scrollIntoView: record what was brought into view instead.
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+  });
+  afterEach(() => {
+    delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  /** The Binance owner check, answered when the test says. */
+  function ownerCheck() {
+    const check = deferred<SpotRead>();
+    const read = vi.fn(() => check.promise);
+    return { read, answer: (result: SpotRead) => act(async () => check.resolve(result)) };
+  }
+  const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const account = (queries: QueryClient, read: () => Promise<SpotRead>, requested: boolean) => (
+    <QueryClientProvider client={queries}>
+      <BinanceSpotBalances accountContext={OWNER} read={read} requested={requested}>
+        <SpotExperiments userId={OWNER} reveal={requested} />
+      </BinanceSpotBalances>
+    </QueryClientProvider>
+  );
+  const heading = () => screen.queryByRole('heading', { name: 'Manual Spot experiments' });
+  const connected: SpotRead = {
+    state: 'connected',
+    readAt: '2026-10-28T17:00:00.000Z',
+    balances: [],
+  };
+
+  it('says the owner check is out, then lands on the section only once the card renders it', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [], error: null });
+    const { read, answer } = ownerCheck();
+    render(account(client(), read, true));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Checking whether this sign-in can open Manual Spot experiments…',
+    );
+    expect(heading()).toBeNull();
+    expect(db.rpc).not.toHaveBeenCalled();
+
+    await answer(connected);
+    expect(heading()).toHaveFocus();
+    expect(scrolled.at(-1)).toBe(heading());
+    expect(heading()?.closest('section')).toHaveAttribute('id', SPOT_EXPERIMENTS_ANCHOR);
+    expect(screen.queryByText(/^Checking whether/)).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('tells any other sign-in the section is not available, showing and reading none of it', async () => {
+    for (const result of [
+      { state: 'unavailable' },
+      { state: 'error', error: 'forbidden' },
+      { state: 'error', error: 'unauthenticated' },
+    ] as SpotRead[]) {
+      const { read, answer } = ownerCheck();
+      const { container, unmount } = render(account(client(), read, true));
+      await answer(result);
+      const notice = screen.getByRole('status');
+      expect(notice).toHaveTextContent(
+        'Manual Spot experiments are not available for this sign-in.',
+      );
+      expect(notice).toHaveFocus();
+      expect(container.childElementCount).toBe(1);
+      expect(heading()).toBeNull();
+      expect(read).toHaveBeenCalledTimes(1);
+      unmount();
+    }
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(db.listed).toEqual([]);
+  });
+
+  it('takes focus only when the link asks, as on back/forward with the section already shown', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    db.listResult.mockResolvedValue({ data: [], error: null });
+    const queries = client();
+    const read = vi.fn(async () => connected);
+    const { rerender } = render(account(queries, read, false));
+    await waitFor(() => expect(heading()).not.toBeNull());
+    expect(heading()).not.toHaveFocus();
+    expect(scrolled).toEqual([]);
+
+    rerender(account(queries, read, true));
+    expect(heading()).toHaveFocus();
+    expect(scrolled).toEqual([heading()]);
+    // Following the link reuses the card's earlier read.
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });
 

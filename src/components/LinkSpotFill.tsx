@@ -267,6 +267,7 @@ function LinkPanel({
           Client-submitted: Popup copies these values from this read. The server does not re-read
           Binance to verify them.
         </li>
+        <li>A record only: linking sends nothing to Binance and places no order.</li>
         <li>Linking never closes the experiment, a sell included: only a close you add ends it.</li>
         <li>Append-only: once stored, the link cannot be edited or removed.</li>
         {chosen && closed(chosen) && (

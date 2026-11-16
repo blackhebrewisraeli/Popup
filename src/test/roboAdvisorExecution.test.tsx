@@ -149,7 +149,7 @@ describe('RoboAdvisor execution, signed in', () => {
       confirm.click();
       confirm.click();
     });
-    expect(await screen.findByRole('button', { name: /booking orders/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: /booking paper orders/i })).toBeDisabled();
     expect(bookingCalls()).toEqual([preview?.requestId]);
     // Escape can't close the dialog while the booking is out (closing takes 300 ms).
     fireEvent.keyDown(window, { key: 'Escape' });

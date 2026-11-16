@@ -24,7 +24,14 @@ const EXPORTS: { type: PortfolioType; filename: string }[] = [
  * Account zone: plan, TradingView webhook, data export, and the one place
  * real (tracked) holdings appear, kept apart from every simulated ledger.
  */
-export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
+export function AccountPanel({
+  assets,
+  revealSpotExperiments = false,
+}: Readonly<{
+  assets: Asset[];
+  /** Followed the workspace link to Manual Spot experiments; the Binance card still gates them. */
+  revealSpotExperiments?: boolean;
+}>) {
   const { user, isPro } = useAuth();
   const { portfolios } = usePortfolio();
   const [pricingOpen, setPricingOpen] = useState(false);
@@ -117,8 +124,12 @@ export function AccountPanel({ assets }: Readonly<{ assets: Asset[] }>) {
 
       {/* Keyed by user so one account's snapshot can never render for another. */}
       {user && (
-        <BinanceSpotBalances key={user.id} accountContext={user.id}>
-          <SpotExperiments userId={user.id} />
+        <BinanceSpotBalances
+          key={user.id}
+          accountContext={user.id}
+          requested={revealSpotExperiments}
+        >
+          <SpotExperiments userId={user.id} reveal={revealSpotExperiments} />
         </BinanceSpotBalances>
       )}
 
