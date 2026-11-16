@@ -377,6 +377,27 @@ export function explainResult(model: CanonicalScore, setups: ModelSetups): ScanE
   };
 }
 
+/**
+ * Each factor's points against ZC LONG's score threshold, whichever setup holds: weight ×
+ * (component − 78), the arithmetic explainResult weighs a Long focus with. The points sum to
+ * the unrounded score's margin from 78. ZC LONG's MACD gate is a clause, not a point, so its
+ * line stays with the clauses.
+ */
+export function longContributions({ factors }: Pick<ScanExplanation, 'factors'>): {
+  margin: number;
+  supports: string[];
+  weakens: string[];
+} {
+  const weighed = factors.map((factor) => ({
+    ...factor,
+    points: factor.weight * (factor.score - LONG_SETUP_MIN_SCORE),
+  }));
+  return {
+    margin: weighed.reduce((sum, factor) => sum + factor.points, 0),
+    ...weighFactors(weighed, LONG_SETUP_MIN_SCORE),
+  };
+}
+
 /** "Score 61", or a named Risk clause: "High volatility (ATR 6.40%)". */
 export function clauseValue(clause: SetupClause): string {
   const value = `${clause.label} ${clause.actual}`;

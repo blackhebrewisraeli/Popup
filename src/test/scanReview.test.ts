@@ -14,6 +14,7 @@ import {
   candidateStatus,
   cohortFreshness,
   explainResult,
+  longContributions,
   matchesFilters,
   NO_FILTERS,
   pineAlertNote,
@@ -131,6 +132,34 @@ describe('explainResult boundaries', () => {
     expect(explanation.weakens.at(-1)).toBe(
       'MACD momentum -0.30% of price is below the +0.05% gate ZC LONG needs',
     );
+  });
+
+  it('weighs every result against ZC LONG’s 78 for its contributions, leaving the gate to the clauses', () => {
+    const readings: FactorInputs[] = [
+      calm, // neither setup: Long focus
+      { rsi: 60, momentumPercent: -0.003, volatilityPercent: 0.02 }, // neither, below the gate
+      { ...calm, volatilityPercent: 0.07 }, // Risk through the regime alone
+      { rsi: 92, momentumPercent: -0.009, volatilityPercent: 0.035 }, // Risk through a low score
+    ];
+    const foci = readings.map((inputs) => {
+      const m = model(inputs);
+      const explanation = explain(m);
+      const long = longContributions(explanation);
+      expect(long.margin).toBeCloseTo(unrounded(m) - 78, 9);
+      const lines = [...long.supports, ...long.weakens];
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) expect(line).toMatch(/: .+ scores \d+, [+−]\d+\.\d pts vs 78$/);
+      if (explanation.focus === 'long') {
+        // explainResult's own Long lines, less the MACD gate, which the clause list states.
+        const factorLines = (all: readonly string[]) =>
+          all.filter((line) => line.endsWith('vs 78'));
+        expect(long.supports).toEqual(factorLines(explanation.supports));
+        expect(long.weakens).toEqual(factorLines(explanation.weakens));
+        expect(long.margin).toBeCloseTo(explanation.margin, 9);
+      }
+      return explanation.focus;
+    });
+    expect(foci).toEqual(['long', 'long', 'risk', 'risk']);
   });
 
   it('weighs a score-driven risk warning against 28, so low components support it', () => {

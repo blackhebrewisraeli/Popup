@@ -156,8 +156,8 @@ accessible name: **Risk: high volatility** (the high-volatility regime, ATR ≥ 
 Each row shows rank, asset, score, setup and a short reason: the recorded clauses that decide its
 setup state ("Score 61, needs ≥ 78" for an asset short of ZC LONG), from the same `explainResult`
 the evidence uses. A search box (ticker, instrument or requested symbol) and filters on recorded
-fields narrow them: regime, the model's own momentum bias (±0.05% of price is flat) and risk-profile
-fit. "No setups" is a full answer only for a complete cohort; an empty filter result says how many
+fields narrow them: regime, the model's own momentum bias (±0.05% of price is flat) and the
+risk-profile rules a reading meets (technical thresholds, not suitability). "No setups" is a full answer only for a complete cohort; an empty filter result says how many
 it hid. The header says whether the data still passes the scan's own freshness rule now: crypto's
 latest close within 48h, equities' latest final session or the one before. Past that the data is
 marked **Stale**. A scan is never called live.
@@ -169,20 +169,40 @@ leaves out the scan's source, model and scored time, which the header already sh
 which covers the header, keeps them.
 
 The evidence is one asset's explanation, derived only from its recorded values
-(`explainResult`): each ZC LONG and ZC RISK clause with the recorded value against the threshold,
-RSI(14), MACD histogram / price, ATR(14) / price, the factor scores and weights, and the regime with
-the first-match rule that chose it. Supports and weakens weigh each factor against the setup in
-focus: its weight × its component's distance from the threshold (78 for ZC LONG, 28 for ZC RISK).
-The three sum to the unrounded score's margin. A risk warning held by the high-volatility regime
-alone lists the regime, not factor points. Source, timeframe, model, scanner and candle-policy
-versions, last evaluated session, window and fetch time follow, then the limitations that apply:
-historical import, split-only adjustment, equities unvalidated, the 199/200-bar window, no
-liquidity filter, an incomplete scan, stale data, and what is known about a TradingView alert. A
-field the scan did not record reads "Not recorded". Nothing is generated, and no confidence is
-invented.
+(`explainResult`). It opens on a **Summary** that stays open: instrument, last evaluated day, rank
+and score, Long and Model Risk status with their thresholds and recorded values (the candidate
+cards' `candidateStatus` wording), and the model's recorded rationale as the main reasons, with a
+note that momentum is MACD's direction while the regime is a classification that selects the
+factor weights, not a direction. Warnings that must not be missed sit there too, never in a closed
+section: **Historical** with the stale verdict, an incomplete scan, and a TradingView symbol the
+evidence did not confirm. **Historical import** marks a TradingView import. The full evidence
+follows in four sections, each closed until opened, each fact in one of them:
+
+- **Model conditions:** each ZC LONG and ZC RISK clause with the recorded value against the
+  threshold. When ZC RISK is the setup that holds, what moves toward or away from it: the
+  high-volatility regime alone (then no factor points), or each factor's points against score
+  ≤ 28. Both are standing conditions, not transitions.
+- **Indicators and score calculation:** RSI(14), MACD histogram / price with the momentum
+  direction, ATR(14) / price, the regime with the first-match rule that chose it, the factor
+  scores and weights, the blend and its rounding, and which risk profiles' technical rules (score,
+  regime, momentum) the reading meets. Meeting a profile's rules is not a suitability assessment.
+- **Score contributions relative to the Long threshold:** each factor's weight × (its component
+  score − 78), whichever setup holds; the three sum to the unrounded score's margin from 78.
+  **Supports** means a component above 78, **weakens** one below it: arithmetic only, not price
+  direction, a trade or a forecast. ZC LONG's MACD gate is a clause, under Model conditions.
+- **Data provenance and limitations:** the TradingView symbol evidence, window and fetch time (in
+  the sheet also source, timeframe, model, scanner and candle-policy versions and scored time),
+  then the limitations that apply: historical import, split-only adjustment, equities
+  unvalidated, the 199/200-bar window, no liquidity filter and what is known about a TradingView
+  alert.
+
+A field the scan did not record reads "Not recorded". Nothing is generated, and no confidence is
+invented. A TradingView crypto pair's optional
+[Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) follows the review in its own
+block, outside every evidence section.
 
 **Compare**, a checkbox at the end of each row, puts up to three assets of one cohort side by side: rank, score, regime, each setup
-condition, the three readings with their factor scores and weights, risk-profile fit, last evaluated
+condition, the three readings with their factor scores and weights, risk-profile rules, last evaluated
 session, window and fetch time. Assets from different asset classes cannot be selected together.
 
 Neither view offers an order, a size or a broker link.

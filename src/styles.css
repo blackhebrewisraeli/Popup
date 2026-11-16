@@ -1513,6 +1513,49 @@ body {
 .scan-explain-body .quant-breakdown-title {
   margin: 0 0 8px;
 }
+/* The evidence review: an open summary, then each full section closed until opened. */
+.scan-evidence-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+.scan-evidence-summary-head .quant-breakdown-title {
+  margin: 0;
+}
+.scan-evidence-warnings {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--accent-amber);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in oklch, var(--accent-amber) 8%, transparent);
+  list-style: none;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.scan-evidence-section {
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.scan-evidence-section > summary {
+  padding: 4px 0;
+}
+.scan-check-effects {
+  margin-top: 10px;
+}
+.scan-evidence-section .scan-effects + .market-scan-fit {
+  margin-top: 10px;
+}
+/* The optional Manual Spot scenario sits apart from the evidence review, in its own block. */
+.scan-explain-body > .spot-scenario {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+}
 .scan-check + .scan-check {
   margin-top: 10px;
 }
