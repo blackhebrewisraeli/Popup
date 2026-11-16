@@ -436,7 +436,7 @@ function ExperimentForm({
               .join(' ')}
             onChange={(event) => setInclude(event.target.checked)}
           />
-          Include this scenario in the record
+          <span>Include this scenario in the record</span>
         </label>
         <span id={`${id}-includeScenario-note`} className="market-scan-fit">
           Off unless you turn it on. Adds the inputs and figures from Plan a hypothetical scenario,
