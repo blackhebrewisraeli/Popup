@@ -367,6 +367,34 @@ describes the scan candidate.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
 
+## Verification of scenario snapshots — 2026-11-17
+
+Synthetic data only. Nothing was written to production, and no request reached a Binance account.
+The stack was a scratch `zcscenario` stack. The browser check used a separate worktree whose scan
+store held one labeled `ZCT*` scan written with the repository's own `saveScan`, an invented owner,
+and one experiment inserted the way earlier frontends insert (no snapshot). `binance-spot-account`
+was answered in the page with `not_configured`. Unlike earlier checks, the app's public market-data
+requests were not blocked.
+
+| Check                                                                            | Result                                                                                                                                                            |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `supabase test db`                                                               | 9 files, 289 assertions; `spot_experiment_scenario_snapshot.test.sql` adds 54                                                                                     |
+| `upgrade.sh origin/main` (production-shaped experiment, rule, observation, fill) | 16 checks pass; only `20261117120000` applied; the old rows are unchanged and read as no scenario; an insert without the column and one with a snapshot both work |
+| `upgrade.sh` from CI's pre-#79 base, then `supabase test db`                     | 12 checks pass (the experiment checks are skipped: no such tables there); 289 assertions pass                                                                     |
+| `concurrency.sh`                                                                 | 19 checks pass                                                                                                                                                    |
+| Release contract against the stack                                               | All 32 migrations and every RPC this frontend calls                                                                                                               |
+| Weakened, then the suite run again                                               | Shape check dropped: 25 failures. Fee rule alone dropped: 3. Owner `UPDATE` granted: 6. Insert grant revoked: 33. Service role may insert: 2                      |
+| Default                                                                          | **Include this scenario in the record** unchecked; Tab reaches it after the stated time, Space turns it on                                                        |
+| Review (desktop, then 375 px sheet)                                              | Every input and figure shown, small-price entry `0.0000047` and quantity `1,724,137.93103448` exact; no write while reviewing; heading takes focus                |
+| Scenario changed after review                                                    | Alert, Confirm locked, a press sent nothing; restoring the reviewed value unlocked it                                                                             |
+| Three presses of Confirm (click, Enter, click)                                   | One insert. The stored snapshot equals the reviewed one                                                                                                           |
+| Unspecified fee, then a stated zero                                              | Stored as `null` without fees and as `"0"` with `0.00` fees; reviewed and shown as **Not specified** and **0% of each fill, as stated**                           |
+| Account                                                                          | Both snapshots shown as stored, the legacy row as **No scenario recorded**, every rule **Not decided**; summaries unchanged                                       |
+| Layout                                                                           | 375 px: no horizontal page scroll, one column of facts, checkbox beside its label. Light and dark themes checked                                                  |
+
+Unsupported and unreadable snapshots cannot be stored under the current check, so they were
+checked with component tests only.
+
 ## Verification of closing — 2026-11-14
 
 Synthetic `ZCT*` data only. Nothing was written to production, and no request reached Binance.
