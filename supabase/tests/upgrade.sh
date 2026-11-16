@@ -57,6 +57,45 @@ insert into public.trading_signals (id, user_id, ticker, action, signal_score, q
   ('40000000-0000-4000-8000-0000000000e3', '$USER_ID', 'UPGRADECOIN', 'BUY', 50, 1, 200, 'upgrade-dismissed', 'DISMISSED');
 "
 
+# Manual Spot experiments exist from 20261114120000. On a base that has them,
+# seed a production-shaped SYNTHETIC record (invented pair, IDs and times):
+# an experiment with an approved rule, an observation and a linked buy.
+SPOT_EXPERIMENT=60000000-0000-4000-8000-0000000000e1
+spot_base=$(sql "select to_regclass('public.spot_experiments') is not null")
+spot_rows="
+select md5(string_agg(row, '|' order by row)) from (
+  select (to_jsonb(e) - 'scenario_snapshot')::text as row from public.spot_experiments e where user_id = '$USER_ID'
+  union all select to_jsonb(n)::text from public.spot_experiment_entries n where user_id = '$USER_ID'
+  union all select to_jsonb(f)::text from public.spot_experiment_fills f where user_id = '$USER_ID'
+) rows"
+if [[ "$spot_base" == t ]]; then
+  sql "
+insert into public.binance_spot_owner (user_id) values ('$USER_ID');
+insert into public.spot_experiments
+  (id, user_id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256,
+   source_reproduction, source_evidence, decision, decision_stated_at)
+values ('$SPOT_EXPERIMENT', '$USER_ID', '2026-11-09T08:00:00Z', 'main', 'ZCTUPGRADEUSDT',
+  '20261109T070000Z-0000beef', repeat('d', 64), 'match',
+  '{\"version\":1,\"instrument\":\"BINANCE:ZCTUPGRADEUSDT\",\"facts\":[[\"Technical rank\",\"#3 of 23\"]],\"rank\":3,\"evaluated\":23,\"long\":false,\"risk\":true,\"stale\":false}',
+  'SYNTHETIC upgrade decision', '2026-11-09T07:30:00Z');
+insert into public.spot_experiment_entries
+  (experiment_id, user_id, recorded_at, kind, rule, rule_status, observed_in, statement, stated_at)
+values
+  ('$SPOT_EXPERIMENT', '$USER_ID', '2026-11-09T08:05:00Z', 'rule', 'stop', 'approved', null, 'SYNTHETIC stop rule', null),
+  ('$SPOT_EXPERIMENT', '$USER_ID', '2026-11-09T08:10:00Z', 'observation', null, null, 'binance_interface', 'SYNTHETIC observation', '2026-11-09T08:09:00Z');
+insert into public.spot_experiment_fills
+  (experiment_id, user_id, account_label, symbol, recorded_at, trade_id, order_id, side, trade_time_ms,
+   quantity, price, quote_quantity, commission, commission_asset, retrieved_at, window_start_ms,
+   window_end_ms, coverage_complete)
+values ('$SPOT_EXPERIMENT', '$USER_ID', 'main', 'ZCTUPGRADEUSDT', '2026-11-09T08:20:00Z', '9001', '8001', 'buy',
+  1794211200000, '1234.00000000', '0.00000612', '0.00755208', '1.23400000', 'ZCTUPGRADE',
+  '2026-11-09T08:15:00Z', 1794182400000, 1794268800000, true);
+"
+  spot_before=$(sql "$spot_rows")
+else
+  echo "# base $BASE_REF has no Manual Spot experiment tables: their upgrade checks are skipped"
+fi
+
 supabase migration up "${WORKDIR[@]}" --local >/dev/null
 
 check "every fill survived" \
@@ -117,6 +156,32 @@ check "a signal left pending by the old release can be dismissed" "$(grep -o 're
 check "its dismissal is recorded with the owner as actor" \
   "$(sql "select s.status || '/' || (d.actor_id = s.user_id) from public.trading_signals s join public.trading_signal_dismissals d on d.signal_id = s.id where s.event_id = 'upgrade-pending'")" \
   'DISMISSED/true'
+
+if [[ "$spot_base" == t ]]; then
+  check "existing experiments, entries and fills are unchanged" "$(sql "$spot_rows")" "$spot_before"
+  check "an existing experiment has no scenario recorded" \
+    "$(sql "select count(*) from public.spot_experiments where id = '$SPOT_EXPERIMENT' and scenario_snapshot is null")" 1
+  as_owner() {
+    psql "$DB" -X -q -At 2>&1 <<SQL || true
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '$USER_ID', true);
+$1
+commit;
+SQL
+  }
+  old_insert=$(as_owner "insert into public.spot_experiments (account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision)
+    values ('main', 'ZCTUPGRADEUSDT', '20261109T070000Z-0000beef', repeat('d', 64), 'match', '{}', 'SYNTHETIC old client')
+    returning 'snapshot=' || coalesce(scenario_snapshot::text, 'none');")
+  check "an insert that leaves the snapshot out still records, with no scenario" \
+    "$(grep -o 'snapshot=.*' <<<"$old_insert")" 'snapshot=none'
+  new_insert=$(as_owner "insert into public.spot_experiments (account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, scenario_snapshot)
+    values ('main', 'ZCTUPGRADEUSDT', '20261109T070000Z-0000beef', repeat('d', 64), 'match', '{}', 'SYNTHETIC new client',
+      '{\"version\":1,\"calculationVersion\":\"spot-scenario-1\",\"inputs\":{\"allocation\":\"15\",\"maxLoss\":\"1\",\"entry\":\"0.00000612\",\"stop\":\"0.0000055\",\"feePercent\":null},\"figures\":{\"quantity\":\"1,612,903.22580645\",\"limitedBy\":\"maxLoss\",\"notional\":\"9.87\",\"unallocated\":\"5.13\",\"stopDistance\":\"0.00000062\",\"stopDistancePercent\":\"10.13%\",\"lossAtStop\":\"1.00\",\"fees\":null}}')
+    returning 'entry=' || (scenario_snapshot #>> '{inputs,entry}');")
+  check "the owner records a new experiment with a scenario snapshot" \
+    "$(grep -o 'entry=.*' <<<"$new_insert")" 'entry=0.00000612'
+fi
 
 sql "delete from auth.users where id = '$USER_ID'; delete from public.assets_status where ticker = 'UPGRADECOIN';" >/dev/null
 exit "$failures"

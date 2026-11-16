@@ -317,6 +317,7 @@ export type Database = {
           },
         ];
       };
+      // Mirrors 20261114120000_manual_spot_experiments.sql + 20261117120000 (scenario_snapshot).
       spot_experiments: {
         Row: {
           account_label: string;
@@ -324,6 +325,7 @@ export type Database = {
           decision_stated_at: string | null;
           id: string;
           recorded_at: string;
+          scenario_snapshot: Json | null;
           source_evidence: Json;
           source_reproduction: string;
           source_scan_id: string;
@@ -337,6 +339,7 @@ export type Database = {
           decision_stated_at?: string | null;
           id?: string;
           recorded_at?: string;
+          scenario_snapshot?: Json | null;
           source_evidence: Json;
           source_reproduction: string;
           source_scan_id: string;
@@ -350,6 +353,7 @@ export type Database = {
           decision_stated_at?: string | null;
           id?: string;
           recorded_at?: string;
+          scenario_snapshot?: Json | null;
           source_evidence?: Json;
           source_reproduction?: string;
           source_scan_id?: string;

@@ -180,7 +180,8 @@ following UTC day and **finished before the next UTC midnight**; the snapshot mu
 The evidence of an evaluated pair in a TradingView crypto scan (beside the list, or in the sheet
 at phone width) ends with **Manual Spot scenario**, in its own block after the evidence review. **Plan a hypothetical scenario** opens your own
 arithmetic for that pair. Popup reads no balance, quote or exchange filter, sends and saves
-nothing, and offers no order: you decide, and act in Binance yourself if you choose to. **Open
+nothing unless you include the scenario in a recorded experiment, and offers no order: you
+decide, and act in Binance yourself if you choose to. **Open
 evidence** on one of the [candidates to review first](MARKET_SCANNER.md#candidates-to-review-first)
 reaches the same panel, under the same rules and with empty inputs.
 
@@ -208,9 +209,11 @@ reaches the same panel, under the same rules and with empty inputs.
   notional and price filters are checked.
 - **Memory only.** Choosing another asset or scan, closing the sheet, reloading the page, or an
   in-app reload that brings changed content (even under the same scan ID) clears it. An in-app
-  reload of an unchanged file keeps it. Nothing is journaled or stored, and no background process
-  runs.
+  reload of an unchanged file keeps it. Nothing is journaled or stored unless you include it in a
+  recorded experiment, and no background process runs.
 - **Record experiment (saves to Account).** A separate disclosure below the scenario. From a saved scan, the
   configured Binance owner can store their own decision with this evidence and the snapshot's
-  identity, after reviewing it. The scenario's inputs and figures are never part of the record.
-  See [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan).
+  identity, after reviewing it. The scenario's inputs and figures are part of the record only when
+  the owner turns on **Include this scenario in the record** (off by default) and confirms the
+  review. See [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan)
+  and its [scenario snapshot](MANUAL_SPOT_EXPERIMENTS.md#scenario-snapshot).

@@ -17,7 +17,8 @@ scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
 ([Linking](#linking-fills-from-the-execution-view)), and lists experiments with their linked fills
 in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Account also
 records append-only rules, dated observations and the owner's explicit close through the existing
-entries table ([Closing](#closing-in-account)).
+entries table ([Closing](#closing-in-account)). Migration `20261117120000` adds an optional
+[scenario snapshot](#scenario-snapshot) to a new experiment; it is not applied to production yet.
 
 ## Access
 
@@ -44,11 +45,11 @@ database administrator can bypass grants, policies and constraints, for example 
 
 ## The record
 
-| Table                     | One row per                                      | Written by                                                    |
-| ------------------------- | ------------------------------------------------ | ------------------------------------------------------------- |
-| `spot_experiments`        | Experiment: source scan, evidence and decision   | The owner. ID, owner and recorded time come from the database |
-| `spot_experiment_entries` | Rule, observation or close, in the owner's words | The owner                                                     |
-| `spot_experiment_fills`   | Linked fill, copied from a Popup Binance read    | The owner's browser                                           |
+| Table                     | One row per                                                                   | Written by                                                    |
+| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `spot_experiments`        | Experiment: source scan, evidence, decision and an optional scenario snapshot | The owner. ID, owner and recorded time come from the database |
+| `spot_experiment_entries` | Rule, observation or close, in the owner's words                              | The owner                                                     |
+| `spot_experiment_fills`   | Linked fill, copied from a Popup Binance read                                 | The owner's browser                                           |
 
 A client names the content only. The `id`, `user_id` and `recorded_at` columns are not in its
 insert grant, so a request that sends them is refused.
@@ -63,6 +64,7 @@ Each assurance is separate. None implies another.
 | Reproduction       | `source_reproduction`                           | What the local offline reproduction reported when the record was made: `match` or `not_checked`. `mismatch` is refused                                            | That it would reproduce now. The database can't re-run it, and the value is client-submitted                                                                  |
 | Authenticity       | none                                            | Nothing                                                                                                                                                           | Local snapshots are unsigned. No column shows that the scan came from Popup's scanner or from TradingView data                                                |
 | Candidate evidence | `source_evidence`                               | What the browser showed for the candidate (rank, setups, freshness), as a copy                                                                                    | It is not re-derived from the snapshot                                                                                                                        |
+| Scenario snapshot  | `scenario_snapshot`                             | The scenario inputs, as typed, and its figures, as shown, that the owner chose to include and reviewed. Client-submitted. Null: no scenario recorded              | That the arithmetic is right (the database checks the shape only), when the plan was made, or any rule, order, balance or fill                                |
 | Recorded time      | `recorded_at`                                   | When the database stored the row (`clock_timestamp()`). Clients can't set it                                                                                      | When anything happened in the market or in Binance                                                                                                            |
 | Stated time        | `decision_stated_at`, `stated_at`               | When the owner says the decision was made, the rule was set, the observation was made or the experiment ended                                                     | Anything the database can check. Never after `recorded_at`. Null means not stated                                                                             |
 | Fill               | `spot_experiment_fills`                         | The values the owner's browser submitted, copied from the execution view                                                                                          | That Binance holds that fill. The server doesn't re-read Binance to verify it: the row is **client-submitted evidence**, not a server-verified Binance record |
@@ -79,8 +81,8 @@ stated time after the recorded time is refused.
 - **Names:** `allocation_ceiling`, `stop`, `horizon`, `target`, `exit`, `other`.
 - **Statuses:** `approved`, `proposed`, `withdrawn`.
 - **Rules exist only as the owner states them.** A rule exists only as an entry the owner adds,
-  with a status. Nothing is inferred from the scenario's inputs, earlier conversations or other
-  rules. A named rule with no current approved entry is not decided. That holds for any horizon,
+  with a status. Nothing is inferred from the scenario's inputs, a recorded scenario snapshot,
+  earlier conversations or other rules. A named rule with no current approved entry is not decided. That holds for any horizon,
   target or exit the owner hasn't approved.
 - **Changes.** A change is a new entry that names the entry it replaces (`supersedes`). That must
   be an entry of the same experiment and the same rule.
@@ -153,13 +155,21 @@ only when the owner presses **Confirm and record** after **Review record**.
   candidate's evidence exactly as **Recorded evidence it rests on** shows it (the same facts, in
   the same words, plus rank, setups and staleness). Snapshot identity, reproduction and
   authenticity stay separate facts, as [above](#what-each-fact-establishes).
-- **Not copied:** the scenario's inputs and figures. No entry is written, so every rule stays
-  **Not decided** until the owner adds one.
+- **Scenario, only when included.** **Include this scenario in the record** is off by default.
+  Off, the scenario's inputs and figures are not sent, the insert is the one earlier frontends
+  sent, and an incomplete or invalid scenario never blocks recording. On, **Review record**
+  needs a valid result from the planner and takes one frozen [snapshot](#scenario-snapshot) of
+  it; otherwise it names the problem and focuses the checkbox. Either way no entry is written, so
+  every rule stays **Not decided** until the owner adds one.
 - **Labels.** A stated time marks the record **Retrospective**. A stale scan marks it **Historical
   scan**, recorded retrospectively from evidence about an earlier day.
-- **Review, then confirm.** **Review record** shows every value that will be stored. Only **Confirm
-  and record** sends it. The button locks before the request leaves, so repeated presses send one
-  insert.
+- **Review, then confirm.** **Review record** shows every value that will be stored, an included
+  scenario's inputs and figures among them. Only **Confirm and record** sends it, with the same
+  snapshot the review shows. The button locks before the request leaves, so repeated presses send
+  one insert. Opening or reviewing writes nothing.
+- **An out-of-date review is never sent.** If an included scenario's inputs change after the
+  review, or the scan, its snapshot file or the pair does (with or without a scenario), the review
+  says so and Confirm locks. **Edit** and **Review record** again take a new snapshot.
 - **Outcomes.**
   - **Recorded:** only with the ID and `recorded_at` the database returned. The button then stays
     locked.
@@ -223,6 +233,10 @@ anyone else it says the section is not available.
   **Withdrawn**. A proposal or withdrawal is also labelled **Not decided**. The complete immutable
   history remains available. A change or withdrawal always supersedes the current entry; several
   unrelated `other` rule lines may coexist.
+- **Scenario, as recorded.** **No scenario recorded** for an experiment stored without one, never
+  zeros. Otherwise the snapshot's inputs and figures exactly as stored, with the database's
+  recorded time as the only time. A snapshot in another format or calculation, or one this view
+  cannot read, is named and not shown; the rest of the experiment still is.
 - **Linked fills.** Each fill in trade time order: side, trade and order IDs, trade time, quantity,
   price, quote quantity and commission with its asset, exactly as stored; the read it was copied
   from (retrieval time, window, coverage); and when the database stored the link. A fill stored
@@ -281,11 +295,74 @@ anyone else it says the section is not available.
   **Recorded after the close** (fills: **Linked after the close**) by comparing database-recorded
   times, and the summary counts them. A close cannot be edited, withdrawn or removed.
 
+## Scenario snapshot
+
+An experiment recorded with **Include this scenario in the record** carries one
+`scenario_snapshot` (migration `20261117120000`). It is the owner's hypothetical plan as the
+review showed it: a client-submitted planning record, kept apart from `source_evidence`, which
+describes the scan candidate.
+
+```json
+{
+  "version": 1,
+  "calculationVersion": "spot-scenario-1",
+  "inputs": {
+    "allocation": "15",
+    "maxLoss": "1",
+    "entry": "0.00000612",
+    "stop": "0.0000055",
+    "feePercent": null
+  },
+  "figures": {
+    "quantity": "1,612,903.22580645",
+    "limitedBy": "maxLoss",
+    "notional": "9.87",
+    "unallocated": "5.13",
+    "stopDistance": "0.00000062",
+    "stopDistancePercent": "10.13%",
+    "lossAtStop": "1.00",
+    "fees": null
+  }
+}
+```
+
+- **Versions.** `version` is the snapshot's format. `calculationVersion` names the arithmetic,
+  rounding and output text of `planSpotScenario` (`SPOT_SCENARIO_CALCULATION` in
+  `src/lib/spotScenario.ts`). It is not the signal model's version. A change to that arithmetic
+  needs a new calculation name, so stored figures are never read under rules they were not made
+  with.
+- **Inputs** are the strings the planner read (trimmed), never converted to a number, so a
+  small-price entry keeps every digit. An unspecified fee is `null`; a stated zero is `"0"`, and
+  only then do the figures carry `fees`.
+- **Figures** are the display text the review showed: grouped digits, cents, `<0.01`, a percent.
+  They are not amounts to compute with, and Account shows them as stored, never worked out again.
+- **No time of its own.** The experiment's `recorded_at` is when it was stored. No planning time
+  is stored or implied.
+- **What it is not.** It sets or approves no allocation, stop, horizon, target or exit rule: only
+  rule entries do. The stop reference is a planning input, not a Binance stop order. The planned
+  loss is not a guaranteed maximum. The figures are hypothetical, not a placed order, a verified
+  balance, an executable quantity, an actual fill or performance.
+- **Database validation.** A check constraint accepts null or exactly this shape: format 1, a
+  `spot-scenario-<n>` calculation name, the five inputs as plain decimal strings (amounts and
+  prices above zero with at most 8 decimals, the fee null or at most 4 decimals, each at most 32
+  characters), the eight figures as display text, `fees` present exactly when a fee was stated,
+  and at most 2,048 bytes. It checks structure, types and size only. It does not establish who
+  calculated the snapshot or independently verify a single figure.
+- **Access.** `authenticated` may insert the column, under the same owner-only policies. No role
+  may update or delete it, and the service role still only reads. A snapshot cannot be added to,
+  changed on or removed from an existing experiment.
+- **Compatibility.** Existing experiments are not backfilled: they read as **No scenario
+  recorded**. An insert that leaves the column out, as earlier frontends send, still works.
+
 ## Not in this increment
 
 - No correction, withdrawal or reopening of a close: the one close entry is final.
-- No P&L, totals, remaining quantity, leverage or order status.
-- No scanner, model or paper-ledger change, and no schema migration.
+- No adding, editing or revising a scenario on an existing experiment, and no rule created from
+  one.
+- No P&L, totals, remaining quantity, leverage or order status, and no comparison of a plan with
+  its fills.
+- No scanner, model, scenario arithmetic or paper-ledger change. The saved-scan route, and so
+  recording, stays local (`vite dev` only).
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.

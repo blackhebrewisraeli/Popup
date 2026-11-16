@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react';
+import { ScenarioSnapshotFacts } from '@/components/ScenarioFacts';
 import { isDevAuthUser, useAuth } from '@/lib/authStore';
 import {
   checkDraft,
@@ -13,11 +14,29 @@ import {
   type RecordOutcome,
   type SpotExperimentInsert,
 } from '@/lib/spotExperiments';
+import type { ScenarioField, ScenarioInputs } from '@/lib/spotScenario';
+import { scenarioSnapshot, type ScenarioSnapshot } from '@/lib/spotScenarioSnapshot';
 import type { TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { utcText } from '@/lib/utils';
 
 /** The draft's fields in form order, which is also the order errors take focus in. */
-const FIELDS = ['decision', 'accountLabel', 'statedAt'] as const;
+const FIELDS = ['decision', 'accountLabel', 'statedAt', 'includeScenario'] as const;
+type FormErrors = DraftErrors & { includeScenario?: string; form?: string };
+
+/** What a review captured: the row it will send, and what the row was built from. */
+interface Reviewed {
+  row: SpotExperimentInsert;
+  evidence: CandidateEvidence;
+  /** The included snapshot, the same frozen object as `row.scenario_snapshot`; null when left out. */
+  snapshot: ScenarioSnapshot | null;
+  /** The scenario inputs it was taken from, to tell a later edit apart. */
+  scenario: ScenarioInputs | null;
+  /** The scan, snapshot file and pair it was reviewed under. */
+  context: string;
+}
+
+const sameInputs = (a: ScenarioInputs, b: ScenarioInputs) =>
+  (Object.keys(a) as ScenarioField[]).every((field) => a[field] === b[field]);
 
 const EXPERIMENTS_PLACE = 'Account → Binance Spot → Manual Spot experiments';
 
@@ -100,16 +119,17 @@ function OutcomeText({ outcome }: Readonly<{ outcome: Outcome }>) {
 
 /** What will be stored, exactly, and the one control that stores it. */
 function Review({
-  row,
-  evidence,
+  reviewed: { row, evidence, snapshot },
+  stale,
   outcome,
   headingRef,
   onConfirm,
   onEdit,
   onReset,
 }: Readonly<{
-  row: SpotExperimentInsert;
-  evidence: CandidateEvidence;
+  reviewed: Reviewed;
+  /** The scenario or its scan or pair changed since this review: it may no longer be sent. */
+  stale: boolean;
   outcome: Outcome;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
   onConfirm: () => void;
@@ -119,8 +139,12 @@ function Review({
   const id = useId();
   const saving = outcome === 'saving';
   const recorded = outcome !== null && outcome !== 'saving' && outcome.state === 'recorded';
-  // A recorded row is never sent twice; an unanswered one only after the owner edits and reviews it again.
-  const locked = saving || recorded || (outcome !== null && outcome.state === 'unknown');
+  const unknown = outcome !== null && outcome !== 'saving' && outcome.state === 'unknown';
+  // Only a review that could still be confirmed goes out of date.
+  const outdated = stale && !saving && !recorded && !unknown;
+  // A recorded row is never sent twice; an unanswered one only after the owner edits and reviews
+  // it again; an outdated one only after a new review.
+  const locked = saving || recorded || unknown || outdated;
   let confirmText = 'Confirm and record';
   if (saving) confirmText = 'Recording…';
   else if (recorded) confirmText = 'Recorded';
@@ -170,13 +194,35 @@ function Review({
           <Fact key={name} name={name} value={value} />
         ))}
       </dl>
+      {snapshot ? (
+        <section aria-labelledby={`${id}-scenario`}>
+          <h5 id={`${id}-scenario`} className="scan-effects-title">
+            Scenario, included as a hypothetical planning record
+          </h5>
+          <ScenarioSnapshotFacts
+            snapshot={snapshot}
+            base={row.symbol.replace(/USDT$/, '')}
+            symbol={row.symbol}
+            modelBacked={evidence.long}
+          />
+        </section>
+      ) : null}
       <ul className="market-scan-notes">
         <li>
-          Not recorded: your scenario inputs and figures. No rule is set, so allocation, stop,
-          horizon, target and exit stay Not decided until you add them.
+          {snapshot
+            ? 'Recorded with the scenario above, exactly as shown.'
+            : 'Not recorded: your scenario inputs and figures.'}{' '}
+          No rule is set, so allocation, stop, horizon, target and exit stay Not decided until you
+          add them.
         </li>
         <li>Append-only: once stored, it cannot be edited or deleted.</li>
       </ul>
+      {outdated && (
+        <p role="alert" className="spot-field-error">
+          The scenario, or the scan or pair it belongs to, changed after this review. Nothing was
+          sent. Edit and review again to record what is shown now.
+        </p>
+      )}
       <div className="spot-record-actions">
         <button
           type="button"
@@ -212,20 +258,23 @@ function ExperimentForm({
   scanId,
   saved,
   userId,
+  scenario,
+  context,
 }: Readonly<{
   evidence: () => CandidateEvidence;
   scanId: string;
   saved: TradingViewSavedScan;
   userId: string;
+  scenario: ScenarioInputs;
+  context: string;
 }>) {
   const id = useId();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<ExperimentDraft>(EMPTY_DRAFT);
-  const [errors, setErrors] = useState<DraftErrors & { form?: string }>({});
-  const [review, setReview] = useState<{
-    row: SpotExperimentInsert;
-    evidence: CandidateEvidence;
-  } | null>(null);
+  // Off by default: a scenario is part of the record only when the owner turns this on.
+  const [include, setInclude] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [review, setReview] = useState<Reviewed | null>(null);
   const [outcome, setOutcome] = useState<Outcome>(null);
   // Set before the request leaves, so a second click in the same frame sends nothing.
   const savingRef = useRef(false);
@@ -235,17 +284,28 @@ function ExperimentForm({
     if (review) headingRef.current?.focus();
   }, [review]);
 
+  const stale =
+    review !== null &&
+    (review.context !== context ||
+      (review.scenario !== null && !sameInputs(review.scenario, scenario)));
+
   const onReview = (event: SubmitEvent) => {
     event.preventDefault();
     const check = checkDraft(draft, Date.now());
-    if (!check.ok) {
-      setErrors(check.errors);
-      const first = FIELDS.find((name) => check.errors[name]);
+    // Taken once, here: the review shows this copy and Confirm sends the same object.
+    const snapshot = include ? scenarioSnapshot(scenario) : null;
+    if (!check.ok || typeof snapshot === 'string') {
+      const found: FormErrors = {
+        ...(check.ok ? {} : check.errors),
+        ...(typeof snapshot === 'string' && { includeScenario: snapshot }),
+      };
+      setErrors(found);
+      const first = FIELDS.find((name) => found[name]);
       if (first) document.getElementById(`${id}-${first}`)?.focus();
       return;
     }
     const copy = evidence();
-    const row = experimentRow(check, copy, scanId, saved);
+    const row = experimentRow(check, copy, scanId, saved, snapshot);
     if (!row) {
       setErrors({
         form: `${copy.instrument} is not a Binance Spot USDT pair the database accepts.`,
@@ -254,11 +314,11 @@ function ExperimentForm({
     }
     setErrors({});
     setOutcome(null);
-    setReview({ row, evidence: copy });
+    setReview({ row, evidence: copy, snapshot, scenario: snapshot ? scenario : null, context });
   };
 
   const confirm = () => {
-    if (!review || savingRef.current) return;
+    if (!review || savingRef.current || stale) return;
     savingRef.current = true;
     setOutcome('saving');
     void recordSpotExperiment(review.row).then((result) => {
@@ -279,13 +339,14 @@ function ExperimentForm({
   const reset = () => {
     edit();
     setDraft(EMPTY_DRAFT);
+    setInclude(false);
   };
 
   if (review) {
     return (
       <Review
-        row={review.row}
-        evidence={review.evidence}
+        reviewed={review}
+        stale={stale}
         outcome={outcome}
         headingRef={headingRef}
         onConfirm={confirm}
@@ -359,6 +420,35 @@ function ExperimentForm({
           />
         )}
       </Field>
+      <div className="spot-field spot-include">
+        <label htmlFor={`${id}-includeScenario`}>
+          <input
+            id={`${id}-includeScenario`}
+            name="experiment-include-scenario"
+            type="checkbox"
+            checked={include}
+            aria-invalid={errors.includeScenario ? true : undefined}
+            aria-describedby={[
+              `${id}-includeScenario-note`,
+              errors.includeScenario && `${id}-includeScenario-error`,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            onChange={(event) => setInclude(event.target.checked)}
+          />
+          Include this scenario in the record
+        </label>
+        <span id={`${id}-includeScenario-note`} className="market-scan-fit">
+          Off unless you turn it on. Adds the inputs and figures from Plan a hypothetical scenario,
+          as they are when you review, as a hypothetical planning record. It sets no rule and places
+          no order.
+        </span>
+        {errors.includeScenario && (
+          <span id={`${id}-includeScenario-error`} className="spot-field-error">
+            {errors.includeScenario}
+          </span>
+        )}
+      </div>
       {errors.form && (
         <p role="alert" className="spot-field-error">
           {errors.form}
@@ -419,10 +509,16 @@ export function RecordSpotExperiment({
   evidence,
   scanId,
   saved,
+  scenario,
+  context,
 }: Readonly<{
   evidence: () => CandidateEvidence;
   scanId: string | undefined;
   saved: TradingViewSavedScan | undefined;
+  /** The scenario's current inputs; included only when the owner opts in. */
+  scenario: ScenarioInputs;
+  /** Names the scan, snapshot file and pair; a change makes an open review out of date. */
+  context: string;
 }>) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -446,7 +542,14 @@ export function RecordSpotExperiment({
   } else {
     body = (
       <OwnerGate userId={userId}>
-        <ExperimentForm evidence={evidence} scanId={scanId} saved={saved} userId={userId} />
+        <ExperimentForm
+          evidence={evidence}
+          scanId={scanId}
+          saved={saved}
+          userId={userId}
+          scenario={scenario}
+          context={context}
+        />
       </OwnerGate>
     );
   }
@@ -454,9 +557,9 @@ export function RecordSpotExperiment({
     <div className="spot-record">
       <p className="market-scan-fit">
         Saves a record to Account only when you press Confirm and record after Review record: your
-        decision text, this candidate&rsquo;s evidence and the scan&rsquo;s identity, for the
-        configured Binance owner. Opening this section saves nothing. It places no order and links
-        no fill.
+        decision text, this candidate&rsquo;s evidence and the scan&rsquo;s identity, and the
+        scenario only if you include it, for the configured Binance owner. Opening this section
+        saves nothing. It places no order and links no fill.
       </p>
       {body}
     </div>

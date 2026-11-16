@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { RecordSpotExperiment } from '@/components/RecordSpotExperiment';
+import { ScenarioFigures } from '@/components/ScenarioFacts';
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
 import { resultAsOfLabel, riskLabel } from '@/lib/scanReview';
@@ -7,8 +8,7 @@ import {
   decimalInput,
   EMPTY_SCENARIO,
   planSpotScenario,
-  type LimitedBy,
-  type Scenario,
+  SCENARIO_FIELD_LABEL as LABEL,
   type ScenarioCheck,
   type ScenarioErrors,
   type ScenarioField,
@@ -17,20 +17,6 @@ import {
 import { candidateEvidence, riskReasons, type CandidateEvidence } from '@/lib/spotExperiments';
 import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
-
-const LABEL: Record<ScenarioField, string> = {
-  allocation: 'Available allocation',
-  maxLoss: 'Maximum planned loss',
-  entry: 'Hypothetical entry',
-  stop: 'Stop reference',
-  feePercent: 'Fee assumption per fill',
-};
-
-const LIMITED_BY: Record<LimitedBy, string> = {
-  allocation: 'Allocation',
-  maxLoss: 'Planned-loss budget',
-  both: 'Allocation and planned-loss budget equally',
-};
 
 /** One fact in a definition list, as the evidence shows them. */
 function Fact({ name, value }: Readonly<{ name: string; value: ReactNode }>) {
@@ -168,59 +154,6 @@ function ScenarioInput({
   );
 }
 
-/** The worked scenario and what it leaves out. */
-function ScenarioFigures({
-  scenario,
-  base,
-  symbol,
-  modelBacked,
-}: Readonly<{ scenario: Scenario; base: string; symbol: string; modelBacked: boolean }>) {
-  const { fees } = scenario;
-  const loss = fees
-    ? `${fees.lossWithFees} USDT with assumed fees (${scenario.lossAtStop} price move)`
-    : `${scenario.lossAtStop} USDT, price move only`;
-  const assumed = fees
-    ? `${fees.entry} USDT at entry + ${fees.exit} USDT at the stop`
-    : 'Not specified: every figure excludes fees';
-  return (
-    <>
-      <h5 className="scan-effects-title">Hypothetical scenario</h5>
-      <dl className="scan-facts">
-        <Fact name="Illustrative quantity" value={`${scenario.quantity} ${base}`} />
-        <Fact name="Limited by" value={LIMITED_BY[scenario.limitedBy]} />
-        <Fact name="Position notional" value={`${scenario.notional} USDT`} />
-        <Fact name="Unallocated" value={`${scenario.unallocated} USDT`} />
-        <Fact
-          name="Entry to stop"
-          value={`${scenario.stopDistance} USDT per ${base} (${scenario.stopDistancePercent} of entry)`}
-        />
-        <Fact name="Planned loss at the stop reference" value={loss} />
-        <Fact name="Assumed fees" value={assumed} />
-      </dl>
-      <ul className="market-scan-notes">
-        <li>
-          Illustrative quantity, floored to 0.00000001 {base}. Binance&rsquo;s lot size, minimum
-          notional and price filters for {symbol} were not checked, so this is not an executable
-          order.
-        </li>
-        <li>
-          The stop reference is a planning input, not a placed stop and not a guaranteed maximum: a
-          gap, a fast market or execution costs can make the loss larger.
-        </li>
-        <li>
-          Excludes slippage{fees ? '' : ' and fees'}. USDT amounts are rounded to the cent; the
-          exact amounts stay within your allocation and loss budget
-          {fees ? ', assumed fees included' : ''}.
-        </li>
-        <li>
-          Hypothetical arithmetic only: no recommendation, target, forecast or expected return.
-          {modelBacked ? '' : ' Not model-backed: this pair has no Long setup.'}
-        </li>
-      </ul>
-    </>
-  );
-}
-
 /** Why no figure is shown yet: what is missing, or that something needs correcting. */
 function promptText(check: Extract<ScenarioCheck, { ok: false }>): string {
   if (check.errors.form) return check.errors.form;
@@ -231,9 +164,9 @@ function promptText(check: Extract<ScenarioCheck, { ok: false }>): string {
 
 /**
  * The owner's own hypothetical arithmetic for one evaluated Binance Spot USDT pair, beside
- * the evidence it was read from. In component memory only: it reads no balance, quote or
- * exchange filter and offers no order, and its inputs and figures are never sent or saved.
- * Record experiment stores only the owner's decision and this evidence, after review. The
+ * the evidence it was read from. In component memory: it reads no balance, quote or exchange
+ * filter and offers no order. Record experiment stores the owner's decision and this evidence,
+ * and these inputs and figures only when the owner includes them and confirms the review. The
  * caller keys it by scan and asset, so another selection never inherits these values.
  */
 export function SpotScenario({
@@ -287,8 +220,8 @@ export function SpotScenario({
       <p className="market-scan-fit">
         Optional, and separate from reviewing the evidence above: a review is not a trading
         decision. The scenario is your own hypothetical arithmetic for {symbol} on Binance Spot.
-        Popup reads no balance or quote and places no orders. The scenario is never saved; choosing
-        another asset or scan clears it.
+        Popup reads no balance or quote and places no orders. The scenario is saved only if you
+        include it when you record an experiment; choosing another asset or scan clears it.
       </p>
       <details className="scan-guide-details">
         <summary>Plan a hypothetical scenario</summary>
@@ -360,6 +293,8 @@ export function SpotScenario({
             evidence={() => evidenceAt(Date.now())}
             scanId={scanId}
             saved={saved}
+            scenario={inputs}
+            context={[scanId, scan.evaluationTime, saved?.snapshotSha256, symbol].join('|')}
           />
         )}
       </details>

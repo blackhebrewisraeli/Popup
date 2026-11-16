@@ -172,3 +172,37 @@ the row. The previous owner's experiments stay stored but become invisible.
   the tables, and recorded rows stay.
 - Database: forward-only. Never drop the tables or delete their rows to undo this. To withdraw
   access, revoke the `authenticated` grants in a new migration. The stored evidence stays.
+
+## Manual Spot scenario snapshot (20261117120000)
+
+An optional [scenario snapshot](./MANUAL_SPOT_EXPERIMENTS.md#scenario-snapshot) on new Manual Spot
+experiments. The migration only expands:
+
+- It adds one nullable column, `spot_experiments.scenario_snapshot`, its shape check
+  (`spot_experiments_scenario_snapshot_shape`) and an `INSERT` grant on that column to
+  `authenticated`.
+- It changes no other column, policy, grant, function or row, and backfills nothing: existing
+  experiments read as **No scenario recorded**.
+
+The frontend reads the column in Account and sends it when the owner includes a scenario, so it
+can't run against a database without it. `DB_CONTRACT` is unchanged (no RPC); the gate's migration
+check blocks the frontend until the migration is applied.
+
+**Order: database, then frontend.**
+
+1. From a checkout of the PR's final head, run `supabase db push --dry-run`. It should list only
+   `20261117120000`. Then run `supabase db push`.
+2. From the same checkout, run the contract check above. It must report all 32 migrations applied.
+3. Merge. The production build passes the gate.
+
+**Between steps 1 and 3**, production runs the older frontend. Its inserts leave the column out
+and get a null snapshot; its Account read names its columns and never asks for this one. Nothing
+needs a flag.
+
+**Rollback.**
+
+- Frontend: Instant Rollback to a deployment from before this change is safe. It neither reads nor
+  writes the column, and stored snapshots stay.
+- Database: forward-only. Never drop the column or clear snapshots to undo this. To stop new
+  snapshots, revoke the column's `INSERT` grant in a new migration, after rolling the frontend
+  back, since a frontend that sends one would then be refused.

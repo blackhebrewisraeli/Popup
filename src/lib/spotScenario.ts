@@ -19,6 +19,15 @@ import type { TradingViewDevSource } from '@/lib/tradingViewDevScan';
 export type ScenarioField = 'allocation' | 'maxLoss' | 'entry' | 'stop' | 'feePercent';
 export type ScenarioInputs = Readonly<Record<ScenarioField, string>>;
 
+/** How each input is named on screen, in the planner and in a recorded snapshot alike. */
+export const SCENARIO_FIELD_LABEL: Record<ScenarioField, string> = {
+  allocation: 'Available allocation',
+  maxLoss: 'Maximum planned loss',
+  entry: 'Hypothetical entry',
+  stop: 'Stop reference',
+  feePercent: 'Fee assumption per fill',
+};
+
 export const EMPTY_SCENARIO: ScenarioInputs = {
   allocation: '',
   maxLoss: '',
@@ -39,6 +48,13 @@ const E6 = 10n ** 6n;
 const E14 = 10n ** 14n;
 /** Every derived amount is exact at this scale: quantity (1e-8) × price (1e-8) × fee (1e-6). */
 const SCALE_DIGITS = 22;
+
+/**
+ * Names this file's arithmetic, rounding and output text, apart from the signal model's version.
+ * A recorded scenario snapshot carries it, so a change to any of them needs a new name rather
+ * than a new reading of figures already stored.
+ */
+export const SPOT_SCENARIO_CALCULATION = 'spot-scenario-1';
 
 export type LimitedBy = 'allocation' | 'maxLoss' | 'both';
 
