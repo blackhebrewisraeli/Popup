@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils';
 export interface SegmentOption<T extends string> {
   value: T;
   label: ReactNode;
+  /** `data-tour` name, for the product tour. */
+  tour?: string;
 }
 
 /**
@@ -16,12 +18,15 @@ export function Segmented<T extends string>({
   onChange,
   ariaLabel,
   className,
+  tour,
 }: Readonly<{
   value: T;
   options: SegmentOption<T>[];
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  /** `data-tour` name, for the product tour. */
+  tour?: string;
 }>) {
   const activeIndex = Math.max(
     options.findIndex((option) => option.value === value),
@@ -33,6 +38,7 @@ export function Segmented<T extends string>({
       className={cn('segment', className)}
       role="tablist"
       aria-label={ariaLabel}
+      data-tour={tour}
       style={{ '--segments': options.length } as CSSProperties}
     >
       <span
@@ -46,6 +52,7 @@ export function Segmented<T extends string>({
           type="button"
           role="tab"
           aria-selected={option.value === value}
+          data-tour={option.tour}
           className={cn('segment-option', option.value === value && 'segment-option-active')}
           onClick={() => onChange(option.value)}
         >

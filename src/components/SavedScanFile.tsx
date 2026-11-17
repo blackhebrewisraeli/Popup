@@ -19,7 +19,7 @@ export function OpenSavedScanFile({
   const noteId = useId();
   const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="saved-file-open">
+    <div className="saved-file-open" data-tour="open-saved-scan">
       <Button
         ref={buttonRef}
         type="button"

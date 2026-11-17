@@ -96,7 +96,6 @@ const PNL_ICON = { 'pnl-up': TrendingUp, 'pnl-down': TrendingDown } as const;
 const LEDGER_COPY = {
   real_tracking: {
     sectionLabel: 'Tracked real holdings',
-    tour: undefined,
     eyebrowClass: 'paper-eyebrow real-eyebrow',
     eyebrow: 'Real holdings · Tracking only',
     title: 'Tracked Holdings',
@@ -107,7 +106,6 @@ const LEDGER_COPY = {
   },
   long_term_sim: {
     sectionLabel: 'Simulated portfolio',
-    tour: 'sim-portfolio',
     eyebrowClass: 'paper-eyebrow',
     eyebrow: 'Simulation Mode',
     title: 'Simulated Portfolio',
@@ -804,7 +802,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
 
   return (
     <section className="portfolio" aria-label={copy.sectionLabel}>
-      <header className="portfolio-head" data-tour={copy.tour}>
+      <header className="portfolio-head">
         <div>
           <span className={copy.eyebrowClass}>
             <span className="paper-eyebrow-dot" aria-hidden="true" /> {copy.eyebrow}
@@ -867,11 +865,7 @@ export const PortfolioDashboard = memo(function PortfolioDashboard({
         </div>
       </div>
 
-      <section
-        className="portfolio-telemetry"
-        aria-label="P&L attribution"
-        data-tour="pnl-attribution"
-      >
+      <section className="portfolio-telemetry" aria-label="P&L attribution">
         <TelemetryItem
           label="Unrealized P&L"
           value={formatPnl(valuation.unrealizedPnl)}

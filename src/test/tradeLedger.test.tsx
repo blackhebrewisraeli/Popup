@@ -167,7 +167,7 @@ describe('portfolio P&L attribution and trade ledger', () => {
   }
 
   it('breaks P&L into unrealized, realized and execution drag', () => {
-    const { container } = renderDashboard();
+    renderDashboard();
     const strip = within(screen.getByRole('region', { name: 'P&L attribution' }));
 
     // 6 open shares: cost 600 + $3 of remaining fees, marked at 110 → +57 (+9.45%).
@@ -178,13 +178,9 @@ describe('portfolio P&L attribution and trade ledger', () => {
     expect(strip.getByText(/1 closed trade/)).toBeInTheDocument();
     expect(strip.getByText('$6.00')).toBeInTheDocument();
     expect(strip.getByText(/2 fills/)).toBeInTheDocument();
-
-    // Tour targets on the Portfolio workspace are mounted.
-    expect(container.querySelector('[data-tour="sim-portfolio"]')).not.toBeNull();
-    expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 
-  it('keeps the Bento workspace and lower analytics views grouped without changing tour hooks', () => {
+  it('keeps the Bento workspace and lower analytics views grouped', () => {
     const { container } = renderDashboard();
 
     expect(container.querySelector('.portfolio-workspace-grid')).not.toBeNull();
@@ -201,8 +197,6 @@ describe('portfolio P&L attribution and trade ledger', () => {
       'aria-expanded',
       'false',
     );
-    expect(container.querySelector('[data-tour="sim-portfolio"]')).not.toBeNull();
-    expect(container.querySelector('[data-tour="pnl-attribution"]')).not.toBeNull();
   });
 
   it('shows each holding at its fee-inclusive cost with a date-only Date added', () => {
