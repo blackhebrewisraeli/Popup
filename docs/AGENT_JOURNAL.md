@@ -21,6 +21,12 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-17 · Review another saved scan inside a Manual Spot experiment · Draft PR [#193](https://github.com/blackhebrewisraeli/Popup/pull/193), branch `feat/experiment-scan-review`, from `290f84d`. No migration.**
+  - **Changed:** an opened experiment gains a closed [Review another saved scan](MANUAL_SPOT_EXPERIMENTS.md#reviewing-another-saved-scan) disclosure. The owner chooses one saved crypto scan file. Research's own check (`useSavedScanFile`, the finance worker) verifies it, and only then is the experiment's exact pair, matched by validated instrument, shown beside the stored copy: **Entry evidence, as recorded** and **Selected scan evidence**. The view names the file (the record's own bytes, the same scan ID, or another scan), the candle order from candle days only, and model and timeframe comparability. A missing, failed or unreadable side has its own state. In component memory only; replacing, closing or collapsing clears it. No request, write, schema or model change.
+  - **Evidence:** 8 integration tests and six mutations; typecheck, lint, build and 2,064 tests. A synthetic browser check with every off-host request answered or blocked, at desktop and 375 px, in light and dark, and by keyboard.
+  - **Not done:** the copy stores the entry candle without a year (read as the latest at or before the record time); Safari, a phone and a screen reader not checked; the owner's real files not tried.
+  - **Next:** owner review of the draft PR.
+
 - **2026-11-17 · Experiment overview first in Manual Spot experiments · Draft PR [#192](https://github.com/blackhebrewisraeli/Popup/pull/192), branch `feat/experiment-overview`, from `b4e70ba`. No migration.**
   - **Changed:** an opened experiment in Account now starts with an [Experiment overview](MANUAL_SPOT_EXPERIMENTS.md#viewing-in-account). It shows:
     - the decision and its times;
