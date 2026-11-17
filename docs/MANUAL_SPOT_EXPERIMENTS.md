@@ -245,7 +245,8 @@ anyone else it says the section is not available.
   **Provenance and copied evidence**: both times with their sources (the stated decision time or
   **Not stated**, and the database's recorded time), the account label, the scan, snapshot
   SHA-256, reproduction, authenticity (**Not established**), and every copied evidence fact.
-  Opening it, or the experiment, sends no request.
+  Opening it, or the experiment, sends no request. A second closed disclosure,
+  [**Review another saved scan**](#reviewing-another-saved-scan), follows it.
 - **Rules.** Each named rule shows its current version as **Proposal**, **Approved** or
   **Withdrawn**. A proposal or withdrawal is also labelled **Not decided**. The complete immutable
   history remains available. A change or withdrawal always supersedes the current entry; several
@@ -293,6 +294,52 @@ anyone else it says the section is not available.
   position, total, P&L, remaining quantity, order status or rating is shown.
 
 - **Close.** **Close experiment record** adds the owner's close ([Closing](#closing-in-account)).
+
+## Reviewing another saved scan
+
+**Review another saved scan** is a closed disclosure after **Provenance and copied evidence** in
+each opened experiment. It puts one saved crypto scan file the owner chooses beside the
+experiment's stored entry evidence, for that experiment's pair only. It is read-only: it fetches
+nothing, stores nothing and changes no record, rule, observation or fill.
+
+- **Research's check, unchanged.** The file goes through
+  [Opening a saved crypto scan file](MARKET_SCANNER.md#opening-a-saved-crypto-scan-file):
+  `useSavedScanFile`, the finance worker, the 4 MB limit and the same refusals. Nothing from the
+  file is shown until it reproduces.
+- **The exact pair only.** The experiment's `symbol` is matched against each result's
+  `BINANCE:<pair>` instrument whose TradingView symbol was requested and confirmed (`spotSymbol`,
+  `exactSymbol`), never by ticker. A pair that is not in the scan, is named twice, is not
+  confirmed or was not evaluated (fetch failed, rate limited, invalid data, stale data, short
+  history) gets its own state with the scan's reason. No other pair is shown in its place.
+- **Two labelled columns, same rows.** **Entry evidence, as recorded** is the stored copy as
+  stored, never recalculated or overwritten. The copy keeps no score, scan evaluation time or exact
+  freshness time, so those read **Not stored in this copy**; an unreadable copy reads **Unknown**.
+  **Selected scan evidence** words the file's facts as a recorded copy would (`candidateEvidence`),
+  plus its score and cutoff. Both list instrument, scan, model and timeframe, evaluated candle,
+  ZC LONG, ZC RISK with its reasons, technical rank, freshness with its reference time, and data
+  quality.
+- **What is compared, and nothing else:**
+  - **This file**: the record's own bytes (the SHA-256 matches: the same evidence, not new), the
+    same scan ID with other bytes, or another scan.
+  - **Candle order**, from candle days only, never file names or file times: same candle, later,
+    earlier or unknown. The copy stores the entry candle as day and month ("27 Oct candle (UTC)");
+    its year is the latest at or before the record time, and the view says so. Another scan of
+    the same candle, the original snapshot and an older scan are never called new evidence or a
+    new signal.
+  - **Model and timeframe**: compared only when the copy states them as `<model> · <timeframe>`;
+    otherwise unknown. A difference reads "not comparable as one measurement".
+  - No onset, recovery or alert is inferred. ZC LONG and ZC RISK are separate and can both hold.
+    Each rank is relative to its scan's universe, so ranks are not compared. No score is invented
+    for the copy. No BUY, HOLD or SELL, rule evaluation, holding, P&L or order status.
+- **Freshness.** Each side uses the scan's own rule (`cohortFreshness`) with its reference time:
+  the copy's was judged when it was copied, before the record time; the file's when its check came
+  back, by the browser's clock. Fresh at a scan's cutoff does not make a historical file current.
+- **In memory, under one experiment.** The file and comparison live in that experiment's component
+  memory only: never browser storage, a URL, the database or analytics. Choosing another file drops
+  the comparison at once, also when the new file is refused. **Close comparison**, or closing the
+  disclosure, clears it, and a check that answers late for a closed or replaced file is ignored.
+  Another experiment never shows it.
+- **Authenticity.** Reproduction shows the file is internally consistent, not that it is authentic.
 
 ## Closing in Account
 
@@ -523,6 +570,28 @@ sale. It does not adopt the proposed labels above, so decisions 1–3 stay open.
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of reviewing another saved scan — 2026-11-17
+
+Synthetic data only: invented `ZCT*` pairs and candles saved by the repository's own `saveScan`,
+and two invented experiment records. Nothing reached Supabase, Binance or any other host. No
+schema, RLS, RPC, function, payload or query changed.
+
+| Check                                                  | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration tests (`experimentScanReview.test.tsx`, 8) | Later, earlier, same candle from another scan, and the record's own snapshot; missing pair, short history, stale data and fetch failure; ZC LONG and ZC RISK both held in the copy; unreadable copy; different and missing model/timeframe; refused replacement; close before the check answered; a late answer after a replacement; closing the disclosure; two experiments kept apart; no read, write, request or storage; the record object frozen and unchanged |
+| Mutations                                              | Six edits each failed at least one test: candle order reversed, original-snapshot check removed, ticker-resemblance match, closing the disclosure not clearing, model always "same", an unevaluated pair shown                                                                                                                                                                                                                                                      |
+| Existing tests                                         | Saved scan file, recording, rule, observation, fill, close and tour tests pass unchanged                                                                                                                                                                                                                                                                                                                                                                            |
+| Browser, desktop and 375 px, light and dark            | Vite dev server with Supabase at a closed local port, answered in the page; every other request and WebSocket aborted. Later scan, original snapshot, same-candle file (same scan ID, other bytes), tampered replacement (refused; the earlier evidence gone at once), unreadable copy with a short-history pair. No horizontal scroll at 375 px; the columns stack below 560 px                                                                                    |
+| Keyboard                                               | Tab reaches the disclosure after Provenance and Enter opens it; Tab to **Choose a saved scan file** and Enter opens the chooser; Tab to **Close comparison** and Enter clears it and returns focus to the chooser button; closing and reopening the disclosure leaves nothing                                                                                                                                                                                       |
+| Requests and storage                                   | From opening the disclosure to the verified comparison: no Supabase or HTTP request; `localStorage` and `sessionStorage` byte-identical. The session's other attempts came from the app's existing background market data (status poll, klines, price stream), answered or blocked                                                                                                                                                                                  |
+
+The model cannot practically produce ZC LONG and ZC RISK together in a reproducing file: a score of
+78 or more under ATR ≥ 4% needs RSI near 0 with positive MACD. So both holding is checked on the
+stored copy, and the selected column states each fact separately from the same function.
+
+Not checked: Safari and Firefox, a physical phone, a screen reader, and the owner's real files or
+record.
 
 ## Verification of the experiment overview — 2026-11-17
 

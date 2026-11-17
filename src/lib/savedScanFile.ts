@@ -47,6 +47,8 @@ export type SavedScanFileCheck =
 
 const MEGABYTE = 1024 * 1024;
 export const SAVED_SCAN_FILE_LIMIT_LABEL = `${SAVED_SCAN_FILE_MAX_BYTES / MEGABYTE} MB`;
+/** "0.84 MB": an opened file's size. */
+export const megabytes = (size: number) => `${(size / MEGABYTE).toFixed(2)} MB`;
 
 export function tooLarge(size: number): SavedScanFileCheck {
   return {

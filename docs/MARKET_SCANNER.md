@@ -559,6 +559,9 @@ a new scan still needs the owner's agent session and the [runbook](#refreshing-i
   size, the scan's cutoff, and the badge **Opened from a file you chose**.
 - **Recording** reuses the [Manual Spot flow](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan)
   unchanged, with the same owner check.
+- **Reviewing an experiment.** Account's
+  [Review another saved scan](MANUAL_SPOT_EXPERIMENTS.md#reviewing-another-saved-scan) uses this
+  same check for one file at a time, and shows only that experiment's exact pair.
 - **Browser locale.** Hashes cover JSON whose keys sort with `localeCompare`, as in Node. A browser
   whose language sorts Latin letters differently could refuse a valid file as not reproducing; it
   cannot make a changed file pass.
