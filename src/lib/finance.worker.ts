@@ -1,4 +1,4 @@
-import { FinanceCache, computeWithCache, type FinanceRequest } from './financeCompute';
+import { FinanceCache, handleFinanceRequest, type FinanceRequest } from './financeCompute';
 
 interface FinanceWorkerScope {
   onmessage: ((event: MessageEvent) => void) | null;
@@ -10,10 +10,9 @@ const cache = new FinanceCache();
 
 scope.onmessage = (event: MessageEvent) => {
   const { id, request } = event.data as { id: number; request: FinanceRequest };
-  try {
-    const { value } = computeWithCache(request, cache);
-    scope.postMessage({ id, result: value });
-  } catch (error) {
-    scope.postMessage({ id, error: error instanceof Error ? error.message : String(error) });
-  }
+  handleFinanceRequest(request, cache).then(
+    (value) => scope.postMessage({ id, result: value }),
+    (error: unknown) =>
+      scope.postMessage({ id, error: error instanceof Error ? error.message : String(error) }),
+  );
 };

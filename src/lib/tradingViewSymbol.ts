@@ -36,3 +36,8 @@ export function toTradingViewSymbol(ticker: string): string {
   if (kind === 'crypto') return `BINANCE:${toBinanceSymbol(symbol)}`;
   return NASDAQ_TICKERS.has(symbol) ? `NASDAQ:${symbol}` : symbol;
 }
+
+/** The Binance Spot pair a scanned instrument names ("BINANCE:ZCTUSDT" → "ZCTUSDT"). */
+export function spotSymbol(instrument: string): string | null {
+  return /^BINANCE:([A-Z0-9]{1,20}USDT)$/.exec(instrument)?.[1] ?? null;
+}

@@ -195,6 +195,18 @@ check blocks the frontend until the migration is applied.
 2. From the same checkout, run the contract check above. It must report all 32 migrations applied.
 3. Merge. The production build passes the gate.
 
+**What happened (2026-11-17, UTC).** In this order, as the session that ran it reported:
+`supabase db push` from the PR's final head `9c024db` applied `20261117120000` alone at about
+00:00Z, the contract check then reported all 32 migrations, and read-only checks found the
+constraint, policy and privilege definitions equal to a fresh local build and the existing
+experiment, entries and fill unchanged. #187 was then merged as `49b0903` (00:11:38Z).
+
+Checked afterwards, read-only, by a later session: GitHub records #187 merged as `49b0903` from
+head `9c024db`; Vercel's production deployment of `49b0903` was created at 00:11:41Z and is
+`READY`, so it passed the gate; and the contract check run from a clean checkout of `49b0903`
+reports that production has all 32 migrations and every RPC this frontend calls. That later
+session did not repeat the definition or row comparisons.
+
 **Between steps 1 and 3**, production runs the older frontend. Its inserts leave the column out
 and get a null snapshot; its Account read names its columns and never asks for this one. Nothing
 needs a flag.

@@ -9,6 +9,10 @@ import {
   type EvaluationInput,
   type EvaluationRun,
 } from '@/lib/evaluationLab';
+import { stableSerialize } from '@/lib/stableSerialize';
+
+/** Moved to src/lib so the browser hashes the same text; re-exported for scripts. */
+export { stableSerialize };
 
 export class EvaluationStoreError extends Error {}
 export class EvaluationConflictError extends EvaluationStoreError {}
@@ -20,24 +24,13 @@ export interface StoredEvaluationRun {
   run: EvaluationRun;
 }
 
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
 export function hashEvaluationInput(input: EvaluationInput): string {
-  return createHash('sha256').update(stableJson(input)).digest('hex');
+  return createHash('sha256').update(stableSerialize(input)).digest('hex');
 }
 
 export function hashEvaluationConfig(config: EvaluationConfig): string {
   const { configurationId: _configurationId, ...withoutId } = config;
-  return createHash('sha256').update(stableJson(withoutId)).digest('hex');
+  return createHash('sha256').update(stableSerialize(withoutId)).digest('hex');
 }
 
 export function assertConfigurationIntegrity(config: EvaluationConfig): void {
@@ -54,10 +47,6 @@ export function comparableOutputs(run: EvaluationRun): unknown {
     coverage: run.coverage,
     observationPeriod: run.observationPeriod,
   };
-}
-
-export function stableSerialize(value: unknown): string {
-  return stableJson(value);
 }
 
 export async function reproduceEvaluationRun(
