@@ -2,17 +2,20 @@
 
 [← README](../README.md) · [Architecture](../ARCHITECTURE.md) · [Technical guide](WORKSPACE_GUIDE.md)
 
-**Stage: private testing / pre-beta.** This page describes the supported scope as of 13 November 2026; it is not a release announcement or an investment-performance claim.
+**Stage: private testing / pre-beta.** This page describes the supported scope as of 17 November 2026; it is not a release announcement or an investment-performance claim.
+
+The owner's private real-money trial is already underway: the owner places Binance Spot trades by hand and records them as [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md). Popup only reads Binance. Paper Desk and Build Portfolio use simulated money. No entry, holding, adding, reducing or exit policy is defined for the real trial beyond the rules the owner records in each experiment ([decision lifecycle](MANUAL_SPOT_EXPERIMENTS.md#decision-lifecycle-current-behavior-and-proposed-product-contract)).
 
 ## Available today
 
-| Surface          | Capability                                                                                                     | Boundary                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Research         | Review bounded equity/ETF and crypto scans, compare compatible snapshots, and inspect factor and Risk evidence | TradingView development scans are local and owner-initiated through an authenticated agent; not an unattended hosted scanner |
-| Paper Desk       | Size hypothetical allocations, backtest, and record simulated trades with cash and transaction ledgers         | Paper trades are simulated; planned stops are sizing assumptions, not stop orders                                            |
-| TradingView HUD  | Pine Script overlay with factor scores and alerts, ingested through an authenticated webhook                   | Model/timeframe compatibility is checked separately from successful transport                                                |
-| Decision Journal | Review recorded signal decisions, provenance, and dismissal evidence                                           | A decision record does not prove an investment outcome                                                                       |
-| Account          | Owner-only read-only Binance Spot balances, bounded execution history, and manual quantity reconciliation      | No orders or transfers; incomplete history is not a complete account ledger                                                  |
+| Surface                 | Capability                                                                                                           | Boundary                                                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Research                | Review bounded equity/ETF and crypto scans, compare compatible snapshots, and inspect factor and Risk evidence       | TradingView development scans are local and owner-initiated through an authenticated agent; not an unattended hosted scanner |
+| Paper Desk              | Size hypothetical allocations, backtest, and record simulated trades with cash and transaction ledgers               | Paper trades are simulated; planned stops are sizing assumptions, not stop orders                                            |
+| TradingView HUD         | Pine Script overlay with factor scores and alerts, ingested through an authenticated webhook                         | Model/timeframe compatibility is checked separately from successful transport                                                |
+| Decision Journal        | Review recorded signal decisions, provenance, and dismissal evidence                                                 | A decision record does not prove an investment outcome                                                                       |
+| Account                 | Owner-only read-only Binance Spot balances, bounded execution history, and manual quantity reconciliation            | No orders or transfers; incomplete history is not a complete account ledger                                                  |
+| Manual Spot experiments | Owner-only records of real trades placed by hand: source scan, decision, rules, linked fills, observations and close | Append-only; Popup verifies no holding and evaluates no rule                                                                 |
 
 The hosted app and the local research tooling have different capabilities. Opening the hosted app does not provide access to the owner's scans, account, credentials, or private research artifacts. The owner can open one saved TradingView crypto scan file there from their own disk; it is checked and kept in that browser tab only ([how](MARKET_SCANNER.md#opening-a-saved-crypto-scan-file)).
 
@@ -26,7 +29,7 @@ Investment results remain unproven. The [scanner research](SCANNER_RESEARCH.md) 
 
 1. Complete the owner's private workflow trial and resolve friction observed in actual use.
 2. Verify read-only account evidence against known executions within explicitly bounded ranges.
-3. Evaluate strategy outcomes under frozen research contracts before considering a separate small-capital pilot.
+3. Evaluate strategy outcomes under frozen research contracts. The real-money manual trial is already running; owner decisions on its lifecycle come before any policy is implemented.
 
 Public beta, automated order execution, new providers, and expanded campaigns remain outside the current phase. These are scope boundaries, not dated release commitments.
 
@@ -34,6 +37,7 @@ Public beta, automated order execution, new providers, and expanded campaigns re
 
 - [Market scanner](MARKET_SCANNER.md) and [crypto scan](TRADINGVIEW_CRYPTO_SCAN.md)
 - [Binance Spot account](BINANCE_SPOT_ACCOUNT.md) and [reconciliation](BINANCE_SPOT_RECONCILIATION.md)
+- [Manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md)
 - [Decision Journal](DECISION_JOURNAL.md)
 - [Model diagnostic](MODEL_DIAGNOSTIC.md) and [strategy validation](STRATEGY_VALIDATION.md)
 - [Earlier engineering roadmap](hybrid-roadmap.md) and [historical launch checklist](roadmap.md)
