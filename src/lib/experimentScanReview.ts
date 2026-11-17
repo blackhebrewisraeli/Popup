@@ -122,71 +122,117 @@ export interface EntryComparison {
 const YEAR_NOTE =
   ' The copy keeps the entry candle’s day and month only; its year is the latest at or before the record time.';
 
+type RecordIdentity = Pick<
+  SpotExperimentRecord,
+  'recorded_at' | 'source_scan_id' | 'source_snapshot_sha256'
+>;
+
+function identityText(
+  experiment: RecordIdentity,
+  view: TradingViewDevScan,
+  original: boolean,
+): string {
+  if (original) {
+    return 'The exact bytes this experiment was recorded from (the SHA-256 matches): the same scan and the same evidence, not new evidence.';
+  }
+  if (view.scanId === experiment.source_scan_id) {
+    return `The same scan ID as the record, ${view.scanId}, but not the same bytes: its SHA-256 differs from the recorded one.`;
+  }
+  return `Another scan, ${view.scanId}. The record’s scan is ${experiment.source_scan_id}.`;
+}
+
+/** The two candles' order, from candle days only. */
+function candleOrder(
+  entryDay: number | null,
+  pair: SelectedPair,
+  original: boolean,
+): { chronology: Chronology; chronologyText: string } {
+  if (original) {
+    return {
+      chronology: 'ORIGINAL',
+      chronologyText:
+        'Same candle: this is the snapshot the experiment was recorded from. Not new evidence or a new signal.',
+    };
+  }
+  if (pair.state !== 'EVALUATED') {
+    return {
+      chronology: 'UNKNOWN',
+      chronologyText: 'Unknown: the pair has no evaluated candle in the selected scan.',
+    };
+  }
+  if (entryDay === null) {
+    return {
+      chronology: 'UNKNOWN',
+      chronologyText:
+        'Unknown: the stored copy does not give its evaluated candle in a form this view can place.',
+    };
+  }
+  const days = `entry ${isoDay(entryDay)}, selected ${isoDay(pair.candleDay)} (UTC days)`;
+  if (pair.candleDay === entryDay) {
+    return {
+      chronology: 'SAME_CANDLE',
+      chronologyText: `Same candle as the entry evidence (${days}): another scan of it, not new evidence or a new signal.${YEAR_NOTE}`,
+    };
+  }
+  return pair.candleDay > entryDay
+    ? {
+        chronology: 'LATER',
+        chronologyText: `The selected candle is later than the entry candle (${days}). Two observations: nothing here says when or whether anything changed between them.${YEAR_NOTE}`,
+      }
+    : {
+        chronology: 'EARLIER',
+        chronologyText: `The selected candle is earlier than the entry candle (${days}): older than the evidence the experiment was recorded from, not new evidence.${YEAR_NOTE}`,
+      };
+}
+
+/** Model and timeframe, compared only when the copy states them as `<model> · <timeframe>`. */
+function modelComparability(
+  entryModel: string | undefined,
+  pair: SelectedPair,
+): { model: Comparability; modelText: string } {
+  if (pair.state !== 'EVALUATED') {
+    return {
+      model: 'UNKNOWN',
+      modelText: 'Unknown: the selected scan gives no evaluated result for this pair.',
+    };
+  }
+  const selectedModel = new Map(pair.evidence.facts).get(MODEL);
+  const parts = entryModel?.split(' · ') ?? [];
+  if (!entryModel || parts.length !== 2 || parts.some((part) => part.trim() === '')) {
+    return {
+      model: 'UNKNOWN',
+      modelText:
+        'Unknown: the stored copy does not establish its model and timeframe in a form this view can read.',
+    };
+  }
+  return entryModel === selectedModel
+    ? {
+        model: 'SAME',
+        modelText: `Same model and timeframe as the entry evidence (${entryModel}).`,
+      }
+    : {
+        model: 'DIFFERENT',
+        modelText: `Different: entry ${entryModel}, selected ${selectedModel}. The two are not comparable as one measurement.`,
+      };
+}
+
 /**
  * What can be said about the two observations: whether the file is the record's own snapshot,
  * how the two candles are ordered (from candle days only, never file names or file times), and
  * whether model and timeframe are comparable. Nothing else: no onset, recovery or alert.
  */
 export function compareWithEntry(
-  experiment: Pick<
-    SpotExperimentRecord,
-    'recorded_at' | 'source_scan_id' | 'source_snapshot_sha256'
-  >,
+  experiment: RecordIdentity,
   entry: CandidateEvidence | null,
   view: TradingViewDevScan,
   pair: SelectedPair,
 ): EntryComparison {
   const original = view.saved?.snapshotSha256 === experiment.source_snapshot_sha256;
-  let identity = `Another scan, ${view.scanId}. The record’s scan is ${experiment.source_scan_id}.`;
-  if (original) {
-    identity =
-      'The exact bytes this experiment was recorded from (the SHA-256 matches): the same scan and the same evidence, not new evidence.';
-  } else if (view.scanId === experiment.source_scan_id) {
-    identity = `The same scan ID as the record, ${view.scanId}, but not the same bytes: its SHA-256 differs from the recorded one.`;
-  }
-
   const stored = entry ? new Map(entry.facts) : null;
   const entryDay = entryCandleDay(stored?.get('Evaluated'), experiment.recorded_at);
-  let chronology: Chronology = 'UNKNOWN';
-  let chronologyText: string;
-  if (original) {
-    chronology = 'ORIGINAL';
-    chronologyText =
-      'Same candle: this is the snapshot the experiment was recorded from. Not new evidence or a new signal.';
-  } else if (pair.state !== 'EVALUATED') {
-    chronologyText = 'Unknown: the pair has no evaluated candle in the selected scan.';
-  } else if (entryDay === null) {
-    chronologyText =
-      'Unknown: the stored copy does not give its evaluated candle in a form this view can place.';
-  } else {
-    const entryText = `entry ${isoDay(entryDay)}, selected ${isoDay(pair.candleDay)} (UTC days)`;
-    if (pair.candleDay === entryDay) {
-      chronology = 'SAME_CANDLE';
-      chronologyText = `Same candle as the entry evidence (${entryText}): another scan of it, not new evidence or a new signal.${YEAR_NOTE}`;
-    } else if (pair.candleDay > entryDay) {
-      chronology = 'LATER';
-      chronologyText = `The selected candle is later than the entry candle (${entryText}). Two observations: nothing here says when or whether anything changed between them.${YEAR_NOTE}`;
-    } else {
-      chronology = 'EARLIER';
-      chronologyText = `The selected candle is earlier than the entry candle (${entryText}): older than the evidence the experiment was recorded from, not new evidence.${YEAR_NOTE}`;
-    }
-  }
-
-  const entryModel = stored?.get(MODEL);
-  const selectedModel =
-    pair.state === 'EVALUATED' ? new Map(pair.evidence.facts).get(MODEL) : undefined;
-  const parts = entryModel?.split(' · ') ?? [];
-  let model: Comparability = 'UNKNOWN';
-  let modelText =
-    'Unknown: the stored copy does not establish its model and timeframe in a form this view can read.';
-  if (!selectedModel) {
-    modelText = 'Unknown: the selected scan gives no evaluated result for this pair.';
-  } else if (entryModel && parts.length === 2 && parts.every((part) => part.trim() !== '')) {
-    model = entryModel === selectedModel ? 'SAME' : 'DIFFERENT';
-    modelText =
-      model === 'SAME'
-        ? `Same model and timeframe as the entry evidence (${entryModel}).`
-        : `Different: entry ${entryModel}, selected ${selectedModel}. The two are not comparable as one measurement.`;
-  }
-  return { identity, chronology, chronologyText, model, modelText };
+  return {
+    identity: identityText(experiment, view, original),
+    ...candleOrder(entryDay, pair, original),
+    ...modelComparability(stored?.get(MODEL), pair),
+  };
 }
