@@ -838,7 +838,9 @@ describe('Manual Spot experiments in Account', () => {
     expect(summary).toHaveTextContent('Retrospective');
     expect(summary).toHaveTextContent('Historical scan');
     fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
-    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(item, 'Decision')).toBe(
+      'Bought a small ZCT position. (stated 2026-10-27 21:15:00 UTC; recorded 2026-10-28 17:00:01.500 UTC)',
+    );
     expect(fact(item, 'Stated decision time')).toBe('2026-10-27 21:15:00 UTC, your statement');
     expect(fact(item, 'Recorded')).toBe('2026-10-28 17:00:01.500 UTC, the database’s clock');
     expect(fact(item, 'Scan')).toBe(SCAN_ID);
@@ -933,6 +935,11 @@ describe('Manual Spot experiments in Account', () => {
     expect(fact(item, 'Stop')).toMatch(/^Approved — Synthetic approved stop/);
     expect(fact(item, 'Horizon')).toMatch(/^Withdrawn — Synthetic horizon withdrawn.*Not decided/);
     expect(fact(item, 'Target')).toBe('Not decided');
+    const overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    expect(fact(overview, 'Rules')).toBe(
+      'Approved: Stop · Not decided: Allocation ceiling, Horizon (withdrawn), Target, Exit · History: 4 entries Approved means you recorded it; Popup does not evaluate, follow or execute it.',
+    );
+    expect(fact(overview, 'Observations')).toBe('1 recorded');
     const history = within(item).getByRole('list', { name: 'Rule history' });
     expect(history).toHaveTextContent('Proposal — Synthetic stop proposal');
     expect(history).toHaveTextContent('Approved — Synthetic approved stop');
@@ -1293,30 +1300,32 @@ describe('arriving from the workspace link to Manual Spot experiments', () => {
   });
 });
 
+/** A synthetic linked fill of the default experiment. */
+const linkedFill = (overrides: Partial<LinkedFill>): LinkedFill => ({
+  id: 'f1',
+  experiment_id: 'e0000000-0000-4000-8000-000000000001',
+  recorded_at: '2026-10-28T17:03:00+00:00',
+  account_label: 'main',
+  symbol: 'ZCTLONGUSDT',
+  trade_id: '9001',
+  order_id: '7001',
+  side: 'buy',
+  trade_time_ms: Date.UTC(2026, 9, 27, 21, 20),
+  quantity: '10.00000000',
+  price: '1.00000000',
+  quote_quantity: '10.00000000',
+  commission: '0.01000000',
+  commission_asset: 'ZCTLONG',
+  retrieved_at: '2026-10-28T17:02:00+00:00',
+  window_start_ms: Date.UTC(2026, 9, 27, 21),
+  window_end_ms: Date.UTC(2026, 9, 27, 22),
+  coverage_complete: true,
+  ...overrides,
+});
+
 describe('closing an experiment record', () => {
   const EXPERIMENT_ID = 'e0000000-0000-4000-8000-000000000001';
   const renderList = () => render(wrap(<SpotExperiments userId={OWNER} />));
-  const linkedFill = (overrides: Partial<LinkedFill>): LinkedFill => ({
-    id: 'f1',
-    experiment_id: EXPERIMENT_ID,
-    recorded_at: '2026-10-28T17:03:00+00:00',
-    account_label: 'main',
-    symbol: 'ZCTLONGUSDT',
-    trade_id: '9001',
-    order_id: '7001',
-    side: 'buy',
-    trade_time_ms: Date.UTC(2026, 9, 27, 21, 20),
-    quantity: '10.00000000',
-    price: '1.00000000',
-    quote_quantity: '10.00000000',
-    commission: '0.01000000',
-    commission_asset: 'ZCTLONG',
-    retrieved_at: '2026-10-28T17:02:00+00:00',
-    window_start_ms: Date.UTC(2026, 9, 27, 21),
-    window_end_ms: Date.UTC(2026, 9, 27, 22),
-    coverage_complete: true,
-    ...overrides,
-  });
   const close = (overrides: Partial<ExperimentEntry> = {}) =>
     entry({
       id: 'c1',
@@ -1472,10 +1481,10 @@ describe('closing an experiment record', () => {
       `${SCAN_ID} · reproduction: match · authenticity not established`,
     );
     expect(fact(summary, 'Rules')).toBe(
-      'Approved: Stop · Not decided: Allocation ceiling, Horizon, Target, Exit · History: 2 entries',
+      'Approved: Stop · Not decided: Allocation ceiling, Horizon, Target (proposal), Exit · History: 2 entries',
     );
     expect(fact(summary, 'Linked fills')).toBe(
-      '2 linked: 1 buy, 1 sell. Only fills linked here; nothing is derived from them.',
+      '2 linked: 1 buy, 1 sell. Counts only, not a holding: nothing is derived from them.',
     );
     expect(fact(summary, 'Observations')).toBe('1 recorded');
     expect(fact(summary, 'Close')).toBe('Not closed: no close recorded');
@@ -1507,7 +1516,7 @@ describe('closing an experiment record', () => {
     expect(within(review).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
     await waitFor(() =>
       expect(fact(item, 'Close')).toBe(
-        'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC)',
+        'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC) Ends the record; not evidence of a sale.',
       ),
     );
     expect(db.inserts).toHaveLength(1);
@@ -1640,14 +1649,18 @@ describe('closing an experiment record', () => {
     });
     renderList();
     const item = await open();
-    expect(fact(item, 'Close')).toBe(
-      'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC)',
+    const overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    expect(fact(overview, 'Close')).toBe(
+      'Synthetic close reason. (stated 2026-10-28 16:30:00 UTC; recorded 2026-10-28 17:10:00 UTC) Ends the record; not evidence of a sale.',
+    );
+    expect(fact(overview, 'Linked fills')).toBe(
+      '2 linked: 1 buy, 1 sell. Counts only, not a holding: nothing is derived from them.',
     );
     expect(within(item).queryByText('Close experiment record')).not.toBeInTheDocument();
     expect(item).toHaveTextContent(
       'Closing doesn’t lock this record: rules, observations and fills added later still appear, each marked as recorded after the close.',
     );
-    expect(fact(item, 'Recorded after the close')).toBe(
+    expect(fact(overview, 'Recorded after the close')).toBe(
       '1 linked fill, 1 rule entry, 1 observation',
     );
     const history = within(item).getByRole('list', { name: 'Rule history' });
@@ -1665,6 +1678,166 @@ describe('closing an experiment record', () => {
     expect(within(item).getByText('Add a rule')).toBeInTheDocument();
     expect(within(item).getByText('Add an observation')).toBeInTheDocument();
     expect(item).not.toHaveTextContent(/remaining|profit|success|failure|sold/i);
+  });
+});
+
+describe('the experiment overview', () => {
+  beforeEach(() => db.rpc.mockResolvedValue({ data: true, error: null }));
+
+  async function openItem(record: SpotExperimentRecord) {
+    db.listResult.mockResolvedValue({ data: [record], error: null });
+    render(wrap(<SpotExperiments userId={OWNER} />));
+    const item = (await screen.findByText(record.symbol)).closest('details');
+    if (!item) throw new Error('item');
+    return item;
+  }
+
+  /** A full copy as candidateEvidence writes it, with ZC LONG and ZC RISK both holding. */
+  const BOTH: CandidateEvidence = {
+    version: 1,
+    instrument: 'BINANCE:ZCTLONGUSDT',
+    facts: [
+      ['Instrument', 'BINANCE:ZCTLONGUSDT (synthetic)'],
+      ['Venue', 'Binance Spot, USDT pair'],
+      ['Scan', SCAN_ID],
+      ['Model · timeframe', '1.0.0 · 1D'],
+      ['Evaluated', '2026-10-27 candle (UTC)'],
+      ['Technical rank', '#3 of 25, incomplete scan (24 supported)'],
+      ['ZC LONG', 'Holds'],
+      ['ZC RISK', 'Holds: high volatility'],
+      ['Freshness', 'Stale: synthetic freshness note'],
+      ['Data quality', 'Evaluated on 199 closed UTC days; scan incomplete'],
+    ],
+    rank: 3,
+    evaluated: 25,
+    long: true,
+    risk: true,
+    stale: true,
+  };
+
+  it('leads with the overview, keeps provenance in one closed disclosure, and reads nothing more when opened', async () => {
+    const item = await openItem(experiment({ source_evidence: BOTH }));
+    const reads = { listed: db.listed.length, rpc: db.rpc.mock.calls.length };
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    const overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    const provenance = within(item)
+      .getByText('Provenance and copied evidence', { selector: 'summary' })
+      .closest('details');
+    if (!provenance) throw new Error('provenance');
+    expect(item.querySelector('.experiment-detail')?.firstElementChild).toBe(overview);
+    expect(
+      overview.compareDocumentPosition(provenance) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(provenance).not.toHaveAttribute('open');
+
+    expect(fact(overview, 'Decision')).toBe(
+      'Bought a small ZCT position. (stated 2026-10-27 21:15:00 UTC; recorded 2026-10-28 17:00:01.500 UTC)',
+    );
+    // Both stored facts, side by side; neither takes precedence or becomes one verdict.
+    expect(fact(overview, 'ZC LONG')).toBe('Holds');
+    expect(fact(overview, 'ZC RISK')).toBe('Holds: high volatility');
+    expect(fact(overview, 'Technical rank')).toBe('#3 of 25, incomplete scan (24 supported)');
+    expect(fact(overview, 'Evaluated')).toBe('2026-10-27 candle (UTC)');
+    expect(fact(overview, 'Freshness')).toBe('Stale: synthetic freshness note');
+    expect(fact(overview, 'Data quality')).toBe(
+      'Evaluated on 199 closed UTC days; scan incomplete',
+    );
+    expect(overview).toHaveTextContent(
+      'Copied when you recorded this experiment: historical, not current.',
+    );
+    expect(fact(overview, 'Rules')).toBe(
+      'Not decided: Allocation ceiling, Stop, Horizon, Target, Exit · History: 0 entries Approved means you recorded it; Popup does not evaluate, follow or execute it.',
+    );
+    expect(fact(overview, 'Linked fills')).toBe('None linked');
+    expect(fact(overview, 'Close')).toBe('Not closed: no close recorded');
+    expect(overview).not.toHaveTextContent(SCAN_ID);
+    expect(overview).not.toHaveTextContent(SHA);
+    expect(overview).not.toHaveTextContent(
+      /\b(BUY|SELL|HOLD)\b|P&L|profit|remaining|current price/,
+    );
+    expect(within(item).getByText('ZCTLONGUSDT').closest('summary')).toHaveTextContent(
+      'Historical scan',
+    );
+
+    fireEvent.click(within(provenance).getByText('Provenance and copied evidence'));
+    await waitFor(() => expect(provenance).toHaveAttribute('open'));
+    expect(fact(provenance, 'Scan')).toBe(SCAN_ID);
+    expect(fact(provenance, 'Snapshot SHA-256')).toBe(SHA);
+    expect(fact(provenance, 'Reproduction')).toMatch(/^Match: reproduced offline when recorded/);
+    expect(fact(provenance, 'Authenticity')).toBe('Not established: local snapshots are unsigned');
+    expect(fact(provenance, 'Account label')).toBe(
+      'main (your label; it does not identify a Binance account)',
+    );
+    for (const [name, value] of BOTH.facts) expect(fact(provenance, name)).toBe(value);
+
+    // The scenario, rules, composers, observations and fills stay in the opened record.
+    expect(within(item).getByRole('region', { name: 'Scenario, as recorded' })).toBeInTheDocument();
+    expect(within(item).getByText('Add a rule')).toBeInTheDocument();
+    expect(within(item).getByText('Add an observation')).toBeInTheDocument();
+    expect(within(item).getByText('Dated observations', { selector: 'h5' })).toBeInTheDocument();
+    expect(within(item).getByText('Close experiment record')).toBeInTheDocument();
+    // Opening the record and its disclosure reads and writes nothing.
+    expect(db.listed).toHaveLength(reads.listed);
+    expect(db.rpc).toHaveBeenCalledTimes(reads.rpc);
+    expect(db.inserts).toEqual([]);
+  });
+
+  it('keeps unreadable or missing evidence unknown, and shows a legacy record with no scenario', async () => {
+    let item = await openItem(
+      experiment({ source_evidence: { facts: 'not a list' }, scenario_snapshot: null }),
+    );
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    let overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    expect(fact(overview, 'Entry evidence, as recorded')).toBe(
+      'Unknown: the copied evidence is not in a form this view can read, so none of it is shown.',
+    );
+    expect(overview).not.toHaveTextContent(/Does not hold|no risk|HOLD/i);
+    expect(within(item).getByRole('region', { name: 'Scenario, as recorded' })).toHaveTextContent(
+      'No scenario recorded',
+    );
+    expect(fact(overview, 'Close')).toBe('Not closed: no close recorded');
+    cleanup();
+
+    // A readable copy without the Long and Risk facts: unknown, never "does not hold".
+    item = await openItem(experiment());
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    expect(fact(overview, 'ZC LONG')).toBe('Unknown: not in this copy');
+    expect(fact(overview, 'ZC RISK')).toBe('Unknown: not in this copy');
+    expect(fact(overview, 'Technical rank')).toBe('#1 of 2');
+    expect(overview).not.toHaveTextContent(/Does not hold/);
+  });
+
+  it('counts sells of every unit bought without closing the record or showing a holding', async () => {
+    const item = await openItem(
+      experiment({
+        source_evidence: BOTH,
+        spot_experiment_fills: [
+          linkedFill({ id: 'f1', quantity: '10.00000000' }),
+          linkedFill({
+            id: 'f2',
+            trade_id: '9002',
+            side: 'sell',
+            quantity: '10.00000000',
+            trade_time_ms: Date.UTC(2026, 9, 27, 21, 40),
+          }),
+        ],
+      }),
+    );
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    const overview = within(item).getByRole('region', { name: 'Experiment overview' });
+    expect(fact(overview, 'Linked fills')).toBe(
+      '2 linked: 1 buy, 1 sell. Counts only, not a holding: nothing is derived from them.',
+    );
+    expect(fact(overview, 'Close')).toBe('Not closed: no close recorded');
+    expect(within(overview).queryByText('Recorded after the close')).toBeNull();
+    expect(overview).not.toHaveTextContent(/\b0 (units|remaining)|closed position|sold out|P&L/i);
+    // The full fill details stay in the opened record.
+    expect(
+      within(item)
+        .getAllByRole('listitem')
+        .filter((li) => li.classList.contains('experiment-fill')),
+    ).toHaveLength(2);
   });
 });
 
@@ -1991,7 +2164,7 @@ describe('a recorded scenario in Account', () => {
     const item = await openItem(experiment());
     const shown = scenarioRegion(item, 'Scenario, as recorded');
     expect(shown).toHaveTextContent(/^Scenario, as recordedNo scenario recorded$/);
-    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(item, 'Decision')).toMatch(/^Bought a small ZCT position\. \(stated /);
   });
 
   it('shows the figures as stored, never worked out again, and decides no rule', async () => {
@@ -2028,7 +2201,7 @@ describe('a recorded scenario in Account', () => {
     expect(scenarioRegion(item, 'Scenario, as recorded')).toHaveTextContent(
       'A scenario is stored in a format this view does not read (format 2, calculation spot-scenario-1), so none of it is shown.',
     );
-    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(item, 'Decision')).toMatch(/^Bought a small ZCT position\. \(stated /);
     expect(fact(item, 'Technical rank')).toBe('#1 of 2');
     cleanup();
     item = await openItem(
