@@ -21,6 +21,19 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-17 · Experiment overview first in Manual Spot experiments · Draft PR [#192](https://github.com/blackhebrewisraeli/Popup/pull/192), branch `feat/experiment-overview`, from `b4e70ba`. No migration.**
+  - **Changed:** an opened experiment in Account now starts with an [Experiment overview](MANUAL_SPOT_EXPERIMENTS.md#viewing-in-account). It shows:
+    - the decision and its times;
+    - the entry evidence copied when the experiment was recorded, labelled historical: ZC LONG and ZC RISK side by side, and missing facts unknown;
+    - rule status from the existing supersession;
+    - linked buy and sell counts, labelled not a holding;
+    - the explicit close, which is not evidence of a sale.
+
+    Scan, hash, reproduction, authenticity and every copied fact sit in one closed **Provenance and copied evidence** disclosure. The close review keeps its summary. Presentation only: no request, payload, schema or rule change.
+
+  - **Evidence:** typecheck, lint, build and 2,056 tests. The browser check was synthetic, with every off-host request answered or blocked, at desktop width and 375 px, in light and dark, and by keyboard. Opening the record sent no request.
+  - **Next:** the owner's three lifecycle decisions are still open. This PR does not adopt the proposed labels.
+
 - **2026-11-17 · Decision lifecycle contract for Manual Spot experiments · Open PR [#191](https://github.com/blackhebrewisraeli/Popup/pull/191), branch `docs/decision-lifecycle-contract`. Documentation only.**
   - **Changed:** a [decision lifecycle](MANUAL_SPOT_EXPERIMENTS.md#decision-lifecycle-current-behavior-and-proposed-product-contract) section: each policy's condition and actual consumer (score, Pine bands, setups, Pine transitions, profile eligibility, sizing, tactical signals, rebalance, experiments, Binance reads), entry → closure with what is implemented and not defined, and proposed display wording. It separates the TypeScript implementation from Pine's bounded-equivalent one, and an owner exit rule from linked sells and from the `close` entry. [Product status](PRODUCT_STATUS.md) now says the real-money manual trial is underway. No code, threshold, model, schema or experiment change; no strategy approved.
   - **Evidence:** callers traced by symbol; both synthetic examples computed with `scoreFactors` (64 NEUTRAL; 67 HIGH_VOLATILITY with Risk). Prettier and link checks.

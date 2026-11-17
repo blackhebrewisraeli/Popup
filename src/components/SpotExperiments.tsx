@@ -13,6 +13,7 @@ import {
   RULE_NAME,
   ruleVersions,
   SPOT_EXPERIMENTS_ANCHOR,
+  type CandidateEvidence,
   type ExperimentEntry,
   type LinkedFill,
   type SpotExperimentRecord,
@@ -27,12 +28,54 @@ const REPRODUCTION: Record<string, string> = {
   not_checked: 'Not checked when recorded',
 };
 
-function Fact({ name, value }: Readonly<{ name: string; value: ReactNode }>) {
+function Fact({
+  name,
+  value,
+  className,
+}: Readonly<{ name: string; value: ReactNode; className?: string | undefined }>) {
   return (
-    <div>
+    <div className={className}>
       <dt>{name}</dt>
       <dd>{value}</dd>
     </div>
+  );
+}
+
+/** The copied candidate facts the overview leads with, by the names they were stored under. */
+const ENTRY_EVIDENCE = [
+  'ZC LONG',
+  'ZC RISK',
+  'Technical rank',
+  'Evaluated',
+  'Freshness',
+  'Data quality',
+];
+
+const STATUS_NOTE: Record<string, string> = { proposed: 'proposal', withdrawn: 'withdrawn' };
+
+/**
+ * The leading facts of the evidence copied when the experiment was recorded, in their stored
+ * text: never re-derived or compared with a current scan. ZC LONG and ZC RISK stay separate, and a
+ * fact the copy lacks stays unknown rather than reading as "does not hold".
+ */
+function EntryEvidence({ evidence }: Readonly<{ evidence: CandidateEvidence | null }>) {
+  if (!evidence) {
+    return (
+      <>Unknown: the copied evidence is not in a form this view can read, so none of it is shown.</>
+    );
+  }
+  const stored = new Map(evidence.facts);
+  return (
+    <>
+      <p className="market-scan-fit">
+        Copied when you recorded this experiment: historical, not current.
+      </p>
+      <dl className="scan-facts">
+        {ENTRY_EVIDENCE.map((name) => (
+          <Fact key={name} name={name} value={stored.get(name) ?? 'Unknown: not in this copy'} />
+        ))}
+      </dl>
+    </>
   );
 }
 
@@ -183,9 +226,13 @@ function RecordedScenario({
 
 /**
  * What the record holds, stated as counts and the owner's words only: no sale is inferred and
- * nothing is totalled, valued or rated.
+ * nothing is totalled, valued or rated. The overview leads with the entry evidence; the close
+ * review names the source scan instead.
  */
-function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentRecord }>) {
+function RecordSummary({
+  experiment,
+  overview = false,
+}: Readonly<{ experiment: SpotExperimentRecord; overview?: boolean }>) {
   const entries = experiment.spot_experiment_entries;
   const fills = experiment.spot_experiment_fills;
   const close = entries.find((entry) => entry.kind === 'close');
@@ -193,11 +240,15 @@ function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentReco
   const observations = entries.filter((entry) => entry.kind === 'observation');
   const rules = ruleVersions(entries);
   const approved = NAMED_RULES.filter((rule) => rules.named[rule]?.rule_status === 'approved');
-  const undecided = NAMED_RULES.filter((rule) => !approved.includes(rule));
+  // A proposal or withdrawal is the current version, still not decided.
+  const undecided = NAMED_RULES.filter((rule) => !approved.includes(rule)).map((rule) => {
+    const note = STATUS_NOTE[rules.named[rule]?.rule_status ?? ''];
+    return note ? `${RULE_NAME[rule]} (${note})` : RULE_NAME[rule];
+  });
   const otherApproved = rules.other.filter((entry) => entry.rule_status === 'approved').length;
   const ruleParts = [
     approved.length > 0 && `Approved: ${approved.map((rule) => RULE_NAME[rule]).join(', ')}`,
-    undecided.length > 0 && `Not decided: ${undecided.map((rule) => RULE_NAME[rule]).join(', ')}`,
+    undecided.length > 0 && `Not decided: ${undecided.join(', ')}`,
     otherApproved > 0 && `Other approved: ${otherApproved}`,
     `History: ${count(rules.history.length, 'entry', 'entries')}`,
   ].filter(Boolean);
@@ -207,6 +258,7 @@ function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentReco
   return (
     <dl className="scan-facts">
       <Fact
+        className={overview ? 'experiment-overview-wide' : undefined}
         name="Decision"
         value={
           <>
@@ -223,17 +275,40 @@ function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentReco
           </>
         }
       />
+      {overview ? (
+        <Fact
+          className="experiment-overview-wide"
+          name="Entry evidence, as recorded"
+          value={<EntryEvidence evidence={parseEvidence(experiment.source_evidence)} />}
+        />
+      ) : (
+        <Fact
+          name="Source scan"
+          value={`${experiment.source_scan_id} · reproduction: ${experiment.source_reproduction.replace('_', ' ')} · authenticity not established`}
+        />
+      )}
       <Fact
-        name="Source scan"
-        value={`${experiment.source_scan_id} · reproduction: ${experiment.source_reproduction.replace('_', ' ')} · authenticity not established`}
+        name="Rules"
+        value={
+          <>
+            {ruleParts.join(' · ')}
+            {overview && (
+              <>
+                {' '}
+                <span className="market-scan-rule">
+                  Approved means you recorded it; Popup does not evaluate, follow or execute it.
+                </span>
+              </>
+            )}
+          </>
+        }
       />
-      <Fact name="Rules" value={ruleParts.join(' · ')} />
       <Fact
         name="Linked fills"
         value={
           fills.length === 0
             ? 'None linked'
-            : `${fills.length} linked: ${buys} buy, ${fills.length - buys} sell. Only fills linked here; nothing is derived from them.`
+            : `${fills.length} linked: ${buys} buy, ${fills.length - buys} sell. Counts only, not a holding: nothing is derived from them.`
         }
       />
       <Fact
@@ -242,7 +317,16 @@ function RecordSummary({ experiment }: Readonly<{ experiment: SpotExperimentReco
       />
       <Fact
         name="Close"
-        value={close ? <Statement entry={close} /> : 'Not closed: no close recorded'}
+        value={
+          close ? (
+            <>
+              <Statement entry={close} />{' '}
+              <span className="market-scan-rule">Ends the record; not evidence of a sale.</span>
+            </>
+          ) : (
+            'Not closed: no close recorded'
+          )
+        }
       />
       {close && (
         <Fact
@@ -266,62 +350,72 @@ function Detail({
   experiment,
   onRefresh,
 }: Readonly<{ experiment: SpotExperimentRecord; onRefresh: () => Promise<boolean> }>) {
+  const id = useId();
   const evidence = parseEvidence(experiment.source_evidence);
   const entries = experiment.spot_experiment_entries;
   const close = entries.find((entry) => entry.kind === 'close');
   return (
     <div className="experiment-detail">
-      <dl className="scan-facts">
-        <Fact name="Decision" value={experiment.decision} />
-        <Fact
-          name="Stated decision time"
-          value={
-            experiment.decision_stated_at ? (
-              <>
-                <Time value={experiment.decision_stated_at} />, your statement
-              </>
-            ) : (
-              'Not stated'
-            )
-          }
-        />
-        <Fact
-          name="Recorded"
-          value={
-            <>
-              <Time value={experiment.recorded_at} />, the database&rsquo;s clock
-            </>
-          }
-        />
-        <Fact
-          name="Account label"
-          value={`${experiment.account_label} (your label; it does not identify a Binance account)`}
-        />
-      </dl>
+      <section aria-labelledby={`${id}-overview`} className="experiment-overview">
+        <h5 id={`${id}-overview`} className="scan-effects-title">
+          Experiment overview
+        </h5>
+        <RecordSummary experiment={experiment} overview />
+      </section>
 
-      <h5 className="scan-effects-title">Source</h5>
-      <dl className="scan-facts">
-        <Fact name="Scan" value={<code>{experiment.source_scan_id}</code>} />
-        <Fact name="Snapshot SHA-256" value={<code>{experiment.source_snapshot_sha256}</code>} />
-        <Fact
-          name="Reproduction"
-          value={REPRODUCTION[experiment.source_reproduction] ?? experiment.source_reproduction}
-        />
-        <Fact name="Authenticity" value="Not established: local snapshots are unsigned" />
-      </dl>
-
-      <h5 className="scan-effects-title">Candidate evidence, as copied when recorded</h5>
-      {evidence ? (
+      <details className="experiment-history experiment-provenance">
+        <summary>Provenance and copied evidence</summary>
         <dl className="scan-facts">
-          {evidence.facts.map(([name, value]) => (
-            <Fact key={name} name={name} value={value} />
-          ))}
+          <Fact
+            name="Stated decision time"
+            value={
+              experiment.decision_stated_at ? (
+                <>
+                  <Time value={experiment.decision_stated_at} />, your statement
+                </>
+              ) : (
+                'Not stated'
+              )
+            }
+          />
+          <Fact
+            name="Recorded"
+            value={
+              <>
+                <Time value={experiment.recorded_at} />, the database&rsquo;s clock
+              </>
+            }
+          />
+          <Fact
+            name="Account label"
+            value={`${experiment.account_label} (your label; it does not identify a Binance account)`}
+          />
         </dl>
-      ) : (
-        <p className="market-scan-fit">
-          This copy is not in a form this view can read, so none of it is shown.
-        </p>
-      )}
+
+        <h5 className="scan-effects-title">Source</h5>
+        <dl className="scan-facts">
+          <Fact name="Scan" value={<code>{experiment.source_scan_id}</code>} />
+          <Fact name="Snapshot SHA-256" value={<code>{experiment.source_snapshot_sha256}</code>} />
+          <Fact
+            name="Reproduction"
+            value={REPRODUCTION[experiment.source_reproduction] ?? experiment.source_reproduction}
+          />
+          <Fact name="Authenticity" value="Not established: local snapshots are unsigned" />
+        </dl>
+
+        <h5 className="scan-effects-title">Candidate evidence, as copied when recorded</h5>
+        {evidence ? (
+          <dl className="scan-facts">
+            {evidence.facts.map(([name, value]) => (
+              <Fact key={name} name={name} value={value} />
+            ))}
+          </dl>
+        ) : (
+          <p className="market-scan-fit">
+            This copy is not in a form this view can read, so none of it is shown.
+          </p>
+        )}
+      </details>
 
       <RecordedScenario experiment={experiment} modelBacked={evidence?.long !== false} />
 
@@ -330,8 +424,6 @@ function Detail({
       <h5 className="scan-effects-title">Linked fills</h5>
       <Fills fills={experiment.spot_experiment_fills} closedAt={close?.recorded_at ?? null} />
 
-      <h5 className="scan-effects-title">Record summary</h5>
-      <RecordSummary experiment={experiment} />
       <div className="experiment-entry-actions">
         <CloseComposer
           experiment={experiment}

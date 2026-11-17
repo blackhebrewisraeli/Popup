@@ -4083,6 +4083,18 @@ body {
 .experiment-observations p {
   margin: 0;
 }
+/* The overview: the decision and the copied entry evidence take the full width. */
+.experiment-overview-wide {
+  grid-column: 1 / -1;
+}
+.experiment-overview dd > .scan-facts {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.experiment-provenance[open] > summary {
+  margin-bottom: 8px;
+}
 @media (max-width: 560px) {
   .experiment-detail .scan-facts,
   .spot-record-review .scan-facts {

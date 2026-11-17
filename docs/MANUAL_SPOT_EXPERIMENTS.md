@@ -239,9 +239,13 @@ anyone else it says the section is not available.
   (permission denied), and failed. A failure never shows an empty list in its place.
 - **One read.** The owner's newest 100 experiments, each with its entries and linked fills
   embedded.
-- **Each experiment.** Pair, account label, and both times: the stated decision time (or **Not
-  stated**) and the database's recorded time. Then the scan, snapshot SHA-256, reproduction,
-  authenticity (**Not established**), and the copied evidence.
+- **Each experiment.** The closed row shows the pair, account label and recorded time, with
+  **Retrospective** and **Historical scan** tags when they apply. Opening it shows the
+  **Experiment overview** first (see **Record summary** below). Next comes one closed disclosure,
+  **Provenance and copied evidence**: both times with their sources (the stated decision time or
+  **Not stated**, and the database's recorded time), the account label, the scan, snapshot
+  SHA-256, reproduction, authenticity (**Not established**), and every copied evidence fact.
+  Opening it, or the experiment, sends no request.
 - **Rules.** Each named rule shows its current version as **Proposal**, **Approved** or
   **Withdrawn**. A proposal or withdrawal is also labelled **Not decided**. The complete immutable
   history remains available. A change or withdrawal always supersedes the current entry; several
@@ -267,17 +271,33 @@ anyone else it says the section is not available.
   while the UI reports the history refresh as pending, succeeded or failed; it does not claim
   success or automatically retry an observation, because the existing schema has no observation
   idempotency key.
-- **Record summary.** Under the linked fills, one factual summary: the decision with its stated
-  and recorded times, the source scan with its reproduction and authenticity, which named rules
-  are approved or not decided and how many rule entries the history holds, how many fills are
-  linked by side, how many observations are recorded, and the close (**Not closed** or the owner's
-  stored close). After a close it also counts the fills, rule entries and observations recorded
-  after it. Counts only: no position, total, P&L, remaining quantity, order status or rating.
+- **Record summary.** The **Experiment overview** at the top of an opened experiment is a factual
+  summary. It holds:
+  - the decision, with its stated and recorded times;
+  - **Entry evidence, as recorded**: the ZC LONG, ZC RISK, technical rank, evaluated, freshness
+    and data-quality facts. These are shown in the text copied when the experiment was recorded,
+    labelled historical, not current. ZC LONG and ZC RISK are listed side by side, with no
+    precedence. A fact the copy lacks reads **Unknown: not in this copy**, and an unreadable copy
+    reads **Unknown**. Neither becomes "does not hold".
+  - which named rules are approved and which are not decided, marking a current proposal or
+    withdrawal, and how many rule entries the history holds. One note says that approved means
+    recorded by the owner: Popup does not evaluate, follow or execute a rule.
+  - how many fills are linked, by side: **Counts only, not a holding**;
+  - how many observations are recorded;
+  - the close: **Not closed**, or the owner's stored close with **Ends the record; not evidence
+    of a sale**. After a close it also counts the fills, rule entries and observations recorded
+    after it.
+
+  Selling every unit bought changes only the counts. The close review repeats this summary, with
+  the source scan, its reproduction and its authenticity in place of the entry evidence. No
+  position, total, P&L, remaining quantity, order status or rating is shown.
+
 - **Close.** **Close experiment record** adds the owner's close ([Closing](#closing-in-account)).
 
 ## Closing in Account
 
-**Close experiment record** sits under the record summary of an experiment that has no close.
+**Close experiment record** sits at the end of an experiment that has no close, after its linked
+fills.
 
 - **The owner's words.** A reason is required (at most 1,000 characters). A stated UTC time is
   optional: empty means not stated. The field is read as UTC, whatever the browser's time zone,
@@ -485,6 +505,11 @@ Owner decisions:
 Popup** and **not evaluated by Popup** to Account's existing record summary, from stored rows only.
 No new reads, schema, model or rule change. It needs decision 1 only.
 
+**Since then:** the [Experiment overview](#viewing-in-account) leads each opened experiment. It
+shows the copied entry evidence in its stored text and says that linked fills are counts, not a
+holding, that approved rules are not evaluated by Popup, and that a close is not evidence of a
+sale. It does not adopt the proposed labels above, so decisions 1–3 stay open.
+
 ## Not in this increment
 
 - No correction, withdrawal or reopening of a close: the one close entry is final.
@@ -498,6 +523,23 @@ No new reads, schema, model or rule change. It needs decision 1 only.
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of the experiment overview — 2026-11-17
+
+Synthetic data only: two invented `ZCT*` experiments answered by the browser test harness.
+Nothing reached Supabase, Binance or any other host. The app's Supabase URL pointed at a closed
+local port, and every request to it was answered in the page. Every other request and WebSocket
+off the dev server was aborted. No schema, RLS, RPC, function, payload or query changed.
+
+| Check                                                | Result                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Component tests                                      | Overview first and provenance in one closed disclosure; ZC LONG and ZC RISK both held; unreadable and missing evidence stay unknown; superseded rules; sells of every unit without a close; entries after a close; no read or write from opening       |
+| Close review                                         | Still repeats the record summary; review, single confirm, conflict, refusal and uncertain-save tests unchanged and passing                                                                                                                             |
+| Browser, desktop and 375 px, light and dark          | Overview at the top of the opened record (on `main` the summary began about 1,970 px down at desktop width, 3,690 px at 375 px); no horizontal scroll; a legacy record with unreadable evidence, no scenario and a fill linked after its close renders |
+| Keyboard                                             | Tab reaches the experiment row, Enter opens it, the next Tab stop is the provenance disclosure, and Enter opens that and the close form                                                                                                                |
+| Requests while opening the record and the disclosure | None. A confirmed close sent one insert, which the harness refused; the review said nothing was stored                                                                                                                                                 |
+
+Not checked: Safari and Firefox, a physical phone, a screen reader, and the owner's real record.
 
 ## Verification of opening a saved scan file — 2026-11-17
 
