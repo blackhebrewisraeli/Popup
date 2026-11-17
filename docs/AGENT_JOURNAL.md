@@ -21,8 +21,8 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-17 · Decision lifecycle contract for Manual Spot experiments · Draft PR, branch `docs/decision-lifecycle-contract`. Documentation only.**
-  - **Changed:** a [decision lifecycle](MANUAL_SPOT_EXPERIMENTS.md#decision-lifecycle-current-behavior-and-proposed-product-contract) section: each policy's condition and actual consumer (score, Pine bands, setups, Pine transitions, profile eligibility, sizing, tactical signals, rebalance, experiments, Binance reads), entry → closure with what is implemented and not defined, and proposed display wording. [Product status](PRODUCT_STATUS.md) now says the real-money manual trial is underway. No code, threshold, model, schema or experiment change; no strategy approved.
+- **2026-11-17 · Decision lifecycle contract for Manual Spot experiments · Open PR [#191](https://github.com/blackhebrewisraeli/Popup/pull/191), branch `docs/decision-lifecycle-contract`. Documentation only.**
+  - **Changed:** a [decision lifecycle](MANUAL_SPOT_EXPERIMENTS.md#decision-lifecycle-current-behavior-and-proposed-product-contract) section: each policy's condition and actual consumer (score, Pine bands, setups, Pine transitions, profile eligibility, sizing, tactical signals, rebalance, experiments, Binance reads), entry → closure with what is implemented and not defined, and proposed display wording. It separates the TypeScript implementation from Pine's bounded-equivalent one, and an owner exit rule from linked sells and from the `close` entry. [Product status](PRODUCT_STATUS.md) now says the real-money manual trial is underway. No code, threshold, model, schema or experiment change; no strategy approved.
   - **Evidence:** callers traced by symbol; both synthetic examples computed with `scoreFactors` (64 NEUTRAL; 67 HIGH_VOLATILITY with Risk). Prettier and link checks.
   - **Next:** owner's three decisions in the section, then the display-only record-summary task it recommends.
 

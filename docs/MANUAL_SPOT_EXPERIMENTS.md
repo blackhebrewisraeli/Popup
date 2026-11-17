@@ -375,8 +375,14 @@ Existing experiments and frozen studies keep exactly what they recorded. The mat
 [QUANT_MODEL_VERIFICATION.md](QUANT_MODEL_VERIFICATION.md#exact-mathematical-contract) and the
 meaning of each label in [MODEL_DIAGNOSTIC.md](MODEL_DIAGNOSTIC.md#what-each-label-establishes).
 
-One engine (`scoreFactors` in `src/lib/canonicalModel.ts`) scores every surface below. Each
-surface applies its own policy to its own ledger. **None of them is the policy of a real Spot
+The browser and the local scan tools score with the canonical TypeScript implementation
+(`evaluateCandles` → `scoreFactors` in `src/lib/canonicalModel.ts`). The Pine HUD implements the
+same model separately (`1.0.0-pw200`). Its decisions matched the app's on the bars compared at
+runtime, but its readings are not identical: equivalence is bounded, not exact, and the HUD scores
+the chart it is on without the app's candle validation
+([parity assessment](PINE_PARITY_ASSESSMENT.md#3-correction-candidate)). A Pine label and an app
+label for the same day are two readings, not one. Each surface applies its own policy to its own
+ledger. **None of them is the policy of a real Spot
 experiment:** an experiment's only policy is what the owner records in it.
 
 ### Current behavior (implemented)
@@ -384,8 +390,8 @@ experiment:** an experiment's only policy is what the owner records in it.
 | Surface / policy                                                                                | Condition                                                                                              | Actual consumer and account scope                                                                                                                                                                                                | Establishes                                            | Does not establish                                                                                                       |
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Score and rank: `evaluateCandles`; rank in `marketScanner.ts`                                   | 0–100 composite on the last closed daily bar; rank is score order within one asset class               | Research Scan and Markets; copied into `source_evidence` by `candidateEvidence` (`spotExperiments.ts`)                                                                                                                           | Order within one scan's evaluated pairs                | Entry eligibility, a probability or a forecast                                                                           |
-| Pine action band: `action` in `pine/zerochart_quant_hud.pine`                                   | ≥ 78 STRONG BUY, ≥ 60 BUY, > 28 WAIT, > 15 RISK/TRIM, else STRONG SELL; with a size and "Exit at" stop | The HUD table on a TradingView chart. No app code reads it                                                                                                                                                                       | A score band                                           | Long, an entry, a reduction or a sale                                                                                    |
-| Setups: `modelSetups` (Pine `longSetup`, `riskSetup`)                                           | Long: score ≥ 78 and momentum ≥ +0.05% of price. Risk: score ≤ 28 or HIGH_VOLATILITY                   | Scan rows and evidence (`candidateStatus`, `riskLabel` in `scanReview.ts`); copied as `long` and `risk` into `source_evidence`                                                                                                   | A standing condition on that closed bar. Both can hold | That it began that day, an order or an exit                                                                              |
+| Pine action band: `action` in `pine/zerochart_quant_hud.pine`                                   | ≥ 78 STRONG BUY, ≥ 60 BUY, > 28 WAIT, > 15 RISK/TRIM, else STRONG SELL; with a size and "Exit at" stop | The HUD table on a TradingView chart. No app code reads it                                                                                                                                                                       | A score band                                           | Long, an entry, a reduction, an exit rule or a sale                                                                      |
+| Setups: `modelSetups` (Pine's own `longSetup`, `riskSetup` on its readings)                     | Long: score ≥ 78 and momentum ≥ +0.05% of price. Risk: score ≤ 28 or HIGH_VOLATILITY                   | Scan rows and evidence (`candidateStatus`, `riskLabel` in `scanReview.ts`); copied as `long` and `risk` into `source_evidence`                                                                                                   | A standing condition on that closed bar. Both can hold | That it began that day, an order or an exit                                                                              |
 | Pine transitions: `longSignal`, `riskSignal`, `stopBreached`                                    | The bar a setup turns true, or the indicator's trailing stop flips                                     | `tv-webhook` → `trading_signals` → Action Center **Execute** (`execute_tactical_signal`) into the Paper Trading ledger; [Decision Journal](DECISION_JOURNAL.md)                                                                  | An event for one alerted symbol and timeframe          | Anything about an experiment: no key links `trading_signals` to these tables ([above](#separate-from-popups-books))      |
 | Profile eligibility: `qualifiesForRiskProfile`, `RISK_PROFILE_POLICIES` (`portfolioBuilder.ts`) | Minimum score 60 / 60 / 71; conservative excludes HIGH_VOLATILITY; aggressive needs positive momentum  | `buildQuantPortfolio` → **Build Portfolio** → `execute_paper_portfolio` (Paper Trading, simulated); the scan's profile filter. The local [validation lab](STRATEGY_VALIDATION.md) keeps its own frozen copy (`evaluationLab.ts`) | Fit to a paper profile's filter                        | Long, or a real-money entry                                                                                              |
 | Sizing and gates: `recommendPositionSize`, `checkNewEntry`, `checkSell` (`risk.ts`)             | 2% of capital at a 2 × ATR stop; 6% open-risk cap; no sale beyond the ledger's holding                 | Build Portfolio, asset details (reference capital), trade tickets on Popup's own ledgers                                                                                                                                         | Sizing and checks inside Popup's ledgers               | A Spot allocation or stop. The [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) does not reuse it |
@@ -401,9 +407,9 @@ experiment:** an experiment's only policy is what the owner records in it.
 | Entry    | [Record experiment](#recording-from-a-saved-scan) from a reproduced saved scan: copied rank, Long, Risk and freshness; a pair without Long is labelled not model-backed; the owner's decision; optional scenario; linked buys | What qualifies an entry: Long, a fresh event or neither. The copied evidence holds no alert event (`candidateEvidence`) | **Entry evidence** from stored facts: Long met or not · Model Risk flag or none · rank (ordering only) · as of day · alert event not recorded |
 | Holding  | Nothing computes a holding. Fills show as stored; observations as dated statements; balances and reconciliation stay separate                                                                                                 | A holding rule; whether and how current evidence is compared                                                            | **Holding: not verified by Popup**                                                                                                            |
 | Adding   | More buys can be linked to the same experiment (same pair and account label)                                                                                                                                                  | Whether an addition belongs to the same experiment or a new one, and on what basis                                      | Buy count only, as the record summary already shows                                                                                           |
-| Reducing | Sells can be linked; a partial exit is some linked sells. RISK/TRIM and tactical SELL exist only on the HUD and in Paper Trading                                                                                              | A reduction rule; what a Risk flag means for an open experiment                                                         | A Risk flag on an open experiment reads **Model Risk warning, not an exit rule**                                                              |
-| Exiting  | `stop`, `target`, `exit` and `horizon` exist only as [owner rule entries](#rules). Nothing evaluates them against prices or fills                                                                                             | Any exit criterion, level or horizon the owner has not approved                                                         | Approved rules: **Approved, not evaluated by Popup**. Others stay **Not decided**                                                             |
-| Closure  | One explicit `close` entry. Sells never close, and a close does not lock the record ([how](#fills-partial-exits-and-closing))                                                                                                 | Nothing structural                                                                                                      | Keep. With sells linked and no close: **Sells linked; open until the owner closes it**                                                        |
+| Reducing | Sells can be linked; a reduction shows only as linked sell executions. RISK/TRIM and tactical SELL exist only on the HUD and in Paper Trading                                                                                 | A reduction rule; what a Risk flag means for an open experiment                                                         | A Risk flag on an open experiment reads **Model Risk warning, not an exit rule**                                                              |
+| Exiting  | `stop`, `target`, `exit` and `horizon` exist only as [owner rule entries](#rules). Nothing evaluates them against prices or fills. Linked sells are executions, not a rule                                                    | Any exit criterion, level or horizon the owner has not approved                                                         | Approved rules: **Approved, not evaluated by Popup**. Others stay **Not decided**                                                             |
+| Closure  | One explicit `close` entry ends the experiment record. It is neither an exit rule nor evidence of a sale. Sells never close, and a close does not lock the record ([how](#fills-partial-exits-and-closing))                   | Nothing structural                                                                                                      | Keep. With sells linked and no close: **Sells linked; open until the owner closes it**                                                        |
 
 ### Proposed display semantics (not implemented)
 
@@ -413,12 +419,16 @@ Each pair below stays two separate facts, never merged into one verdict:
   an entry.
 - **Standing setup and event.** "Long conditions met" is standing, as of the scan's day. An event
   is shown only when a received alert is recorded with its bar time.
-- **Risk warning and exit.** A Risk flag names its clause. An exit exists only as an approved owner
-  rule or the owner's close.
+- **Risk warning and exit.** A Risk flag names its clause; it is a warning, not an exit fact. Three
+  exit facts stay apart from it and from each other:
+  - an approved owner `exit`, `stop` or `target` rule states an exit criterion;
+  - linked sell fills are client-submitted copies of executions;
+  - the `close` entry ends the experiment record. It is neither an exit rule nor evidence of a
+    sale.
 - **Scenario and rule.** A [scenario snapshot](#scenario-snapshot) sets no rule.
 - **Linked fill and holding.** Linked fills are client-submitted copies; the holding is not
   verified.
-- **Sell and closure.** Only the `close` entry closes.
+- **Sell and closure.** Only the `close` entry ends the record; a sell of every unit does not.
 - **Saved and current evidence.** Copied evidence carries its scan and day, and stays historical.
   Popup reads no current evidence for an experiment.
 
@@ -439,16 +449,21 @@ versioned contract and would not apply to earlier experiments.
 
 ### Illustrative examples (synthetic, not observed market results)
 
-- **BUY band without Long.** RSI 45, momentum +0.2%, ATR/close 2% → NEUTRAL, score 64. The HUD
-  says BUY and the conservative and moderate profiles fit, but Long needs 78: **Long conditions not
-  met**.
+Scores are from the TypeScript implementation. A HUD band is named for the same score; Pine's own
+reading of a real chart can differ.
+
+- **BUY band without Long.** RSI 45, momentum +0.2%, ATR/close 2% → NEUTRAL, score 64. A HUD
+  showing 64 says BUY and the conservative and moderate profiles fit, but Long needs 78: **Long
+  conditions not met**.
 - **High score with high-volatility Risk.** RSI 35, momentum +0.8%, ATR/close 4.5% →
-  HIGH_VOLATILITY, score 67. The HUD says BUY, the moderate profile fits, and **Model Risk flag:
-  high volatility** holds. If Risk began on that bar, a configured Pine alert sends SELL. Each is
-  shown as its own fact.
-- **Standing setup, no new event.** Long held on days D−1 and D. Pine's `longSignal` is true on
-  D−1 only. A scan of D shows **Long conditions met**; the proposed wording adds that it is
-  standing, as of D, with no alert event recorded.
+  HIGH_VOLATILITY, score 67. A HUD showing 67 says BUY, the moderate profile fits, and **Model
+  Risk flag: high volatility** holds. If Pine's Risk setup began on that bar, a configured alert
+  sends SELL. Each is shown as its own fact.
+- **Standing setup, no new event.** Long held on days D−1 and D, so `longSignal`
+  (`longSetup and not longSetup[1]`) is false on D: no new event begins then. When the setup began
+  is unknown from these two days; `longSignal` was true on D−1 only if Long did not hold on D−2. A
+  scan of D shows **Long conditions met**; the proposed wording adds that it is standing, as of D,
+  with no alert event recorded.
 - **Missing or stale evidence.** Evidence recorded after a newer UTC day closed is stored with
   `stale: true` and labelled **Historical scan**. A browser score on old candles is `STALE_DATA`,
   and the tactical feed stays silent. Neither becomes HOLD or an exit.
