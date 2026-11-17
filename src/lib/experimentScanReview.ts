@@ -3,11 +3,11 @@
  * (docs/MANUAL_SPOT_EXPERIMENTS.md#viewing-in-account). Pure: it reads a scan that already
  * reproduced in the browser (savedScanFile.ts) and the experiment's stored copy, and returns what
  * each side records. The stored copy is never re-derived or changed; nothing is inferred between
- * the two observations.
+ * the two observations. A version 1 copy keeps its candle as a day and month without a year, so the
+ * two candles are never ordered: no year is guessed from record times, scan IDs or files.
  */
 import { scanStatusLabel } from '@/lib/marketScanner';
 import { exactSymbol } from '@/lib/scanChanges';
-import { resultAsOfLabel } from '@/lib/scanReview';
 import {
   candidateEvidence,
   type CandidateEvidence,
@@ -16,7 +16,6 @@ import {
 import { spotSymbol } from '@/lib/tradingViewSymbol';
 import type { TradingViewDevScan } from '@/lib/tradingViewDevScan';
 
-const DAY = 86_400_000;
 const MODEL = 'Model · timeframe';
 
 /** The experiment's exact pair in the selected scan, or why none is shown. Never another pair. */
@@ -25,8 +24,8 @@ export type SelectedPair =
       state: 'EVALUATED';
       evidence: CandidateEvidence;
       score: number;
-      /** UTC day number of the candle the result rests on. */
-      candleDay: number;
+      /** Close time of the latest closed candle the result rests on, as the scan recorded it. */
+      candleClose: number;
       evaluationTime: number;
     }
   | { state: 'MISSING' | 'AMBIGUOUS' | 'NOT_EVALUATED' | 'UNREADABLE'; reason: string };
@@ -87,102 +86,43 @@ export function selectedPair(view: TradingViewDevScan, symbol: string, now: numb
       now,
     }),
     score: model.signal_score,
-    candleDay: Math.floor(dataAsOf / DAY),
+    candleClose: dataAsOf,
     evaluationTime: view.scan.evaluationTime,
   };
 }
 
-/**
- * The UTC day of the entry candle. The copy stores it as day and month only ("13 Nov candle
- * (UTC)"); the candle closed before the copy was recorded, so this is the latest day at or before
- * the record time with that label. Null when the stored text is not a label this view writes.
- */
-export function entryCandleDay(stored: string | undefined, recordedAt: string): number | null {
-  const last = Math.floor(Date.parse(recordedAt) / DAY);
-  if (!stored || !Number.isFinite(last)) return null;
-  for (let day = last; day > last - 366; day--) {
-    if (resultAsOfLabel({ assetClass: 'crypto', dataAsOf: day * DAY }) === stored) return day;
-  }
-  return null;
-}
-
-export const isoDay = (day: number) => new Date(day * DAY).toISOString().slice(0, 10);
-
-export type Chronology = 'ORIGINAL' | 'SAME_CANDLE' | 'LATER' | 'EARLIER' | 'UNKNOWN';
 export type Comparability = 'SAME' | 'DIFFERENT' | 'UNKNOWN';
 
 export interface EntryComparison {
   identity: string;
-  chronology: Chronology;
-  chronologyText: string;
+  candleOrder: string;
   model: Comparability;
   modelText: string;
 }
 
-const YEAR_NOTE =
-  ' The copy keeps the entry candle’s day and month only; its year is the latest at or before the record time.';
+type RecordIdentity = Pick<SpotExperimentRecord, 'source_scan_id' | 'source_snapshot_sha256'>;
 
-type RecordIdentity = Pick<
-  SpotExperimentRecord,
-  'recorded_at' | 'source_scan_id' | 'source_snapshot_sha256'
->;
-
-function identityText(
-  experiment: RecordIdentity,
-  view: TradingViewDevScan,
-  original: boolean,
-): string {
-  if (original) {
-    return 'The exact bytes this experiment was recorded from (the SHA-256 matches): the same scan and the same evidence, not new evidence.';
+/** Which file this is, by its bytes and scan ID. A matching hash names the file, nothing more. */
+function identityText(experiment: RecordIdentity, view: TradingViewDevScan): string {
+  if (view.saved?.snapshotSha256 === experiment.source_snapshot_sha256) {
+    return 'These bytes match the snapshot SHA-256 this experiment references. That identifies the file only: it does not check the copied entry facts against it.';
   }
   if (view.scanId === experiment.source_scan_id) {
-    return `The same scan ID as the record, ${view.scanId}, but not the same bytes: its SHA-256 differs from the recorded one.`;
+    return `The same scan ID as the record, ${view.scanId}, but not the same bytes: its SHA-256 differs from the one the experiment references.`;
   }
-  return `Another scan, ${view.scanId}. The record’s scan is ${experiment.source_scan_id}.`;
+  return `Another scan, ${view.scanId}. The experiment references ${experiment.source_scan_id}.`;
 }
 
-/** The two candles' order, from candle days only. */
-function candleOrder(
-  entryDay: number | null,
-  pair: SelectedPair,
-  original: boolean,
-): { chronology: Chronology; chronologyText: string } {
-  if (original) {
-    return {
-      chronology: 'ORIGINAL',
-      chronologyText:
-        'Same candle: this is the snapshot the experiment was recorded from. Not new evidence or a new signal.',
-    };
-  }
+/**
+ * Always unknown today: the copy keeps no complete candle date, so the selected candle (shown with
+ * its full close time) is never placed before, after or on the entry candle.
+ */
+function candleOrderText(entryCandle: string | undefined, pair: SelectedPair): string {
   if (pair.state !== 'EVALUATED') {
-    return {
-      chronology: 'UNKNOWN',
-      chronologyText: 'Unknown: the pair has no evaluated candle in the selected scan.',
-    };
+    return 'Unknown: the selected scan has no evaluated candle for this pair.';
   }
-  if (entryDay === null) {
-    return {
-      chronology: 'UNKNOWN',
-      chronologyText:
-        'Unknown: the stored copy does not give its evaluated candle in a form this view can place.',
-    };
-  }
-  const days = `entry ${isoDay(entryDay)}, selected ${isoDay(pair.candleDay)} (UTC days)`;
-  if (pair.candleDay === entryDay) {
-    return {
-      chronology: 'SAME_CANDLE',
-      chronologyText: `Same candle as the entry evidence (${days}): another scan of it, not new evidence or a new signal.${YEAR_NOTE}`,
-    };
-  }
-  return pair.candleDay > entryDay
-    ? {
-        chronology: 'LATER',
-        chronologyText: `The selected candle is later than the entry candle (${days}). Two observations: nothing here says when or whether anything changed between them.${YEAR_NOTE}`,
-      }
-    : {
-        chronology: 'EARLIER',
-        chronologyText: `The selected candle is earlier than the entry candle (${days}): older than the evidence the experiment was recorded from, not new evidence.${YEAR_NOTE}`,
-      };
+  if (!entryCandle) return 'Unknown: the stored copy records no entry candle this view can read.';
+  return `Unknown: the stored copy records the entry candle as “${entryCandle}” and keeps no complete candle date, so the two candles are not ordered.`;
 }
 
 /** Model and timeframe, compared only when the copy states them as `<model> · <timeframe>`. */
@@ -217,9 +157,9 @@ function modelComparability(
 }
 
 /**
- * What can be said about the two observations: whether the file is the record's own snapshot,
- * how the two candles are ordered (from candle days only, never file names or file times), and
- * whether model and timeframe are comparable. Nothing else: no onset, recovery or alert.
+ * What can be said about the two observations: which file this is, that their candles are not
+ * ordered, and whether model and timeframe are comparable. Nothing else: no onset, recovery or
+ * alert, and no claim that the copy agrees with the file.
  */
 export function compareWithEntry(
   experiment: RecordIdentity,
@@ -227,12 +167,10 @@ export function compareWithEntry(
   view: TradingViewDevScan,
   pair: SelectedPair,
 ): EntryComparison {
-  const original = view.saved?.snapshotSha256 === experiment.source_snapshot_sha256;
   const stored = entry ? new Map(entry.facts) : null;
-  const entryDay = entryCandleDay(stored?.get('Evaluated'), experiment.recorded_at);
   return {
-    identity: identityText(experiment, view, original),
-    ...candleOrder(entryDay, pair, original),
+    identity: identityText(experiment, view),
+    candleOrder: candleOrderText(stored?.get('Evaluated'), pair),
     ...modelComparability(stored?.get(MODEL), pair),
   };
 }

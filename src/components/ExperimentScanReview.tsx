@@ -21,6 +21,7 @@ const ROWS = [
   'Scan',
   'Model · timeframe',
   'Evaluated',
+  'Candle close',
   'Scan evaluated',
   'ZC LONG',
   'ZC RISK',
@@ -51,6 +52,7 @@ function Facts({
 function entryValues(evidence: CandidateEvidence, recordedAt: string): Record<string, string> {
   const stored = new Map(evidence.facts);
   const extra: Record<string, string> = {
+    'Candle close': `${NOT_STORED}: it keeps the day and month only`,
     'Scan evaluated': NOT_STORED,
     Score: NOT_STORED,
     'Freshness judged': `When the evidence was copied, before this record was stored at ${utcText(recordedAt)}; the copy keeps no exact time`,
@@ -66,6 +68,7 @@ function selectedValues(
 ): Record<string, string> {
   const facts = new Map(pair.evidence.facts);
   const extra: Record<string, string> = {
+    'Candle close': `${utcText(pair.candleClose)}, the latest closed candle`,
     'Scan evaluated': `${utcText(pair.evaluationTime)}, the scan’s cutoff`,
     Score: String(pair.score),
     'Freshness judged': `${utcText(judgedAt)}, this browser’s clock, when the file was checked`,
@@ -118,7 +121,7 @@ function Comparison({
         className="scan-facts experiment-compare-facts"
         values={{
           'This file': comparison.identity,
-          'Candle order': comparison.chronologyText,
+          'Candle order': comparison.candleOrder,
           'Model and timeframe': comparison.modelText,
           'Reading the two':
             'Two observations of one pair. Nothing is inferred between them: no onset, recovery or alert. ZC LONG and ZC RISK are separate facts, and both can hold. Each rank is relative to its own scan’s universe, so the two ranks are not compared. Neither is a recommendation.',

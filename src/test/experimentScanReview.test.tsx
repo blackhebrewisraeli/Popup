@@ -244,6 +244,12 @@ async function compare(scope: HTMLElement, saved: Saved, name = 'scan.json') {
   return within(scope).findByRole('region', { name: 'Selected scan evidence' });
 }
 
+/** The only candle order a version 1 copy allows: unknown, quoting the copy's own text. */
+const unordered = (candle: string) =>
+  `Unknown: the stored copy records the entry candle as “${candle}” and keeps no complete candle date, so the two candles are not ordered.`;
+/** Any wording that places the two candles relative to each other. */
+const GUESSED_ORDER = /\b(later|earlier)\b|same candle|same evidence/i;
+
 function deferred() {
   let resolve: (value: SavedScanFileCheck) => void = () => {};
   const promise = new Promise<SavedScanFileCheck>((done) => (resolve = done));
@@ -267,10 +273,10 @@ describe('Review another saved scan', () => {
     expect(comparison(scope)).toBeNull();
     expect(check).not.toHaveBeenCalled();
 
-    const selected = await compare(scope, later, 'later.json');
+    const selected = await compare(scope, later, 'chosen.json');
     const entry = side(scope, 'Entry evidence, as recorded');
     const region = comparison(scope) as HTMLElement;
-    expect(region).toHaveTextContent('Historical file you chose: later.json');
+    expect(region).toHaveTextContent('Historical file you chose: chosen.json');
     expect(region).toHaveTextContent(
       `Scan ${later.snapshot.scanId}. It reproduced in this browser from its own inputs, which shows it is internally consistent, not that it is authentic: nothing signs it.`,
     );
@@ -281,6 +287,9 @@ describe('Review another saved scan', () => {
       if (name !== 'Venue') expect(fact(entry, name)).toBe(value);
     }
     expect(fact(entry, 'Score')).toBe('Not stored in this copy');
+    expect(fact(entry, 'Candle close')).toBe(
+      'Not stored in this copy: it keeps the day and month only',
+    );
     expect(fact(entry, 'Scan evaluated')).toBe('Not stored in this copy');
     expect(fact(entry, 'Freshness judged')).toBe(
       'When the evidence was copied, before this record was stored at 2026-10-28 17:30:00 UTC; the copy keeps no exact time',
@@ -296,6 +305,10 @@ describe('Review another saved scan', () => {
     expect(selected).not.toHaveTextContent('ZCTWAVE');
     expect(fact(selected, 'Scan')).toBe(later.snapshot.scanId);
     expect(fact(selected, 'Evaluated')).toBe('28 Oct candle (UTC)');
+    // The selected candle's full close time, verified with the file, shown on its own.
+    expect(fact(selected, 'Candle close')).toBe(
+      '2026-10-28 23:59:59.999 UTC, the latest closed candle',
+    );
     expect(fact(selected, 'Scan evaluated')).toBe('2026-10-29 17:00:00 UTC, the scan’s cutoff');
     expect(fact(selected, 'Score')).toMatch(/^\d+$/);
     expect(fact(selected, 'ZC LONG')).toMatch(/^(Holds|Does not hold)$/);
@@ -310,11 +323,10 @@ describe('Review another saved scan', () => {
     );
 
     expect(fact(region, 'This file')).toBe(
-      `Another scan, ${later.snapshot.scanId}. The record’s scan is 20261027T170000Z-0000c0de.`,
+      `Another scan, ${later.snapshot.scanId}. The experiment references 20261027T170000Z-0000c0de.`,
     );
-    expect(fact(region, 'Candle order')).toMatch(
-      /^The selected candle is later than the entry candle \(entry 2026-10-27, selected 2026-10-28 \(UTC days\)\)\. Two observations: nothing here says when or whether anything changed between them\./,
-    );
+    expect(fact(region, 'Candle order')).toBe(unordered('27 Oct candle (UTC)'));
+    expect(region).not.toHaveTextContent(GUESSED_ORDER);
     expect(fact(region, 'Model and timeframe')).toBe(
       'Same model and timeframe as the entry evidence (1.0.0 · 1D).',
     );
@@ -336,41 +348,126 @@ describe('Review another saved scan', () => {
     expect(window.location.href).not.toContain(later.snapshot.scanId);
   });
 
-  it('calls the record’s own snapshot the same evidence, never new', async () => {
-    const { review: scope } = await review(
-      experiment({
-        source_snapshot_sha256: sha256(original.bytes),
-        source_scan_id: original.snapshot.scanId,
-      }),
-    );
-    await compare(scope, original, 'original.json');
-    const region = comparison(scope) as HTMLElement;
-    expect(fact(region, 'This file')).toBe(
-      'The exact bytes this experiment was recorded from (the SHA-256 matches): the same scan and the same evidence, not new evidence.',
-    );
-    expect(fact(region, 'Candle order')).toBe(
-      'Same candle: this is the snapshot the experiment was recorded from. Not new evidence or a new signal.',
-    );
-  });
+  // Each copy keeps only a day and month. Guessing "the latest such day at or before the record
+  // time" would call these same, earlier or later; a retrospective record can be of any age.
+  it.each([
+    {
+      name: 'another scan of the same day and month',
+      candle: '27 Oct candle (UTC)',
+      recordedAt: '2026-10-28T17:30:00+00:00',
+      file: 'sameCandle',
+    },
+    {
+      name: 'a copy recorded more than a year after its source scan',
+      candle: '28 Oct candle (UTC)',
+      recordedAt: '2027-11-05T12:00:00+00:00',
+      file: 'later',
+    },
+    {
+      name: 'a year boundary',
+      candle: '31 Dec candle (UTC)',
+      recordedAt: '2027-01-01T06:00:00+00:00',
+      file: 'original',
+    },
+    {
+      name: 'a leap day',
+      candle: '29 Feb candle (UTC)',
+      recordedAt: '2028-03-01T00:00:00+00:00',
+      file: 'later',
+    },
+  ] as const)(
+    'never infers the entry candle’s year from the record time (regression: guessed chronology): $name',
+    async ({ candle, recordedAt, file }) => {
+      const saved = { sameCandle, later, original }[file];
+      const { review: scope } = await review(
+        experiment({
+          recorded_at: recordedAt,
+          decision_stated_at: recordedAt,
+          source_evidence: withFact('Evaluated', candle) as unknown as Json,
+        }),
+      );
+      const selected = await compare(scope, saved, `${saved.snapshot.scanId}.json`);
+      const region = comparison(scope) as HTMLElement;
+      expect(fact(region, 'Candle order')).toBe(unordered(candle));
+      expect(region).not.toHaveTextContent(GUESSED_ORDER);
+      // The copy's text stays as stored; the selected candle keeps its own full close time.
+      expect(fact(side(scope, 'Entry evidence, as recorded'), 'Evaluated')).toBe(candle);
+      expect(fact(selected, 'Candle close')).toMatch(
+        /^2026-10-2[78] 23:59:59\.999 UTC, the latest closed candle$/,
+      );
+    },
+  );
 
-  it('calls another scan of the entry candle the same candle, and an older one earlier', async () => {
-    const { review: scope } = await review();
-    await compare(scope, sameCandle, 'same.json');
-    expect(fact(comparison(scope) as HTMLElement, 'Candle order')).toMatch(
-      /^Same candle as the entry evidence \(entry 2026-10-27, selected 2026-10-27 \(UTC days\)\): another scan of it, not new evidence or a new signal\. The copy keeps the entry candle’s day and month only; its year is the latest at or before the record time\.$/,
+  it('says a matching hash identifies the file only, never that the copied facts agree with it', async () => {
+    const MATCH =
+      'These bytes match the snapshot SHA-256 this experiment references. That identifies the file only: it does not check the copied entry facts against it.';
+    const references = {
+      source_snapshot_sha256: sha256(original.bytes),
+      source_scan_id: original.snapshot.scanId,
+    };
+    // A copy that contradicts the referenced file: shown as stored, beside the file's own facts.
+    const conflicting = withFact('Technical rank', '#9 of 9');
+    conflicting.facts = conflicting.facts.map(([key, text]) =>
+      key === 'Evaluated' ? [key, '3 Mar candle (UTC)'] : [key, text],
     );
+    const { review: scope } = await review(
+      experiment({ ...references, source_evidence: conflicting as unknown as Json }),
+    );
+    const selected = await compare(scope, original, 'original.json');
+    let region = comparison(scope) as HTMLElement;
+    expect(fact(region, 'This file')).toBe(MATCH);
+    const entry = side(scope, 'Entry evidence, as recorded');
+    expect(fact(entry, 'Technical rank')).toBe('#9 of 9');
+    expect(fact(entry, 'Evaluated')).toBe('3 Mar candle (UTC)');
+    expect(fact(selected, 'Technical rank')).toMatch(/^#[12] of 2$/);
+    expect(fact(selected, 'Evaluated')).toBe('27 Oct candle (UTC)');
+    expect(fact(region, 'Candle order')).toBe(unordered('3 Mar candle (UTC)'));
+    expect(region).not.toHaveTextContent(/same evidence|not new evidence|agree|validat/i);
+    expect(region).not.toHaveTextContent(GUESSED_ORDER);
     cleanup();
 
-    const { review: earlier } = await review(
+    // The same file against a copy this view cannot read: still only a file match.
+    const { review: unreadable } = await review(
+      experiment({ ...references, source_evidence: { facts: 'not a list' } }),
+    );
+    await compare(unreadable, original, 'original.json');
+    region = comparison(unreadable) as HTMLElement;
+    expect(fact(region, 'This file')).toBe(MATCH);
+    expect(side(unreadable, 'Entry evidence, as recorded')).toHaveTextContent(
+      'Unknown: the copied evidence is not in a form this view can read',
+    );
+    expect(fact(region, 'Candle order')).toBe(
+      'Unknown: the stored copy records no entry candle this view can read.',
+    );
+    expect(fact(region, 'Model and timeframe')).toMatch(/^Unknown: the stored copy does not/);
+  });
+
+  it('keeps a matching hash from standing in for a pair the scan did not evaluate', async () => {
+    const { review: scope } = await review(
       experiment({
-        recorded_at: '2026-10-29T17:30:00+00:00',
-        source_evidence: withFact('Evaluated', '28 Oct candle (UTC)') as unknown as Json,
+        symbol: 'ZCTSHORTUSDT',
+        source_scan_id: failures.snapshot.scanId,
+        source_snapshot_sha256: sha256(failures.bytes),
+        source_evidence: { ...ENTRY, instrument: 'BINANCE:ZCTSHORTUSDT' } as unknown as Json,
       }),
     );
-    await compare(earlier, original, 'older.json');
-    expect(fact(comparison(earlier) as HTMLElement, 'Candle order')).toMatch(
-      /^The selected candle is earlier than the entry candle \(entry 2026-10-28, selected 2026-10-27 \(UTC days\)\): older than the evidence the experiment was recorded from, not new evidence\./,
+    choose(scope, fileOf(failures.bytes, 'failures.json'));
+    const selected = await within(scope).findByRole('region', { name: 'Selected scan evidence' });
+    await waitFor(() =>
+      expect(selected).toHaveTextContent(
+        'ZCTSHORTUSDT was not evaluated in this scan: Short history.',
+      ),
     );
+    expect(selected.querySelector('dl')).toBeNull();
+    const region = comparison(scope) as HTMLElement;
+    expect(fact(region, 'This file')).toMatch(/^These bytes match the snapshot SHA-256/);
+    expect(fact(region, 'Candle order')).toBe(
+      'Unknown: the selected scan has no evaluated candle for this pair.',
+    );
+    expect(fact(region, 'Model and timeframe')).toBe(
+      'Unknown: the selected scan gives no evaluated result for this pair.',
+    );
+    expect(region).not.toHaveTextContent(GUESSED_ORDER);
   });
 
   it('names a missing pair and each failed one, never showing another pair in its place', async () => {
@@ -408,7 +505,7 @@ describe('Review another saved scan', () => {
       expect(region.querySelector('dl')).toBeNull();
       expect(region).not.toHaveTextContent(/ZCTLONG|ZCTWAVE/);
       expect(fact(comparison(scope) as HTMLElement, 'Candle order')).toBe(
-        'Unknown: the pair has no evaluated candle in the selected scan.',
+        'Unknown: the selected scan has no evaluated candle for this pair.',
       );
       // The stored copy is still shown as stored.
       expect(fact(side(scope, 'Entry evidence, as recorded'), 'ZC LONG')).toBe('Holds');
@@ -426,7 +523,9 @@ describe('Review another saved scan', () => {
     );
     expect(fact(selected, 'ZC LONG')).toMatch(/^(Holds|Does not hold)$/);
     const region = comparison(unreadable) as HTMLElement;
-    expect(fact(region, 'Candle order')).toMatch(/^Unknown: the stored copy does not give/);
+    expect(fact(region, 'Candle order')).toBe(
+      'Unknown: the stored copy records no entry candle this view can read.',
+    );
     expect(fact(region, 'Model and timeframe')).toMatch(
       /^Unknown: the stored copy does not establish its model and timeframe/,
     );
