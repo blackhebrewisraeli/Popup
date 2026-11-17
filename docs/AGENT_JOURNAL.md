@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · Draft PR, branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
+- **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · Draft PR [#194](https://github.com/blackhebrewisraeli/Popup/pull/194), branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
   - **Changed:** [Two trading paths](MANUAL_SPOT_EXPERIMENTS.md#two-trading-paths-proposal-for-owner-review) proposes product behavior for owner review. It covers:
     - a lifecycle table for entry, holding, adding, reducing and exiting;
     - a comparison of the two paths;
