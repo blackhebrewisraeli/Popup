@@ -88,7 +88,7 @@ export function SavedScanFileView({
   const check = file.phase === 'checked' ? file.check : null;
   const view = check?.state === 'VERIFIED' ? check.view : null;
   return (
-    <div className="saved-file" aria-label="Saved crypto scan file" role="region">
+    <section className="saved-file" aria-label="Saved crypto scan file">
       <div className="saved-file-head">
         <p>
           <strong>Historical file you opened</strong>, not a live scan: <code>{file.name}</code> ·{' '}
@@ -99,10 +99,10 @@ export function SavedScanFileView({
         </Button>
       </div>
       {file.phase === 'checking' && (
-        <p className="saved-file-state" role="status" aria-busy="true">
+        <output className="saved-file-state" aria-busy="true">
           Checking in this browser: hashing the file&rsquo;s bytes and reproducing the scan from its
           own inputs. Nothing is uploaded, fetched or saved.
-        </p>
+        </output>
       )}
       {file.phase === 'failed' && (
         <p className="devscan-reload-failed" role="alert">
@@ -112,7 +112,7 @@ export function SavedScanFileView({
       {check && <Refused file={file} check={check} />}
       {view?.saved && (
         <>
-          <p className="devscan-saved" role="status">
+          <output className="devscan-saved saved-file-note">
             Scan <code>{view.scanId}</code>, recorded at commit{' '}
             <code>{view.saved.repositoryCommit.slice(0, 7)}</code>. It reproduced in this browser
             from its own inputs: evaluation time, universe and input hashes, and every result match.
@@ -123,7 +123,7 @@ export function SavedScanFileView({
             describes the scan&rsquo;s cutoff, {UTC_TIME.format(view.scan.evaluationTime)} UTC, not
             the market now. Only its snapshot is kept: no retrieval window, notice, selection rule,
             alert check or comparison was recorded with it, and none is filled in.
-          </p>
+          </output>
           <MarketScanSummary
             // A new opening, even of the same bytes, starts the review over.
             key={`file|${file.token}|${view.saved.snapshotSha256}`}
@@ -138,6 +138,6 @@ export function SavedScanFileView({
           />
         </>
       )}
-    </div>
+    </section>
   );
 }

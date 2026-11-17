@@ -70,6 +70,31 @@ const quoted = (value: unknown) => JSON.stringify(String(value).slice(0, 60));
 
 type Raw = Partial<ScanSnapshot> & { kind?: unknown };
 
+/** What makes one recorded pair unacceptable here, or null. */
+function pairReason(input: ScanSnapshot['inputs'][number] | null): string | null {
+  const ticker = quoted(input?.ticker);
+  if (!input || typeof input !== 'object' || input.equity !== undefined) {
+    return `pair ${ticker} is not a crypto input`;
+  }
+  if (typeof input.instrument !== 'string' || !spotSymbol(input.instrument)) {
+    return `pair ${ticker} names ${quoted(input.instrument)}, not a Binance Spot USDT pair`;
+  }
+  const symbol = input.providerSymbol;
+  if (!symbol) {
+    return `pair ${ticker} records no exact TradingView symbol (a legacy snapshot, recorded before exact symbols were kept)`;
+  }
+  if (symbol.requested !== input.instrument || symbol.validated !== input.instrument) {
+    return `pair ${ticker} requested ${quoted(symbol.requested)} and TradingView validated ${quoted(symbol.validated)}, which are not both its instrument ${quoted(input.instrument)}`;
+  }
+  if (input.candles !== undefined && !Array.isArray(input.candles)) {
+    return `pair ${ticker} records candles that are not a list`;
+  }
+  if ((input.candles?.length ?? 0) > SAVED_SCAN_FILE_MAX_CANDLES) {
+    return `pair ${ticker} records ${input.candles?.length} candles, over the limit of ${SAVED_SCAN_FILE_MAX_CANDLES}`;
+  }
+  return null;
+}
+
 /**
  * What makes this file something other than a TradingView crypto snapshot this entry point
  * opens, or null. Runs after the shape and version check, before anything is hashed or scored.
@@ -95,26 +120,8 @@ function cryptoOnlyReason(snapshot: ScanSnapshot): string | null {
     return `it records ${inputs.length} pairs, over the limit of ${SAVED_SCAN_FILE_MAX_PAIRS}`;
   }
   for (const input of inputs) {
-    const ticker = quoted(input?.ticker);
-    if (!input || typeof input !== 'object' || input.equity !== undefined) {
-      return `pair ${ticker} is not a crypto input`;
-    }
-    if (typeof input.instrument !== 'string' || !spotSymbol(input.instrument)) {
-      return `pair ${ticker} names ${quoted(input.instrument)}, not a Binance Spot USDT pair`;
-    }
-    const symbol = input.providerSymbol;
-    if (!symbol) {
-      return `pair ${ticker} records no exact TradingView symbol (a legacy snapshot, recorded before exact symbols were kept)`;
-    }
-    if (symbol.requested !== input.instrument || symbol.validated !== input.instrument) {
-      return `pair ${ticker} requested ${quoted(symbol.requested)} and TradingView validated ${quoted(symbol.validated)}, which are not both its instrument ${quoted(input.instrument)}`;
-    }
-    if (input.candles !== undefined && !Array.isArray(input.candles)) {
-      return `pair ${ticker} records candles that are not a list`;
-    }
-    if ((input.candles?.length ?? 0) > SAVED_SCAN_FILE_MAX_CANDLES) {
-      return `pair ${ticker} records ${input.candles?.length} candles, over the limit of ${SAVED_SCAN_FILE_MAX_CANDLES}`;
-    }
+    const reason = pairReason(input);
+    if (reason) return reason;
   }
   return null;
 }

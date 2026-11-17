@@ -945,6 +945,10 @@ body {
   min-width: 0;
   margin: 0;
 }
+.saved-file-state,
+.saved-file-note {
+  display: block;
+}
 .saved-file-state {
   margin: 0 0 14px;
   font-size: 12px;

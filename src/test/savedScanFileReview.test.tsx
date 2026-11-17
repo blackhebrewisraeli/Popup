@@ -188,8 +188,8 @@ describe('Open saved crypto scan in Research', () => {
     expect(requests.slice(before)).toEqual([]);
     expect(db.rpc).not.toHaveBeenCalled();
     expect(db.inserts).toEqual([]);
-    expect(sessionStorage.length).toBe(0);
-    expect(localStorage.length).toBe(0);
+    expect(sessionStorage).toHaveLength(0);
+    expect(localStorage).toHaveLength(0);
 
     fireEvent.click(within(region).getByRole('button', { name: 'Close file' }));
     expect(fileRegion()).toBeNull();
