@@ -20,6 +20,7 @@ import {
 import {
   TRADINGVIEW_DEV_UNIVERSE_SOURCE,
   type TradingViewDevSource,
+  type TradingViewSavedScan,
 } from '@/lib/tradingViewDevScan';
 import { cn } from '@/lib/utils';
 
@@ -108,7 +109,8 @@ function Fact({
 function DevSourceNotes({
   scan,
   source,
-}: Readonly<{ scan: MarketScan; source: TradingViewDevSource }>) {
+  fromFile,
+}: Readonly<{ scan: MarketScan; source: TradingViewDevSource; fromFile: boolean }>) {
   const requested = new Set(Object.values(source.symbols));
   const asOfLabel = scan.cohorts[0] ? dataAsOfLabel(scan.cohorts[0]) : null;
   const crypto = scan.cohorts[0]?.assetClass === 'crypto';
@@ -128,10 +130,12 @@ function DevSourceNotes({
       <h3 className="market-scan-label">Source and limitations</h3>
       <ul className="market-scan-list market-scan-notes">
         <li>
-          Reloading this page re-reads this import; it does not fetch new TradingView bars, and
-          nothing re-scans on a schedule. A new scan needs the owner&rsquo;s agent session to
-          retrieve bars and run the import again (owner runbook in docs/MARKET_SCANNER.md). Its
-          ranks, scores and coverage are never merged into the Market scan or the Markets directory.
+          {fromFile
+            ? 'Opened from a file you chose, held in this tab’s memory only: closing it or reloading the page drops it, and nothing re-reads it. Opening it fetched no TradingView bars and ran no new scan, and nothing re-scans on a schedule.'
+            : 'Reloading this page re-reads this import; it does not fetch new TradingView bars, and nothing re-scans on a schedule.'}{' '}
+          A new scan needs the owner&rsquo;s agent session to retrieve bars and run the import again
+          (owner runbook in docs/MARKET_SCANNER.md). Its ranks, scores and coverage are never merged
+          into the Market scan or the Markets directory.
         </li>
         <li>
           Daily bars retrieved by the owner&rsquo;s agent session through TradingView&rsquo;s MCP
@@ -251,14 +255,15 @@ function CohortRow({ cohort, scan }: Readonly<{ cohort: ScanCohort; scan: Market
   );
 }
 
-/** A development import, and whether it is the published view or a saved scan. */
-function DevImportBadges({ saved }: Readonly<{ saved: boolean }>) {
+/** A development import, and whether it is the published view, a saved scan or an opened file. */
+function DevImportBadges({ saved }: Readonly<{ saved: TradingViewSavedScan | undefined }>) {
+  let shown = 'Latest published scan';
+  if (saved?.fromFile) shown = 'Opened from a file you chose';
+  else if (saved) shown = 'Saved scan, not the published view';
   return (
     <>
       <span className="market-scan-status market-scan-dev">Historical dev import</span>
-      <span className="market-scan-status market-scan-dev">
-        {saved ? 'Saved scan, not the published view' : 'Latest published scan'}
-      </span>
+      <span className="market-scan-status market-scan-dev">{shown}</span>
     </>
   );
 }
@@ -414,7 +419,7 @@ export function MarketScanSummary({
               {STATUS_LABEL[scan.status]}
             </span>
             {stale && <span className="market-scan-status market-scan-partial">Stale</span>}
-            {source && <DevImportBadges saved={choice?.saved !== undefined} />}
+            {source && <DevImportBadges saved={choice?.saved} />}
             <span>
               {scanning ? 'Re-scanning… · ' : ''}
               {source ? 'Imported' : 'Completed'} {UTC_TIME.format(completedAt)} UTC
@@ -502,7 +507,9 @@ export function MarketScanSummary({
           </ul>
         </section>
       )}
-      {source && <DevSourceNotes scan={scan} source={source} />}
+      {source && (
+        <DevSourceNotes scan={scan} source={source} fromFile={choice?.saved?.fromFile === true} />
+      )}
     </section>
   );
 }

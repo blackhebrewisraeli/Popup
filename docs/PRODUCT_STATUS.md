@@ -14,7 +14,7 @@
 | Decision Journal | Review recorded signal decisions, provenance, and dismissal evidence                                           | A decision record does not prove an investment outcome                                                                       |
 | Account          | Owner-only read-only Binance Spot balances, bounded execution history, and manual quantity reconciliation      | No orders or transfers; incomplete history is not a complete account ledger                                                  |
 
-The hosted app and the local research tooling have different capabilities. Opening the hosted app does not provide access to the owner's scans, account, credentials, or private research artifacts.
+The hosted app and the local research tooling have different capabilities. Opening the hosted app does not provide access to the owner's scans, account, credentials, or private research artifacts. The owner can open one saved TradingView crypto scan file there from their own disk; it is checked and kept in that browser tab only ([how](MARKET_SCANNER.md#opening-a-saved-crypto-scan-file)).
 
 ## What the evidence establishes
 

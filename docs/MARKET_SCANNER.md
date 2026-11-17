@@ -305,6 +305,9 @@ names the import's state (evaluated count, `Loading`, `Reloading`, `None`, `Unre
 `Failed` when a reload failed and the earlier scan is still shown). It does not change
 live coverage: every live scan still reports equities as `UNSUPPORTED`.
 
+Outside `vite dev`, the hosted app included, a crypto snapshot from this store can be reviewed by
+opening its file in the browser ([Opening a saved crypto scan file](#opening-a-saved-crypto-scan-file)).
+
 | Step                    | Who                      | How                                                                                                                                                                                                                                                         |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Choose the universe     | Code, before any data    | Default: `selectDevScanUniverse`, the 50 of the 90 configured equities with the lowest `sha256(ticker)`. Opt-in (`--universe all`): all 90. `tradingview-start` freezes the choice and its exact symbols                                                    |
@@ -510,6 +513,55 @@ stay byte-identical. The source selector's count stays the published import's.
   route, it answers only this machine's loopback addresses, and only for a loopback `Host`
   (`localhost`, `127.0.0.1`, `[::1]`), so a page that re-points its own name at this machine is
   refused. Neither route exists in a production build.
+
+### Opening a saved crypto scan file
+
+In any build, the hosted app included, **Open saved crypto scan** beside Research's Scan and
+Markets directory opens one saved TradingView crypto scan from a file the owner chooses. It
+reviews a scan that already exists. It fetches no bars, runs no new scan and connects to nothing:
+a new scan still needs the owner's agent session and the [runbook](#refreshing-it-owner-runbook).
+
+- **Which file.** The original snapshot in `.zerochart-scans/`, named `<scan ID>.json` (for
+  example `20261115T210347Z-dc217757.json`), from a `crypto-usdt-v1` import. Not
+  `tradingview-dev-scan.json` or a preserved `tradingview-dev-scan.<scan ID>.<hash>.json`: those
+  are display views, not evidence, and are refused by name.
+- **Accepted.** `schemaVersion "1"`, `evidenceType "market-scan"`, universe source
+  `tradingview-dev-scan`, exactly one cohort, crypto, from `tradingview-mcp-get_ohlcv` under
+  `tradingview-crypto-daily-v1`, and scanner `market-scan-v2` with model `1.0.0`. Every pair must
+  be a `BINANCE:<…>USDT` instrument whose recorded `providerSymbol` requested and validated that
+  same symbol.
+- **Refused, each with a reason:** another source (Binance klines, `assets_status`), equity or
+  mixed scans, legacy snapshots without exact symbols, another schema or version, missing fields,
+  text that is not UTF-8 JSON, and anything that does not reproduce. Nothing from a refused file is
+  shown, and nothing can be recorded from it.
+- **Limits, stated beside the button.** At most 4 MB, checked from the file's size before it is
+  read (a 25-pair scan is about 1 MB), then at most 100 pairs and 1,000 candles per pair before
+  anything is hashed or scored.
+- **Checked like the dev route.** The finance Web Worker takes the file's original bytes, computes
+  their SHA-256 with Web Crypto before decoding them, then parses those same bytes and runs the
+  scan store's own check (`src/lib/scanSnapshot.ts`, shared with `scripts/marketScanStore.ts`):
+  required fields, evaluation time and scan ID, universe hash, every input hash, and every output
+  scored again. A claim in the file such as `"state": "VERIFIED"`, `saved` or `match` is never
+  read. Only a scan that reproduces is shown, with what the snapshot alone records (the
+  [snapshot-only rules](#saved-scans): no retrieval window, notice, selection rule, alert check or
+  comparison, none filled in). Stale, incomplete-scan and symbol-provenance warnings stay as they
+  are.
+- **What reproduction shows.** The file is internally consistent. It is not authentic: nothing
+  signs it, and anyone could write a consistent file. Its SHA-256 names those bytes only, so the
+  same scan saved with other whitespace has another hash.
+- **In memory only.** The file and its candles stay in the page's memory and the worker's request.
+  They are never uploaded, cached by the worker, put in `localStorage`, `sessionStorage` or
+  IndexedDB, or sent to the database. Opening, checking and reviewing make no request.
+  **Close file** returns to the scan as it was. Choosing another file replaces it at once: the
+  earlier review, candidate selection, scenario and record draft are dropped, and a check that
+  answers late for a replaced or closed file is ignored. A page reload drops the file.
+- **The view says it is a file.** **Historical file you opened, not a live scan**, the file name and
+  size, the scan's cutoff, and the badge **Opened from a file you chose**.
+- **Recording** reuses the [Manual Spot flow](MANUAL_SPOT_EXPERIMENTS.md#recording-from-a-saved-scan)
+  unchanged, with the same owner check.
+- **Browser locale.** Hashes cover JSON whose keys sort with `localeCompare`, as in Node. A browser
+  whose language sorts Latin letters differently could refuse a valid file as not reproducing; it
+  cannot make a changed file pass.
 
 ### Changes since previous scan
 

@@ -103,6 +103,11 @@ export interface TradingViewSavedScan {
    * bytes only: any copy with the same bytes has the same hash, and nothing signs the file.
    */
   snapshotSha256: string;
+  /**
+   * Opened from a file the owner chose in this browser (src/lib/savedScanFile.ts), not read
+   * from the dev server's scan store. Held in memory only, never uploaded.
+   */
+  fromFile?: true;
 }
 
 export interface TradingViewDevScan {
@@ -182,7 +187,8 @@ function isSaved(saved: Partial<TradingViewSavedScan> | undefined): boolean {
       typeof saved.legacy === 'boolean' &&
       (saved.view === null || saved.view === 'published' || saved.view === 'preserved') &&
       typeof saved.snapshotSha256 === 'string' &&
-      SHA256.test(saved.snapshotSha256))
+      SHA256.test(saved.snapshotSha256) &&
+      (saved.fromFile === undefined || saved.fromFile === true))
   );
 }
 

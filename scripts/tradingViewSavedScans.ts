@@ -2,9 +2,12 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { open, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
-import { SCANNER_VERSION } from '@/lib/marketScanner';
 import { latestSession } from '@/lib/scanChanges';
+import {
+  checkScanSnapshot,
+  isLegacySnapshot as isLegacy,
+  snapshotOnlySource,
+} from '@/lib/scanSnapshot';
 import {
   parseTradingViewDevScan,
   SCAN_ID,
@@ -18,7 +21,7 @@ import {
   type TradingViewSavedScan,
 } from '@/lib/tradingViewDevScan';
 import { stableSerialize } from './evaluationStore';
-import { snapshotMismatchReason, type ScanSnapshot } from './marketScanStore';
+import { sha256, type ScanSnapshot } from './marketScanStore';
 
 /**
  * Saved TradingView scans read back for local Research (served by
@@ -71,9 +74,6 @@ function asTradingView(value: unknown): RawSnapshot | null {
   const raw = value as RawSnapshot | null;
   return raw?.scan?.universe?.source === TRADINGVIEW_DEV_UNIVERSE_SOURCE ? raw : null;
 }
-
-const isLegacy = (raw: RawSnapshot) =>
-  !(Array.isArray(raw.inputs) && raw.inputs.some((input) => input?.providerSymbol));
 
 function entry(scanId: string, raw: RawSnapshot): SavedScanEntry {
   const count = (value: unknown) => (Number.isInteger(value) ? (value as number) : null);
@@ -155,32 +155,14 @@ async function checkSnapshot(store: string, scanId: string): Promise<Checked | n
     return refuse('MALFORMED', 'the file is not valid JSON');
   }
   if (!raw) return null;
-  if (raw.schemaVersion !== '1') {
-    return refuse('INCOMPATIBLE', `snapshot schema ${String(raw.schemaVersion)}, not 1`);
-  }
-  if (raw.evidenceType !== 'market-scan' || raw.scanId !== scanId) {
-    return refuse('MALFORMED', 'the file does not record this scan as a market-scan snapshot');
-  }
-  const snapshot = raw as ScanSnapshot;
-  let reason: ReturnType<typeof snapshotMismatchReason>;
-  try {
-    reason = snapshotMismatchReason(snapshot);
-  } catch (error) {
-    return refuse('MALFORMED', `its inputs cannot be scored (${(error as Error).message})`);
-  }
-  if (reason === null) {
-    return { state: 'VERIFIED', snapshot, legacy: isLegacy(raw), sha256: file.sha256 };
-  }
-  if (reason === 'SNAPSHOT_METADATA_MISMATCH') {
-    return refuse('MALFORMED', 'required snapshot fields are missing or invalid');
-  }
-  if (reason === 'UNSUPPORTED_VERSION') {
-    return refuse(
-      'INCOMPATIBLE',
-      `recorded with scanner ${String(snapshot.scan.scannerVersion)} and model ${String(snapshot.scan.modelVersion)}; this checkout runs ${SCANNER_VERSION} and ${CANONICAL_MODEL_VERSION}`,
-    );
-  }
-  return refuse('NOT_REPRODUCED', reason);
+  const refused = await checkScanSnapshot(raw, sha256, { scanId });
+  if (refused) return { ...refused, scanId };
+  return {
+    state: 'VERIFIED',
+    snapshot: raw as ScanSnapshot,
+    legacy: isLegacy(raw),
+    sha256: file.sha256,
+  };
 }
 
 /**
@@ -263,21 +245,7 @@ export async function readSavedScan(store: string, scanId: string): Promise<Save
     kind: TRADINGVIEW_DEV_SCAN_KIND,
     scanId: snapshot.scanId,
     importedAt: snapshot.completedAt,
-    source: recorded?.view.source ?? {
-      tool: 'get_ohlcv',
-      interval: '1D',
-      retrieval: null,
-      // What this scan's inputs recorded as requested; a legacy scan recorded none.
-      symbols: Object.fromEntries(
-        snapshot.inputs.flatMap(({ ticker, providerSymbol }) =>
-          providerSymbol ? [[ticker, providerSymbol.requested]] : [],
-        ),
-      ),
-      notice: null,
-      selectionRule: null,
-      pineAlerts: null,
-      snapshotOnly: true,
-    },
+    source: recorded?.view.source ?? snapshotOnlySource(snapshot),
     scan: snapshot.scan,
     ...(recorded ? await checkedComparison(store, recorded.view) : {}),
     saved,

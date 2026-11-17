@@ -24,8 +24,11 @@ import {
 } from '@/lib/scanReview';
 import type { ScenarioSnapshot } from '@/lib/spotScenarioSnapshot';
 import { supabase } from '@/lib/supabaseClient';
+import { spotSymbol } from '@/lib/tradingViewSymbol';
 import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { utcInputTime } from '@/lib/utils';
+
+export { spotSymbol };
 
 /** Manual Spot experiments' id in Account: the workspace banner links to `/account#spot-experiments`. */
 export const SPOT_EXPERIMENTS_ANCHOR = 'spot-experiments';
@@ -304,15 +307,10 @@ export function checkDraft(draft: ExperimentDraft, now: number): DraftCheck {
   return { ok: true, decision, accountLabel: draft.accountLabel, statedAt };
 }
 
-/** The Binance Spot pair a scanned instrument names ("BINANCE:ZCTUSDT" → "ZCTUSDT"). */
-export function spotSymbol(instrument: string): string | null {
-  return /^BINANCE:([A-Z0-9]{1,20}USDT)$/.exec(instrument)?.[1] ?? null;
-}
-
 /**
  * The row to store: content only. The ID, owner and recorded time come from the database.
- * `match` because the saved-scan route returns a snapshot only after it reproduced offline, from
- * the same read that hashed it. A scenario goes in only when the owner included one.
+ * `match` because a saved scan is shown only after it reproduced offline, from the same bytes
+ * that were hashed: by the dev saved-scan route, or by the browser's check of an opened file. A scenario goes in only when the owner included one.
  */
 export function experimentRow(
   check: Extract<DraftCheck, { ok: true }>,

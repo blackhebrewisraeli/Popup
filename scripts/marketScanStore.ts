@@ -5,33 +5,21 @@ import {
   collectScanInputs,
   compareTickers,
   evaluateScan,
-  SCANNER_VERSION,
   type MarketScan,
   type ScanInput,
   type ScanSources,
 } from '@/lib/marketScanner';
-import { CANONICAL_MODEL_VERSION } from '@/lib/canonicalModel';
+import {
+  inputHashText,
+  scanIdFor,
+  snapshotMismatchReason as reproduceSnapshot,
+  universeHashText,
+  type ScanMismatchReason,
+  type ScanSnapshot,
+} from '@/lib/scanSnapshot';
 import { stableSerialize } from './evaluationStore';
 
-/**
- * Scan-level evidence: everything needed to re-derive a scan offline. A
- * separate evidence type from scheduled-score campaigns (.zerochart-campaigns)
- * and received TradingView alerts (trading_signals); it never writes to either.
- */
-export interface ScanSnapshot {
-  schemaVersion: '1';
-  evidenceType: 'market-scan';
-  scanId: string;
-  repositoryCommit: string;
-  startedAt: string;
-  completedAt: string;
-  /** sha256 of the universe source and its sorted members. */
-  universeVersion: string;
-  /** sha256 of each member's collected input (candles or recorded failure). */
-  inputHashes: Record<string, string>;
-  inputs: readonly ScanInput[];
-  scan: MarketScan;
-}
+export type { ScanMismatchReason, ScanSnapshot } from '@/lib/scanSnapshot';
 
 export type ScanSnapshotDifference =
   | 'INPUTS'
@@ -71,16 +59,15 @@ export class ScanSnapshotConflictError extends Error {
 
 export const SCAN_STORE = '.zerochart-scans';
 
-function sha256(value: unknown): string {
-  return createHash('sha256').update(stableSerialize(value)).digest('hex');
-}
+/** Hex SHA-256 of a string's UTF-8 bytes, as every snapshot hash is taken. */
+export const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 export function universeVersion(source: string, members: readonly string[]): string {
-  return sha256({ source, members });
+  return sha256(universeHashText(source, members));
 }
 
 export function hashInputs(inputs: readonly ScanInput[]): Record<string, string> {
-  return Object.fromEntries(inputs.map((input) => [input.ticker, sha256(input)]));
+  return Object.fromEntries(inputs.map((input) => [input.ticker, sha256(inputHashText(input))]));
 }
 
 /** The JSON representation is the evidence contract; input order is not semantically relevant. */
@@ -114,10 +101,6 @@ export async function fetchAssetsStatusUniverse(
     tickers.push(...rows.flatMap((row) => (typeof row.ticker === 'string' ? [row.ticker] : [])));
     if (rows.length < pageSize) return tickers;
   }
-}
-
-function scanIdFor(startedAt: number, version: string): string {
-  return `${new Date(startedAt).toISOString().replace(/[-:]|\.\d{3}/g, '')}-${version.slice(0, 8)}`;
 }
 
 function snapshotPath(store: string, scanId: string): string {
@@ -232,64 +215,12 @@ export async function loadScan(scanId: string, store: string): Promise<ScanSnaps
   return snapshot;
 }
 
-export type ScanMismatchReason =
-  | 'UNSUPPORTED_VERSION'
-  | 'UNIVERSE_HASH_MISMATCH'
-  | 'INPUT_HASH_MISMATCH'
-  | 'OUTPUT_MISMATCH'
-  | 'EVALUATION_TIME_MISMATCH'
-  | 'SNAPSHOT_METADATA_MISMATCH';
-
-/** Why a parsed snapshot does not reproduce offline, or null when it does. Reads no file. */
-export function snapshotMismatchReason(snapshot: ScanSnapshot): ScanMismatchReason | null {
-  if (
-    !snapshot ||
-    typeof snapshot.repositoryCommit !== 'string' ||
-    !Number.isFinite(Date.parse(snapshot.completedAt)) ||
-    !Array.isArray(snapshot.inputs) ||
-    !snapshot.inputHashes ||
-    typeof snapshot.inputHashes !== 'object' ||
-    !snapshot.scan ||
-    !Array.isArray(snapshot.scan.cohorts) ||
-    !Array.isArray(snapshot.scan.results) ||
-    !snapshot.scan.universe ||
-    typeof snapshot.scan.universe.source !== 'string' ||
-    !Array.isArray(snapshot.scan.universe.members)
-  ) {
-    return 'SNAPSHOT_METADATA_MISMATCH';
-  }
-  if (
-    snapshot.scan.scannerVersion !== SCANNER_VERSION ||
-    snapshot.scan.modelVersion !== CANONICAL_MODEL_VERSION
-  ) {
-    return 'UNSUPPORTED_VERSION';
-  }
-  const evaluationTime = snapshot.scan.evaluationTime;
-  const evaluationDate = new Date(evaluationTime);
-  if (
-    !Number.isFinite(evaluationTime) ||
-    !Number.isFinite(evaluationDate.getTime()) ||
-    snapshot.startedAt !== evaluationDate.toISOString() ||
-    snapshot.scanId !== scanIdFor(evaluationTime, snapshot.universeVersion)
-  ) {
-    return 'EVALUATION_TIME_MISMATCH';
-  }
-  const { source, members } = snapshot.scan.universe;
-  if (universeVersion(source, members) !== snapshot.universeVersion) {
-    return 'UNIVERSE_HASH_MISMATCH';
-  }
-  if (stableSerialize(hashInputs(snapshot.inputs)) !== stableSerialize(snapshot.inputHashes)) {
-    return 'INPUT_HASH_MISMATCH';
-  }
-  const provider = (assetClass: string) =>
-    snapshot.scan.cohorts.find((cohort) => cohort.assetClass === assetClass)?.provider ?? null;
-  const recomputed = evaluateScan(snapshot.inputs, {
-    evaluationTime,
-    universeSource: source,
-    equityProvider: provider('equity'),
-    cryptoProvider: provider('crypto'),
-  });
-  return stableSerialize(recomputed) === stableSerialize(snapshot.scan) ? null : 'OUTPUT_MISMATCH';
+/**
+ * Why a parsed snapshot does not reproduce offline, or null when it does. Reads no file. The
+ * check itself is src/lib/scanSnapshot.ts, which the browser's saved-file check shares.
+ */
+export function snapshotMismatchReason(snapshot: ScanSnapshot): Promise<ScanMismatchReason | null> {
+  return reproduceSnapshot(snapshot, sha256);
 }
 
 function differenceForMismatch(reason: ScanMismatchReason): ScanSnapshotDifference {
@@ -313,7 +244,7 @@ async function loadVerifiedSnapshot(
     if (snapshot.scanId !== scanId) {
       throw new ScanSnapshotConflictError(scanId, path, ['EVALUATION_TIME']);
     }
-    const mismatch = snapshotMismatchReason(snapshot);
+    const mismatch = await snapshotMismatchReason(snapshot);
     if (mismatch !== null) {
       throw new ScanSnapshotConflictError(scanId, path, [differenceForMismatch(mismatch)]);
     }
@@ -418,7 +349,7 @@ export async function reproduceScan(
     scanId,
     reason,
   });
-  const reason = snapshotMismatchReason(snapshot);
+  const reason = await snapshotMismatchReason(snapshot);
   return reason === null ? { status: 'MATCH', scanId } : mismatch(reason);
 }
 

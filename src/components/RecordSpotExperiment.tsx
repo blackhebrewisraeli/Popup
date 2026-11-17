@@ -184,7 +184,7 @@ function Review({
         <Fact name="Snapshot SHA-256" value={<code>{row.source_snapshot_sha256}</code>} />
         <Fact
           name="Reproduction"
-          value="Match: the saved-scan read reproduced this snapshot offline"
+          value="Match: this snapshot reproduced offline from its own inputs before it was shown"
         />
         <Fact name="Authenticity" value="Not established: local snapshots are unsigned" />
       </dl>

@@ -2,8 +2,10 @@ import { atr, macd, rsi, sma, type MacdResult } from './indicators';
 import { computeBacktest, type BacktestOptions, type BacktestResult } from './backtestManager';
 import { evaluateCandles, type CanonicalResult, type EngineCandle } from './canonicalModel';
 import { evaluateScan, type MarketScan, type ScanInput } from './marketScanner';
+import { checkSavedScanFile, type SavedScanFileCheck } from './savedScanFile';
 
-export type FinanceRequest =
+/** Requests with a synchronous, cacheable answer. */
+type ComputeRequest =
   | { kind: 'sma'; values: number[]; period: number }
   | { kind: 'rsi'; values: number[]; period: number }
   | { kind: 'macd'; values: number[]; fast: number; slow: number; signalPeriod: number }
@@ -16,11 +18,17 @@ export type FinanceRequest =
       options: Parameters<typeof evaluateScan>[1];
     };
 
-export type FinanceResult =
-  Float64Array | MacdResult | BacktestResult | CanonicalResult | MarketScan;
+/** A saved crypto scan file's original bytes, hashed and reproduced offline (src/lib/savedScanFile.ts). */
+type SavedScanFileRequest = { kind: 'savedScanFile'; bytes: ArrayBuffer };
+
+export type FinanceRequest = ComputeRequest | SavedScanFileRequest;
+
+type ComputeResult = Float64Array | MacdResult | BacktestResult | CanonicalResult | MarketScan;
+
+export type FinanceResult = ComputeResult | SavedScanFileCheck;
 
 /** Dispatches a request to the matching pure core function. */
-export function computeFinance(request: FinanceRequest): FinanceResult {
+export function computeFinance(request: ComputeRequest): ComputeResult {
   switch (request.kind) {
     case 'sma':
       return sma(request.values, request.period);
@@ -40,15 +48,15 @@ export function computeFinance(request: FinanceRequest): FinanceResult {
 }
 
 /** Deterministic cache key for a request (enables O(1) Map lookups). */
-export function cacheKey(request: FinanceRequest): string {
+export function cacheKey(request: ComputeRequest): string {
   return JSON.stringify(request);
 }
 
 /** In-memory request cache used inside the Web Worker. */
 export class FinanceCache {
-  private readonly store = new Map<string, FinanceResult>();
+  private readonly store = new Map<string, ComputeResult>();
 
-  get(key: string): FinanceResult | undefined {
+  get(key: string): ComputeResult | undefined {
     return this.store.get(key);
   }
 
@@ -56,7 +64,7 @@ export class FinanceCache {
     return this.store.has(key);
   }
 
-  set(key: string, value: FinanceResult): void {
+  set(key: string, value: ComputeResult): void {
     this.store.set(key, value);
   }
 
@@ -67,9 +75,9 @@ export class FinanceCache {
 
 /** Computes a result, returning the cached value when the inputs are identical. */
 export function computeWithCache(
-  request: FinanceRequest,
+  request: ComputeRequest,
   cache: FinanceCache,
-): { value: FinanceResult; cached: boolean } {
+): { value: ComputeResult; cached: boolean } {
   const key = cacheKey(request);
   const cached = cache.get(key);
   if (cached !== undefined) return { value: cached, cached: true };
@@ -77,4 +85,18 @@ export function computeWithCache(
   const value = computeFinance(request);
   cache.set(key, value);
   return { value, cached: false };
+}
+
+/**
+ * One request as the worker (or, without one, the main thread) answers it. A saved-file check is
+ * asynchronous (Web Crypto) and never cached: its key would keep the file's bytes alive after the
+ * owner closes it.
+ */
+export async function handleFinanceRequest(
+  request: FinanceRequest,
+  cache: FinanceCache | null,
+): Promise<FinanceResult> {
+  if (request.kind === 'savedScanFile') return checkSavedScanFile(request.bytes);
+  // Async, so a synchronous throw here rejects and the worker still answers with its ID.
+  return cache ? computeWithCache(request, cache).value : computeFinance(request);
 }

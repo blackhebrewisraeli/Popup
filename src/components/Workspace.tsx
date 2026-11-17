@@ -1,6 +1,6 @@
 import { Link, useLocation, useMatch, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { lazy, memo, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Activity,
   ArrowDown,
@@ -27,6 +27,7 @@ import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { OpenSavedScanFile, SavedScanFileView } from '@/components/SavedScanFile';
 import {
   MarketsSourcePicker,
   TradingViewDevScan,
@@ -52,6 +53,7 @@ import {
 } from '@/lib/marketScanner';
 import { useMarketScan } from '@/hooks/useMarketScan';
 import { useResearchSource } from '@/hooks/useResearchSelection';
+import { useSavedScanFile } from '@/hooks/useSavedScanFile';
 import { assetFreshness } from '@/lib/freshness';
 import { useConnectionState, useLivePrice } from '@/lib/livePriceStore';
 import type { User } from '@supabase/supabase-js';
@@ -439,6 +441,8 @@ export type ResearchPlace = 'scan' | 'directory';
  * the scan's filters, selection and comparison. Under `vite dev` the scan's source
  * is picked above the live-data gate: the local TradingView import never waits on,
  * or disappears with, the market-data query, and the two never render together.
+ * A saved crypto scan file the owner opens takes the scan's place, in every build, until it
+ * is closed; the scan stays mounted behind it, so closing returns to it as it was.
  */
 export function ResearchZone({
   pending,
@@ -474,6 +478,13 @@ export function ResearchZone({
     return content;
   };
   const tradingView = import.meta.env.DEV && source === 'tradingview';
+  const { file, open, close } = useSavedScanFile();
+  const openButton = useRef<HTMLButtonElement>(null);
+  const closeFile = () => {
+    close();
+    // The review it closed held focus; the way to open another stays next to it.
+    openButton.current?.focus();
+  };
   return (
     <div className="research">
       <div className="research-bar">
@@ -487,15 +498,19 @@ export function ResearchZone({
             { value: 'directory', label: 'Markets directory' },
           ]}
         />
-        {import.meta.env.DEV && place === 'scan' && (
+        {import.meta.env.DEV && place === 'scan' && file === null && (
           <div className="research-source">
             Dev source
             <MarketsSourcePicker source={source} onSource={onSource} />
           </div>
         )}
+        {place === 'scan' && <OpenSavedScanFile onOpen={open} buttonRef={openButton} />}
       </div>
       <div hidden={place !== 'scan'}>
-        {tradingView ? <TradingViewDevScan key="tradingview" /> : gate(scan)}
+        {file && <SavedScanFileView file={file} onClose={closeFile} />}
+        <div hidden={file !== null}>
+          {tradingView ? <TradingViewDevScan key="tradingview" /> : gate(scan)}
+        </div>
       </div>
       <div hidden={place !== 'directory'}>
         {gate(

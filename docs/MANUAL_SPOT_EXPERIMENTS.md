@@ -18,7 +18,10 @@ scan's [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario)
 in **Account**, apart from the paper Signal Journal ([Viewing](#viewing-in-account)). Account also
 records append-only rules, dated observations and the owner's explicit close through the existing
 entries table ([Closing](#closing-in-account)). Migration `20261117120000` adds an optional
-[scenario snapshot](#scenario-snapshot) to a new experiment; it is not applied to production yet.
+[scenario snapshot](#scenario-snapshot) to a new experiment. It was applied to production on
+2026-11-17 (UTC) before [#187](https://github.com/blackhebrewisraeli/Popup/pull/187) merged as
+`49b0903` ([release](RELEASE.md#manual-spot-scenario-snapshot-20261117120000)). The hosted app
+can record from a saved crypto scan [file the owner opens](MARKET_SCANNER.md#opening-a-saved-crypto-scan-file).
 
 ## Access
 
@@ -142,10 +145,20 @@ scan ID, account label or fill belongs in code, tests or docs.
 TradingView crypto pair's evidence. It asks the database nothing until it is opened, and it saves
 only when the owner presses **Confirm and record** after **Review record**.
 
-- **A saved scan only.** Choose the scan under **Scan shown**. The local saved-scan route
-  (`vite dev` only) reproduces the snapshot offline and reports `snapshotSha256`, the SHA-256 of the
-  file's bytes from that same read. The published view is not the snapshot file, so it offers no
-  form and says which scan to choose.
+- **A saved scan only,** reproduced offline before it is shown, with `snapshotSha256`, the SHA-256
+  of the bytes that reproduced. Two ways in, same check and same record:
+  - **Scan shown** (`vite dev` only): the local saved-scan route reads the snapshot from the scan
+    store.
+  - **Open saved crypto scan** (any build, the hosted app included): the owner chooses the
+    original `<scan ID>.json` file, and the browser's finance worker hashes and reproduces it
+    ([how](MARKET_SCANNER.md#opening-a-saved-crypto-scan-file)). The file stays in memory: the
+    record stores the scan ID, the file hash, `match` and the copied evidence, never the file or
+    its candles. Opening a file proves nothing about who opened it; the owner check below is
+    unchanged.
+
+  The published view is not the snapshot file, so it offers no form and says which scan to
+  choose.
+
 - **Who.** A signed-in user whom `is_binance_spot_owner()` names. The `?devAuth` stub has no
   session, so the form never appears and nothing is sent. Without a session, the database refuses
   `anon` anyway. Anyone else is told recording is unavailable, never who the owner is.
@@ -361,11 +374,32 @@ describes the scan candidate.
   one.
 - No P&L, totals, remaining quantity, leverage or order status, and no comparison of a plan with
   its fills.
-- No scanner, model, scenario arithmetic or paper-ledger change. The saved-scan route, and so
-  recording, stays local (`vite dev` only).
+- No scanner, model, scenario arithmetic or paper-ledger change. The saved-scan route stays local
+  (`vite dev` only); the hosted app records from a file the owner opens, and a new scan still
+  needs the owner's agent session.
 - No new Binance requests, order actions or changes to the `binance-spot-account` function.
   Linking reuses a read the owner already made.
 - No server-side verification of linked fills, and no correction path for a wrong link.
+
+## Verification of opening a saved scan file — 2026-11-17
+
+Synthetic data only: a two-pair `ZCT*` crypto snapshot written by the repository's own `saveScan`.
+Nothing touched production or Binance. No schema, RLS, RPC or function changed.
+
+| Check                                                                                                                                                                                           | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node reader vs browser check, same synthetic file                                                                                                                                               | Both `VERIFIED`, same SHA-256 of the bytes, same view apart from `fromFile`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| The same JSON with other whitespace                                                                                                                                                             | Verifies in both under its own, different hash                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| One edit each: input hash, candle, universe, start time, evaluation time, score, rank, coverage, commit, model                                                                                  | Both refuse with the same state and reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Published view, Binance-kline crypto, `assets_status`, equity, mixed, legacy, mismatched symbol, non-USDT pair, schema 2, old scanner, not UTF-8, not JSON, over 4 MB, 101 pairs, 1,001 candles | Refused with a specific reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| The owner's 17 local snapshots, read-only (states and hash equality only)                                                                                                                       | 4 crypto scans: `VERIFIED` in both with equal hashes; 6 equity imports: still `VERIFIED` by the dev route, refused here as equity; 7 Market scans: refused as not TradingView. The TRX experiment's source scan hashes to the recorded `7f11268d…`                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Component tests                                                                                                                                                                                 | Replacement and close drop late answers; a refused replacement never shows the earlier file; oversized files are never read; no request or storage while opening and reviewing; owner, non-owner and signed-out recording; the insert carries the file hash, `match` and an included scenario, never candles                                                                                                                                                                                                                                                                                                                                            |
+| Production build (`npm run build`, nitro `node-server` output) on a scratch `zcfile` stack, every non-local request and WebSocket blocked                                                       | Opened, verified and reviewed the file; its hash equals `shasum` of the file; **Stale** shown. Zero requests from opening, checking, reviewing or the scenario. Record: one `is_binance_spot_owner` call and one insert; the row holds the scan ID, file hash, `match` and the scenario, no candles; Account lists it (balance function answered `not_configured` in the page). A second user without the owner row got **Recording unavailable** and no form. Tampered, published-view and 4.5 MB files refused, the 4.5 MB one without a request. No `/__zerochart/` request. Blocked: only Research's own Binance klines and price stream, and fonts |
+| `supabase test db` on the same stack, schema unchanged                                                                                                                                          | 9 files, 289 assertions pass, owner and RLS contracts included                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Keyboard and layout                                                                                                                                                                             | Enter on the button opens the chooser; **Close file** returns focus to it; at 375 px no horizontal scroll and Tab stays in the evidence sheet; light and dark                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+Not checked: Safari and Firefox, a physical phone, a screen reader, and a real snapshot file in
+the hosted app (the owner's files stay private).
 
 ## Verification of scenario snapshots — 2026-11-17
 

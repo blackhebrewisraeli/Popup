@@ -1,4 +1,5 @@
-import { computeFinance, type FinanceRequest, type FinanceResult } from './financeCompute';
+import { handleFinanceRequest, type FinanceRequest, type FinanceResult } from './financeCompute';
+import type { SavedScanFileCheck } from './savedScanFile';
 import type { MacdResult } from './indicators';
 import type { BacktestOptions, BacktestResult } from './backtestManager';
 import type { CanonicalResult, EngineCandle } from './canonicalModel';
@@ -36,7 +37,7 @@ function getWorker(): Worker | null {
 function request<T extends FinanceResult>(request: FinanceRequest): Promise<T> {
   const w = getWorker();
   if (!w) {
-    return Promise.resolve(computeFinance(request) as T);
+    return handleFinanceRequest(request, null) as Promise<T>;
   }
   return new Promise<T>((resolve, reject) => {
     const id = nextId;
@@ -95,4 +96,12 @@ export function evaluateScanAsync(
   options: Parameters<typeof evaluateScan>[1],
 ): Promise<MarketScan> {
   return request<MarketScan>({ kind: 'marketScan', inputs, options });
+}
+
+/**
+ * Async, worker-backed check of a saved crypto scan file's bytes: hashed, then reproduced offline
+ * off the main thread. Never cached, so closing the file leaves no copy of it in the worker.
+ */
+export function checkSavedScanFileAsync(bytes: ArrayBuffer): Promise<SavedScanFileCheck> {
+  return request<SavedScanFileCheck>({ kind: 'savedScanFile', bytes });
 }

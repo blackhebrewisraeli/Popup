@@ -911,6 +911,49 @@ body {
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+/* Open saved crypto scan: the entry point and its limit, then the opened file in the scan's place. */
+.saved-file-open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.saved-file-limit {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.saved-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.saved-file-head > p {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+}
+.saved-file-state,
+.saved-file-note {
+  display: block;
+}
+.saved-file-state {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
 .devscan-reload-failed {
   flex: 1 1 100%;
   padding: 10px 12px;
@@ -1852,7 +1895,8 @@ body {
 @media (max-width: 760px) {
   .research-places,
   .research-source,
-  .research-source .segment {
+  .research-source .segment,
+  .saved-file-open {
     flex: 1 1 100%;
   }
   .market-scan-stats {
