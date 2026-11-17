@@ -4095,9 +4095,37 @@ body {
 .experiment-provenance[open] > summary {
   margin-bottom: 8px;
 }
+/* Review another saved scan: the stored entry evidence and the chosen file's, side by side. */
+.experiment-scan-review[open] > summary {
+  margin-bottom: 8px;
+}
+.experiment-scan-review > .market-scan-fit {
+  margin: 0 0 8px;
+}
+.experiment-scan-compare {
+  margin-top: 12px;
+}
+.experiment-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.experiment-compare-side {
+  min-width: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.experiment-compare-side > .market-scan-fit {
+  margin: 0 0 8px;
+}
+.experiment-compare .scan-facts,
+.scan-facts.experiment-compare-facts {
+  grid-template-columns: minmax(0, 1fr);
+}
 @media (max-width: 560px) {
   .experiment-detail .scan-facts,
-  .spot-record-review .scan-facts {
+  .spot-record-review .scan-facts,
+  .experiment-compare {
     grid-template-columns: minmax(0, 1fr);
   }
 }

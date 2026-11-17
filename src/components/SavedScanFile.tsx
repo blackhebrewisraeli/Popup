@@ -4,6 +4,7 @@ import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { Button } from '@/components/ui/button';
 import type { OpenedFile } from '@/hooks/useSavedScanFile';
 import {
+  megabytes,
   SAVED_SCAN_FILE_LIMIT_LABEL,
   type SavedScanFileCheck,
   type SavedScanFileRefusal,
@@ -11,15 +12,25 @@ import {
 import { compareScans } from '@/lib/scanChanges';
 import { UTC_TIME } from '@/lib/scanReview';
 
-/** The entry point: one button, and the limit stated before anything is chosen. */
+/**
+ * The entry point: one button, and the limit stated before anything is chosen. Research's is the
+ * product tour's target; Account's experiment review names its own purpose.
+ */
 export function OpenSavedScanFile({
   onOpen,
   buttonRef,
-}: Readonly<{ onOpen: (file: File) => void; buttonRef: RefObject<HTMLButtonElement | null> }>) {
+  label = 'Open saved crypto scan',
+  tour = false,
+}: Readonly<{
+  onOpen: (file: File) => void;
+  buttonRef: RefObject<HTMLButtonElement | null>;
+  label?: string;
+  tour?: boolean;
+}>) {
   const noteId = useId();
   const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="saved-file-open" data-tour="open-saved-scan">
+    <div className="saved-file-open" data-tour={tour ? 'open-saved-scan' : undefined}>
       <Button
         ref={buttonRef}
         type="button"
@@ -28,7 +39,7 @@ export function OpenSavedScanFile({
         aria-describedby={noteId}
         onClick={() => input.current?.click()}
       >
-        <FileUp aria-hidden="true" /> Open saved crypto scan
+        <FileUp aria-hidden="true" /> {label}
       </Button>
       <input
         ref={input}
@@ -58,8 +69,6 @@ const REFUSED: Record<SavedScanFileRefusal, string> = {
   NOT_REPRODUCED: 'does not reproduce from its own inputs',
 };
 
-const megabytes = (size: number) => `${(size / (1024 * 1024)).toFixed(2)} MB`;
-
 /** Why nothing from the file is shown. */
 function Refused({ file, check }: Readonly<{ file: OpenedFile; check: SavedScanFileCheck }>) {
   if (check.state === 'VERIFIED') return null;
@@ -74,6 +83,27 @@ function Refused({ file, check }: Readonly<{ file: OpenedFile; check: SavedScanF
       )}
       : {check.reason}. Nothing from it is shown, and nothing can be recorded from it.
     </p>
+  );
+}
+
+/** How far the check of an opened file has got, or why nothing from it is shown. */
+export function SavedScanFileCheckState({ file }: Readonly<{ file: OpenedFile }>) {
+  const check = file.phase === 'checked' ? file.check : null;
+  return (
+    <>
+      {file.phase === 'checking' && (
+        <output className="saved-file-state" aria-busy="true">
+          Checking in this browser: hashing the file&rsquo;s bytes and reproducing the scan from its
+          own inputs. Nothing is uploaded, fetched or saved.
+        </output>
+      )}
+      {file.phase === 'failed' && (
+        <p className="devscan-reload-failed" role="alert">
+          <code>{file.name}</code> could not be checked ({file.message}). Nothing from it is shown.
+        </p>
+      )}
+      {check && <Refused file={file} check={check} />}
+    </>
   );
 }
 
@@ -98,18 +128,7 @@ export function SavedScanFileView({
           <X aria-hidden="true" /> Close file
         </Button>
       </div>
-      {file.phase === 'checking' && (
-        <output className="saved-file-state" aria-busy="true">
-          Checking in this browser: hashing the file&rsquo;s bytes and reproducing the scan from its
-          own inputs. Nothing is uploaded, fetched or saved.
-        </output>
-      )}
-      {file.phase === 'failed' && (
-        <p className="devscan-reload-failed" role="alert">
-          <code>{file.name}</code> could not be checked ({file.message}). Nothing from it is shown.
-        </p>
-      )}
-      {check && <Refused file={file} check={check} />}
+      <SavedScanFileCheckState file={file} />
       {view?.saved && (
         <>
           <output className="devscan-saved saved-file-note">

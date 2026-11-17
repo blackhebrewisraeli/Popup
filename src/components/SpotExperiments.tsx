@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { CloseComposer, ExperimentEntries } from '@/components/ExperimentEntries';
+import { ExperimentScanReview } from '@/components/ExperimentScanReview';
 import { ScenarioSnapshotFacts } from '@/components/ScenarioFacts';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
@@ -416,6 +417,8 @@ function Detail({
           </p>
         )}
       </details>
+
+      <ExperimentScanReview experiment={experiment} />
 
       <RecordedScenario experiment={experiment} modelBacked={evidence?.long !== false} />
 

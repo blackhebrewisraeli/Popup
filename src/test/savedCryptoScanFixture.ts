@@ -60,18 +60,19 @@ export const FIXTURE_INPUTS: readonly ScanInput[] = [
 /** Saves the inputs as a TradingView crypto snapshot in a fresh store; the file's bytes as written. */
 export async function savedCryptoSnapshot(
   inputs: readonly ScanInput[] = FIXTURE_INPUTS,
-  options: { cryptoProvider?: string; universeSource?: string } = {},
+  options: { cryptoProvider?: string; universeSource?: string; evaluationTime?: number } = {},
 ): Promise<{ store: string; path: string; bytes: Buffer; snapshot: ScanSnapshot }> {
   const store = join(await mkdtemp(join(tmpdir(), 'zerochart-file-')), 'scans');
+  const evaluationTime = options.evaluationTime ?? FIXTURE_NOW;
   const { path, snapshot } = await saveScan({
     inputs,
-    evaluationTime: FIXTURE_NOW,
+    evaluationTime,
     universeSource: options.universeSource ?? TRADINGVIEW_DEV_UNIVERSE_SOURCE,
     equityProvider: null,
     cryptoProvider: options.cryptoProvider ?? TRADINGVIEW_DEV_PROVIDER_ID,
     repositoryCommit: FIXTURE_COMMIT,
     store,
-    completedAt: FIXTURE_NOW + 60_000,
+    completedAt: evaluationTime + 60_000,
   });
   return { store, path, bytes: await readFile(path), snapshot };
 }

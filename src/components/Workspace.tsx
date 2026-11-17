@@ -514,7 +514,7 @@ export function ResearchZone({
             <MarketsSourcePicker source={source} onSource={onSource} />
           </div>
         )}
-        {place === 'scan' && <OpenSavedScanFile onOpen={open} buttonRef={openButton} />}
+        {place === 'scan' && <OpenSavedScanFile onOpen={open} buttonRef={openButton} tour />}
       </div>
       <div hidden={place !== 'scan'}>
         {file && <SavedScanFileView file={file} onClose={closeFile} />}
