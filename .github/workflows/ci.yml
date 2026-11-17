@@ -108,6 +108,12 @@ jobs:
       - name: Concurrent sessions
         run: supabase/tests/concurrency.sh
 
+      # Production holds main's schema with Manual Spot experiments, which the
+      # pre-#79 base predates: upgrade main's migrations too, with
+      # experiment-shaped rows.
+      - name: Upgrade from main's database
+        run: supabase/tests/upgrade.sh origin/main
+
       # Production already holds the pre-signal-classification schema and real
       # rows, so rebuild the base commit's actual migration files before
       # applying this branch's migrations, not only from scratch.

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,6 +44,7 @@ vi.mock('@/lib/authStore', async (importOriginal) => ({
 import { BinanceSpotBalances } from '@/components/BinanceSpotBalances';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
 import { SpotExperiments } from '@/components/SpotExperiments';
+import type { Json } from '@/integrations/supabase/types';
 import type { Candle } from '@/lib/binance';
 import type { SpotRead } from '@/lib/binanceSpotAccount';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
@@ -616,6 +617,7 @@ function experiment(overrides: Partial<SpotExperimentRecord> = {}): SpotExperime
     },
     decision: 'Bought a small ZCT position.',
     decision_stated_at: '2026-10-27T21:15:00+00:00',
+    scenario_snapshot: null,
     spot_experiment_entries: [],
     spot_experiment_fills: [],
     ...overrides,
@@ -1663,5 +1665,380 @@ describe('closing an experiment record', () => {
     expect(within(item).getByText('Add a rule')).toBeInTheDocument();
     expect(within(item).getByText('Add an observation')).toBeInTheDocument();
     expect(item).not.toHaveTextContent(/remaining|profit|success|failure|sold/i);
+  });
+});
+
+/** The scenario inputs, by the planner's own labels. */
+function fillScenario(
+  section: HTMLElement,
+  values: Partial<Record<'allocation' | 'maxLoss' | 'entry' | 'stop' | 'fee', string>>,
+) {
+  const labels = {
+    allocation: /^Available allocation/,
+    maxLoss: /^Maximum planned loss/,
+    entry: /^Hypothetical entry/,
+    stop: /^Stop reference/,
+    fee: /^Fee assumption per fill/,
+  };
+  for (const [name, value] of Object.entries(values)) {
+    fireEvent.change(field(section, labels[name as keyof typeof labels]), { target: { value } });
+  }
+}
+
+/** A small-price plan with every digit significant; the fee left unspecified. */
+const SMALL_PLAN = { allocation: '15', maxLoss: '1', entry: '0.00000612', stop: '0.0000055' };
+const SMALL_SNAPSHOT = {
+  version: 1,
+  calculationVersion: 'spot-scenario-1',
+  inputs: {
+    allocation: '15',
+    maxLoss: '1',
+    entry: '0.00000612',
+    stop: '0.0000055',
+    feePercent: null,
+  },
+  figures: {
+    quantity: '1,612,903.22580645',
+    limitedBy: 'maxLoss',
+    notional: '9.87',
+    unallocated: '5.13',
+    stopDistance: '0.00000062',
+    stopDistancePercent: '10.13%',
+    lossAtStop: '1.00',
+    fees: null,
+  },
+};
+
+const includeBox = (section: HTMLElement) =>
+  within(section).getByRole('checkbox', { name: 'Include this scenario in the record' });
+const scenarioRegion = (scope: HTMLElement, name: string) =>
+  within(scope).getByRole('region', { name });
+/** Every fact a scope shows, name and text, in order. */
+const facts = (scope: HTMLElement) =>
+  Array.from(scope.querySelectorAll('dt')).map((dt) => [
+    dt.textContent,
+    dt.nextElementSibling?.textContent,
+  ]);
+const RECORDED = {
+  data: { id: 'e0000000-0000-4000-8000-000000000003', recorded_at: '2026-10-28T17:00:02+00:00' },
+  error: null,
+};
+
+describe('including the scenario in a recorded experiment', () => {
+  beforeEach(() => db.rpc.mockResolvedValue({ data: true, error: null }));
+
+  it('leaves it out by default: a complete scenario is not sent unless the owner includes it', async () => {
+    const section = await openRecord();
+    fillScenario(section, SMALL_PLAN);
+    await within(section).findByLabelText(/^Your decision/);
+    expect(includeBox(section)).not.toBeChecked();
+    fillDraft(section, { decision: 'Decided not to buy.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    const review = scenarioRegion(section, 'Check before recording');
+    expect(review).toHaveTextContent('Not recorded: your scenario inputs and figures.');
+    expect(within(review).queryByRole('region')).not.toBeInTheDocument();
+    db.insertResult.mockResolvedValue(RECORDED);
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(db.inserts).toHaveLength(1);
+    expect(db.inserts[0]?.row).not.toHaveProperty('scenario_snapshot');
+  });
+
+  it('reviews the exact inputs and figures, sends that copy once, and reads it back the same in Account', async () => {
+    const section = await openRecord();
+    fillScenario(section, SMALL_PLAN);
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(includeBox(section));
+    fillDraft(section, { decision: 'Bought a small ZCT position.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    const review = scenarioRegion(section, 'Check before recording');
+    const included = scenarioRegion(review, 'Scenario, included as a hypothetical planning record');
+    expect(facts(included)).toEqual([
+      ['Available allocation', '15 USDT'],
+      ['Maximum planned loss', '1 USDT'],
+      ['Hypothetical entry', '0.00000612 USDT per ZCTLONG'],
+      ['Stop reference', '0.0000055 USDT per ZCTLONG'],
+      ['Fee assumption per fill', 'Not specified'],
+      ['Calculation', 'spot-scenario-1, in the browser'],
+      ['Illustrative quantity', '1,612,903.22580645 ZCTLONG'],
+      ['Limited by', 'Planned-loss budget'],
+      ['Position notional', '9.87 USDT'],
+      ['Unallocated', '5.13 USDT'],
+      ['Entry to stop', '0.00000062 USDT per ZCTLONG (10.13% of entry)'],
+      ['Planned loss at the stop reference', '1.00 USDT, price move only'],
+      ['Assumed fees', 'Not specified: every figure excludes fees'],
+    ]);
+    expect(included).toHaveTextContent('not a placed stop and not a guaranteed maximum');
+    expect(included).toHaveTextContent('A planning record, not a rule');
+    expect(included).toHaveTextContent('not a placed order, a verified balance or an actual fill');
+    expect(review).toHaveTextContent(
+      'Recorded with the scenario above, exactly as shown. No rule is set, so allocation, stop, horizon, target and exit stay Not decided',
+    );
+    expect(db.inserts).toEqual([]);
+
+    const answer = deferred<unknown>();
+    db.insertResult.mockReturnValue(answer.promise);
+    fireEvent.click(confirmButton(section));
+    fireEvent.click(confirmButton(section));
+    expect(db.inserts).toHaveLength(1);
+    const row = db.inserts[0]?.row ?? {};
+    expect(row['scenario_snapshot']).toEqual(SMALL_SNAPSHOT);
+    expect(Object.isFrozen(row['scenario_snapshot'])).toBe(true);
+    expect(JSON.stringify(row['source_evidence'])).not.toMatch(/0\.00000612|1,612,903/);
+    await act(async () => answer.resolve(RECORDED));
+    expect(section).toHaveTextContent('Recorded. The database stored experiment');
+    fireEvent.click(within(section).getByRole('button', { name: 'Record another' }));
+    expect(includeBox(section)).not.toBeChecked();
+
+    // A fresh Account read of what was stored shows the reviewed values, fact for fact.
+    const reviewed = facts(included);
+    cleanup();
+    db.listResult.mockResolvedValue({
+      data: [
+        experiment({
+          scenario_snapshot: JSON.parse(JSON.stringify(row['scenario_snapshot'])) as Json,
+        }),
+      ],
+      error: null,
+    });
+    render(wrap(<SpotExperiments userId={OWNER} />));
+    const item = (await screen.findByText('ZCTLONGUSDT')).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText('ZCTLONGUSDT'));
+    expect(db.listed[0]?.columns).toMatch(/decision_stated_at, scenario_snapshot, /);
+    const shown = scenarioRegion(item, 'Scenario, as recorded');
+    expect(facts(shown)).toEqual(reviewed);
+    expect(shown).toHaveTextContent(
+      'stored with it at 2026-10-28 17:00:01.500 UTC (the database’s clock). Shown as stored.',
+    );
+  });
+
+  it('keeps an unspecified fee apart from a stated zero', async () => {
+    const section = await openRecord();
+    fillScenario(section, SMALL_PLAN);
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(includeBox(section));
+    fillDraft(section, { decision: 'Bought a small ZCT position.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    let included = scenarioRegion(section, 'Scenario, included as a hypothetical planning record');
+    expect(fact(included, 'Fee assumption per fill')).toBe('Not specified');
+    expect(fact(included, 'Assumed fees')).toBe('Not specified: every figure excludes fees');
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Edit' }));
+    fillScenario(section, { fee: '0' });
+    fireEvent.click(reviewButton(section));
+    included = scenarioRegion(section, 'Scenario, included as a hypothetical planning record');
+    expect(fact(included, 'Fee assumption per fill')).toBe('0% of each fill, as stated');
+    expect(fact(included, 'Assumed fees')).toBe('0.00 USDT at entry + 0.00 USDT at the stop');
+    expect(fact(included, 'Planned loss at the stop reference')).toBe(
+      '1.00 USDT with assumed fees (1.00 price move)',
+    );
+    db.insertResult.mockResolvedValue(RECORDED);
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(db.inserts[0]?.row['scenario_snapshot']).toMatchObject({
+      inputs: { feePercent: '0' },
+      figures: { fees: { entry: '0.00', exit: '0.00', lossWithFees: '1.00' } },
+    });
+  });
+
+  it('refuses to include an incomplete or invalid scenario, and still records without one', async () => {
+    const section = await openRecord();
+    fillScenario(section, { allocation: '15' });
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(includeBox(section));
+    fillDraft(section, { decision: 'Decided not to buy.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    expect(document.activeElement).toBe(includeBox(section));
+    expect(includeBox(section)).toHaveAttribute('aria-invalid', 'true');
+    expect(section).toHaveTextContent(
+      'Complete Plan a hypothetical scenario with valid inputs first, or leave the scenario out of the record.',
+    );
+    expect(within(section).queryByRole('region', { name: 'Check before recording' })).toBeNull();
+
+    // Invalid, not just incomplete: a stop above the entry.
+    fillScenario(section, { maxLoss: '1', entry: '0.0000055', stop: '0.00000612' });
+    fireEvent.click(reviewButton(section));
+    expect(within(section).queryByRole('region', { name: 'Check before recording' })).toBeNull();
+    expect(db.inserts).toEqual([]);
+
+    fireEvent.click(includeBox(section));
+    fireEvent.click(reviewButton(section));
+    expect(scenarioRegion(section, 'Check before recording')).toHaveTextContent(
+      'Not recorded: your scenario inputs and figures.',
+    );
+    db.insertResult.mockResolvedValue(RECORDED);
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(db.inserts).toHaveLength(1);
+    expect(db.inserts[0]?.row).not.toHaveProperty('scenario_snapshot');
+  });
+
+  it('makes a review out of date when the scenario changes, and never sends the old copy', async () => {
+    const section = await openRecord();
+    fillScenario(section, SMALL_PLAN);
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(includeBox(section));
+    fillDraft(section, { decision: 'Bought a small ZCT position.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    expect(within(section).queryByRole('alert')).toBeNull();
+
+    fillScenario(section, { stop: '0.000005' });
+    expect(within(section).getByRole('alert')).toHaveTextContent(
+      'The scenario, or the scan or pair it belongs to, changed after this review. Nothing was sent.',
+    );
+    expect(confirmButton(section)).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(confirmButton(section));
+    fireEvent.keyDown(confirmButton(section), { key: 'Enter' });
+    expect(db.inserts).toEqual([]);
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(reviewButton(section));
+    expect(
+      fact(
+        scenarioRegion(section, 'Scenario, included as a hypothetical planning record'),
+        'Stop reference',
+      ),
+    ).toBe('0.000005 USDT per ZCTLONG');
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '42501', message: 'new row violates row-level security policy' },
+    });
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(within(section).getByRole('alert')).toHaveTextContent('Not recorded. Permission denied');
+    // A refusal leaves Confirm available, for the same reviewed copy only.
+    fillScenario(section, { maxLoss: '0.5' });
+    expect(confirmButton(section)).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(confirmButton(section));
+    fillScenario(section, { maxLoss: '1' });
+    expect(confirmButton(section)).not.toHaveAttribute('aria-disabled');
+    db.insertResult.mockResolvedValue(RECORDED);
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(db.inserts).toHaveLength(2);
+    expect(db.inserts[1]?.row['scenario_snapshot']).toBe(db.inserts[0]?.row['scenario_snapshot']);
+    expect(db.inserts[1]?.row['scenario_snapshot']).toMatchObject({
+      inputs: { stop: '0.000005', maxLoss: '1' },
+    });
+  });
+
+  it('locks a record with a scenario when no answer came back, as without one', async () => {
+    const section = await openRecord();
+    fillScenario(section, SMALL_PLAN);
+    await within(section).findByLabelText(/^Your decision/);
+    fireEvent.click(includeBox(section));
+    fillDraft(section, { decision: 'Bought a small ZCT position.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    db.insertResult.mockResolvedValue({
+      data: null,
+      error: { code: '', message: 'Failed to fetch' },
+    });
+    await act(async () => fireEvent.click(confirmButton(section)));
+    expect(within(section).getByRole('alert')).toHaveTextContent(
+      'No confirmation from the database (Failed to fetch). The experiment may or may not be stored',
+    );
+    expect(confirmButton(section)).toHaveAttribute('aria-disabled', 'true');
+    fillScenario(section, { stop: '0.000005' });
+    // Still the uncertain outcome, not a second warning: nothing may be sent either way.
+    expect(within(section).getAllByRole('alert')).toHaveLength(1);
+    fireEvent.click(confirmButton(section));
+    expect(db.inserts).toHaveLength(1);
+  });
+
+  it('makes a review out of date when the saved scan file behind it changes', async () => {
+    const scan = cryptoScan();
+    const page = (choice: { saved: TradingViewSavedScan }) =>
+      wrap(
+        <MarketScanSummary
+          scan={scan}
+          completedAt={NOW}
+          scanning={false}
+          failed={false}
+          source={source}
+          scanId={SCAN_ID}
+          choice={choice}
+        />,
+      );
+    const { rerender } = render(page({ saved }));
+    fireEvent.click(screen.getByRole('button', { name: /^ZCTLONG-USDT, rank/ }));
+    const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
+    await openDisclosure(section);
+    await within(section).findByLabelText(/^Your decision/);
+    fillDraft(section, { decision: 'Decided not to buy.', label: 'main' });
+    fireEvent.click(reviewButton(section));
+    expect(within(section).queryByRole('alert')).toBeNull();
+
+    rerender(page({ saved: { ...saved, snapshotSha256: 'b2'.repeat(32) } }));
+    const current = screen.getByRole('region', { name: 'Manual Spot scenario' });
+    expect(within(current).getByRole('alert')).toHaveTextContent('changed after this review');
+    fireEvent.click(confirmButton(current));
+    expect(db.inserts).toEqual([]);
+    fireEvent.click(within(current).getByRole('button', { name: 'Edit' }));
+    fireEvent.click(reviewButton(current));
+    expect(fact(current, 'Snapshot SHA-256')).toBe('b2'.repeat(32));
+  });
+});
+
+describe('a recorded scenario in Account', () => {
+  beforeEach(() => db.rpc.mockResolvedValue({ data: true, error: null }));
+
+  async function openItem(record: SpotExperimentRecord) {
+    db.listResult.mockResolvedValue({ data: [record], error: null });
+    render(wrap(<SpotExperiments userId={OWNER} />));
+    const item = (await screen.findByText(record.symbol)).closest('details');
+    if (!item) throw new Error('item');
+    fireEvent.click(within(item).getByText(record.symbol));
+    return item;
+  }
+
+  it('says No scenario recorded for an experiment recorded without one, never zeros', async () => {
+    const item = await openItem(experiment());
+    const shown = scenarioRegion(item, 'Scenario, as recorded');
+    expect(shown).toHaveTextContent(/^Scenario, as recordedNo scenario recorded$/);
+    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+  });
+
+  it('shows the figures as stored, never worked out again, and decides no rule', async () => {
+    // Figures no current arithmetic gives for these inputs: they must still show as stored.
+    const item = await openItem(
+      experiment({
+        scenario_snapshot: {
+          ...SMALL_SNAPSHOT,
+          inputs: { ...SMALL_SNAPSHOT.inputs, feePercent: '0.1' },
+          figures: {
+            ...SMALL_SNAPSHOT.figures,
+            quantity: '1,234',
+            notional: '<0.01',
+            fees: { entry: '<0.01', exit: '0.00', lossWithFees: '1.01' },
+          },
+        },
+      }),
+    );
+    const shown = scenarioRegion(item, 'Scenario, as recorded');
+    expect(fact(shown, 'Illustrative quantity')).toBe('1,234 ZCTLONG');
+    expect(fact(shown, 'Position notional')).toBe('<0.01 USDT');
+    expect(fact(shown, 'Fee assumption per fill')).toBe('0.1% of each fill, as stated');
+    expect(fact(shown, 'Assumed fees')).toBe('<0.01 USDT at entry + 0.00 USDT at the stop');
+    expect(shown).toHaveTextContent('Binance’s lot size, minimum notional and price filters');
+    for (const rule of ['Allocation ceiling', 'Stop', 'Horizon', 'Target', 'Exit']) {
+      expect(fact(item, rule)).toBe('Not decided');
+    }
+    expect(fact(item, 'Rules')).toMatch(/^Not decided: Allocation ceiling, Stop, Horizon/);
+    expect(item).not.toHaveTextContent(/P&L|profit|remaining|order status/i);
+  });
+
+  it('names an unsupported or unreadable snapshot without hiding the rest of the experiment', async () => {
+    let item = await openItem(experiment({ scenario_snapshot: { ...SMALL_SNAPSHOT, version: 2 } }));
+    expect(scenarioRegion(item, 'Scenario, as recorded')).toHaveTextContent(
+      'A scenario is stored in a format this view does not read (format 2, calculation spot-scenario-1), so none of it is shown.',
+    );
+    expect(fact(item, 'Decision')).toBe('Bought a small ZCT position.');
+    expect(fact(item, 'Technical rank')).toBe('#1 of 2');
+    cleanup();
+    item = await openItem(
+      experiment({ scenario_snapshot: { ...SMALL_SNAPSHOT, inputs: ['15', '1'] } }),
+    );
+    const shown = scenarioRegion(item, 'Scenario, as recorded');
+    expect(shown).toHaveTextContent(
+      'A scenario is stored, but not in a form this view can read, so none of it is shown.',
+    );
+    expect(within(shown).queryByText('Illustrative quantity')).toBeNull();
+    expect(fact(item, 'Close')).toBe('Not closed: no close recorded');
   });
 });

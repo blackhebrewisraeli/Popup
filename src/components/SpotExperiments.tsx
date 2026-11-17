@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { CloseComposer, ExperimentEntries } from '@/components/ExperimentEntries';
+import { ScenarioSnapshotFacts } from '@/components/ScenarioFacts';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
   afterClose,
@@ -16,6 +17,7 @@ import {
   type LinkedFill,
   type SpotExperimentRecord,
 } from '@/lib/spotExperiments';
+import { readScenarioSnapshot } from '@/lib/spotScenarioSnapshot';
 import { utcText } from '@/lib/utils';
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -125,6 +127,57 @@ function Fills({ fills, closedAt }: Readonly<{ fills: LinkedFill[]; closedAt: st
         ))}
       </ol>
     </>
+  );
+}
+
+/**
+ * The scenario the owner included when recording, exactly as stored: never worked out again, so
+ * a later planner cannot change it. Anything else stored there is named, not shown.
+ */
+function RecordedScenario({
+  experiment,
+  modelBacked,
+}: Readonly<{ experiment: SpotExperimentRecord; modelBacked: boolean }>) {
+  const id = useId();
+  const stored = readScenarioSnapshot(experiment.scenario_snapshot);
+  let body: ReactNode;
+  if (stored.state === 'none') body = <p className="market-scan-fit">No scenario recorded</p>;
+  else if (stored.state === 'unsupported') {
+    body = (
+      <p className="market-scan-fit">
+        A scenario is stored in a format this view does not read ({stored.version}), so none of it
+        is shown. It stays stored unchanged.
+      </p>
+    );
+  } else if (stored.state === 'malformed') {
+    body = (
+      <p className="market-scan-fit">
+        A scenario is stored, but not in a form this view can read, so none of it is shown.
+      </p>
+    );
+  } else {
+    body = (
+      <>
+        <p className="market-scan-fit">
+          Included when you recorded this experiment, as its review showed it, and stored with it at{' '}
+          <Time value={experiment.recorded_at} /> (the database&rsquo;s clock). Shown as stored.
+        </p>
+        <ScenarioSnapshotFacts
+          snapshot={stored.snapshot}
+          base={experiment.symbol.replace(/USDT$/, '')}
+          symbol={experiment.symbol}
+          modelBacked={modelBacked}
+        />
+      </>
+    );
+  }
+  return (
+    <section aria-labelledby={`${id}-title`}>
+      <h5 id={`${id}-title`} className="scan-effects-title">
+        Scenario, as recorded
+      </h5>
+      {body}
+    </section>
   );
 }
 
@@ -269,6 +322,8 @@ function Detail({
           This copy is not in a form this view can read, so none of it is shown.
         </p>
       )}
+
+      <RecordedScenario experiment={experiment} modelBacked={evidence?.long !== false} />
 
       <ExperimentEntries experiment={experiment} onRefresh={onRefresh} />
 

@@ -5,9 +5,10 @@
  * recorded time; nothing here can.
  *
  * The owner records the experiment itself, adds append-only rules and observations, and links fills
- * from a Popup execution read. Nothing here writes a close, and the scenario's arithmetic is never
- * copied: a rule exists only as an entry the owner adds. A linked fill is a client-submitted copy:
- * the server never re-reads Binance to verify it.
+ * from a Popup execution read. The scenario is stored only as an optional snapshot the owner
+ * includes and reviews (spotScenarioSnapshot.ts), never as a rule: a rule exists only as an entry
+ * the owner adds. A linked fill is a client-submitted copy: the server never re-reads Binance to
+ * verify it.
  */
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
 import type { SpotExecution } from '@/lib/binanceSpotAccount';
@@ -21,6 +22,7 @@ import {
   resultAsOfLabel,
   symbolEvidence,
 } from '@/lib/scanReview';
+import type { ScenarioSnapshot } from '@/lib/spotScenarioSnapshot';
 import { supabase } from '@/lib/supabaseClient';
 import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { utcInputTime } from '@/lib/utils';
@@ -41,7 +43,9 @@ export type SpotExperimentInsert = Required<
     | 'decision'
     | 'decision_stated_at'
   >
->;
+> &
+  /** Sent only when the owner includes a scenario: a row without one is what earlier frontends sent. */
+  Pick<Tables['spot_experiments']['Insert'], 'scenario_snapshot'>;
 
 /** The database's own checks, mirrored so a form can say what is wrong before anything is sent. */
 export const ACCOUNT_LABEL = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -308,13 +312,14 @@ export function spotSymbol(instrument: string): string | null {
 /**
  * The row to store: content only. The ID, owner and recorded time come from the database.
  * `match` because the saved-scan route returns a snapshot only after it reproduced offline, from
- * the same read that hashed it.
+ * the same read that hashed it. A scenario goes in only when the owner included one.
  */
 export function experimentRow(
   check: Extract<DraftCheck, { ok: true }>,
   evidence: CandidateEvidence,
   scanId: string,
   saved: TradingViewSavedScan,
+  scenario: ScenarioSnapshot | null = null,
 ): SpotExperimentInsert | null {
   const symbol = spotSymbol(evidence.instrument);
   if (!symbol) return null;
@@ -327,6 +332,7 @@ export function experimentRow(
     source_evidence: evidence,
     decision: check.decision,
     decision_stated_at: check.statedAt,
+    ...(scenario && { scenario_snapshot: scenario }),
   };
 }
 
@@ -396,7 +402,7 @@ const FILL_COLUMNS =
 const ENTRY_COLUMNS =
   'id, experiment_id, kind, rule, rule_status, supersedes, observed_in, statement, stated_at, recorded_at';
 
-const EXPERIMENT_COLUMNS = `id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, spot_experiment_entries(${ENTRY_COLUMNS}), spot_experiment_fills(${FILL_COLUMNS})`;
+const EXPERIMENT_COLUMNS = `id, recorded_at, account_label, symbol, source_scan_id, source_snapshot_sha256, source_reproduction, source_evidence, decision, decision_stated_at, scenario_snapshot, spot_experiment_entries(${ENTRY_COLUMNS}), spot_experiment_fills(${FILL_COLUMNS})`;
 
 /** A stored fill link: the copied fill, the read it came from, and the database's own time. */
 export type LinkedFill = Pick<
@@ -447,6 +453,7 @@ export type SpotExperimentRecord = Pick<
   | 'source_evidence'
   | 'decision'
   | 'decision_stated_at'
+  | 'scenario_snapshot'
 > & {
   spot_experiment_entries: ExperimentEntry[];
   spot_experiment_fills: LinkedFill[];

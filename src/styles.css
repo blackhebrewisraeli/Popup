@@ -1707,6 +1707,22 @@ body {
 .spot-record .spot-inputs > .spot-field:first-child {
   grid-column: 1 / -1;
 }
+/* Include this scenario: the checkbox beside its label, across the form. */
+.spot-record .spot-include {
+  grid-column: 1 / -1;
+}
+.spot-include > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.spot-include input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
 .spot-record .spot-textarea {
   height: auto;
   min-height: 72px;

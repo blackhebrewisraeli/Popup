@@ -116,6 +116,7 @@ function experiment(
     source_evidence: {},
     decision: `Synthetic decision ${id.slice(-1)}`,
     decision_stated_at: null,
+    scenario_snapshot: null,
     spot_experiment_entries: [],
     spot_experiment_fills: [],
     ...overrides,
