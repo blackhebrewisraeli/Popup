@@ -21,6 +21,20 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · Draft PR, branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
+  - **Changed:** [Two trading paths](MANUAL_SPOT_EXPERIMENTS.md#two-trading-paths-proposal-for-owner-review) proposes product behavior for owner review. It covers:
+    - a lifecycle table for entry, holding, adding, reducing and exiting;
+    - a comparison of the two paths;
+    - budget, risk and holdings;
+    - five synthetic examples;
+    - candidate rules, each with a rationale and a proposed evaluation.
+
+    Direction, movement, invalidation and money stay separate, and so do a Risk flag, bearish evidence, exiting a Long and opening a Short. Nothing is approved or implemented. No formula, threshold, Pine script, policy or frozen study changed, and no paper policy is adopted for real money.
+
+  - **Evidence:** links and anchors checked, Prettier clean, `npm run build` passes.
+  - **Not done:** the three owner decisions in the section; every candidate rule is unevaluated.
+  - **Next:** owner review. The smallest follow-up shows the stop distance as a multiple of the evaluated day's ATR(14) in the Manual Spot scenario. Not started.
+
 - **2026-11-17 · Review another saved scan inside a Manual Spot experiment · Draft PR [#193](https://github.com/blackhebrewisraeli/Popup/pull/193), branch `feat/experiment-scan-review`, from `290f84d`. No migration.**
   - **Changed:** an opened experiment gains a closed [Review another saved scan](MANUAL_SPOT_EXPERIMENTS.md#reviewing-another-saved-scan) disclosure. The owner chooses one saved crypto scan file. Research's own check (`useSavedScanFile`, the finance worker) verifies it, and only then is the experiment's exact pair, matched by validated instrument, shown beside the stored copy: **Entry evidence, as recorded** and **Selected scan evidence**. The view names the file (bytes matching the referenced snapshot hash, which identifies the file only and never checks the copied facts; the same scan ID; or another scan) and model and timeframe comparability. Candle order is always **Unknown**: a version 1 copy keeps the entry candle as a day and month without a year, and no year is guessed. The selected candle's full close time is shown on its own. A missing, failed or unreadable side has its own state. In component memory only; replacing, closing or collapsing clears it. No request, write, schema or model change.
   - **Evidence:** 12 integration tests. Restoring the earlier guessed-year order fails four named regression cases (same day and month, more than a year later, year boundary, leap day). Typecheck, lint, build and the full suite pass. A synthetic browser check with every off-host request answered or blocked, at desktop and 375 px, in light and dark, and by keyboard.

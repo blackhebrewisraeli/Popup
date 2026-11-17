@@ -560,6 +560,205 @@ shows the copied entry evidence in its stored text and says that linked fills ar
 holding, that approved rules are not evaluated by Popup, and that a close is not evidence of a
 sale. It does not adopt the proposed labels above, so decisions 1–3 stay open.
 
+## Two trading paths: proposal for owner review
+
+Checked against `main` at `82ef781` (2026-11-18). This is a proposal, not a contract. It
+implements, approves and activates nothing, and merging it would not change that. It changes no
+formula, threshold, Pine script, trading policy or frozen study. Existing experiments keep
+exactly what they recorded. No path, direction, invalidation or strategy is assigned to them after
+the fact.
+
+The owner wants two paths: **intraday** and **weeks to months**. The working hypothesis is that
+both belong to one strategy family, with different timing and risk parameters. This section
+treats that as a hypothesis to test ([assessment](#b-two-paths)).
+
+Every statement here carries one of three labels:
+
+- **Implemented:** what the code does today, as listed under
+  [current behavior](#current-behavior-implemented).
+- **Proposed:** product behavior to build after review. It records and displays; it decides nothing.
+- **Candidate rule:** a strategy rule. It needs a frozen evaluation and the owner's explicit
+  approval before any screen treats it as more than a question. None is approved. None is
+  presented as profitable, validated or ready for real money.
+
+### Terms
+
+| Term              | Meaning here                                                                                                                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Holding horizon   | How long the thesis is expected to need: within one session (intraday), or weeks to months                                                                                                   |
+| Context timeframe | The bar length used to judge direction and structure                                                                                                                                         |
+| Entry timeframe   | The bar length used to time the entry and place the invalidation                                                                                                                             |
+| Review frequency  | How often the plan is checked against new data                                                                                                                                               |
+| Direction         | **Up**, **Down** or **Unclear** on the context timeframe. It is separate from movement and from the model's Risk flag. Nothing computes it today                                             |
+| Movement          | How far price typically travels in one bar. The only measure in Popup today is ATR(14) ÷ close of a daily bar. It is a measurement, not a verdict: neither more nor less is better in itself |
+| Invalidation      | The stated condition that makes the thesis wrong: a structure break, an expired horizon, or a reversal of the direction assessment. A move against the trade is not one by itself            |
+| Counter-movement  | A move against the trade that has not met the invalidation. "Stability" means that the plan tolerates it by design, not that the price stays still                                           |
+| Budget            | The money assigned to a path: the most that path may commit                                                                                                                                  |
+| Planned loss      | What the plan loses if the invalidation is met at its level. A gap and costs can make it more                                                                                                |
+| Position size     | The units held                                                                                                                                                                               |
+| Exposure          | Size × price: the value that moves with the market                                                                                                                                           |
+| Leverage          | Exposure ÷ own money committed. Spot is 1×. Any other value is out of scope today                                                                                                            |
+
+### Four decisions that stay apart
+
+1. **Risk flag** (implemented): a model warning that names its clause, either high volatility or
+   a low score. It prompts a review and changes no plan. It is not bearish evidence. High
+   volatility is the usual state of these crypto pairs
+   ([diagnostic](MODEL_DIAGNOSTIC.md#what-each-label-establishes)).
+2. **Bearish evidence** (proposed; no direction state exists): the direction assessment turns
+   Down on the plan's context timeframe. It invalidates a Long only if the plan's own invalidation
+   says so.
+3. **Exiting a Long:** the owner's decision. It is recorded with its reason: invalidation met,
+   horizon reached, target reached, or the owner's discretion.
+4. **Opening a Short:** a new plan with its own thesis, invalidation and size. Short and leveraged
+   intraday trading belong to the product vision only. Popup is read-only, a Spot experiment has
+   no short side, and no execution capability is authorized.
+
+None of the four implies another. Exiting a Long never opens a Short.
+
+### A. Lifecycle
+
+| Stage    | Required evidence                                                                                                                                                                                                  | Proposed behavior                                                                                                                                                                                                                                                                                                                                                | Existing support (implemented)                                                                                                                                                                                                                                 | Unresolved strategy choices                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Entry    | Direction on the context timeframe; a reason on the entry timeframe; the invalidation, stated before entry; measured movement; data fresh enough for the path; budget, planned loss, existing exposure to the pair | The plan reads **Incomplete** until its thesis, direction, invalidation, horizon and planned loss are stated. The invalidation is structured (level, close or touch, timeframe), never free text. Size is the smaller of the budget limit and planned loss ÷ distance to invalidation. ZC LONG and ZC RISK are shown side by side as facts, never as one verdict | Daily evidence only. **Record experiment** from a reproduced saved scan. The [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) sizes from allocation, maximum loss, entry and a stop reference. No direction state, no intraday evidence | How direction is defined; whether ZC LONG is required; context and entry timeframes per path; the entry reason            |
+| Holding  | Data on the context timeframe at the review frequency; the position as the owner states it (Popup verifies none); distance to invalidation                                                                         | Reads **Thesis intact by its stated rule**, **Invalidated**, naming the rule and the bar that met it, or **Not evaluated**, with its reason: stale, missing or wrong timeframe. A move against the trade that has not met the invalidation reads **Counter-movement inside the plan**, not a warning                                                             | The [overview](#viewing-in-account) shows stored evidence only. [Review another saved scan](#reviewing-another-saved-scan) compares a daily snapshot by hand, with candle order Unknown. Nothing reads current evidence or verifies a holding                  | Review frequency; close or touch; whether the thesis expires with time                                                    |
+| Adding   | The thesis still intact; the combined position's planned loss to the same or a moved invalidation; total exposure within the budget                                                                                | An addition re-runs sizing over the combined position. A result above the stated planned loss or budget is shown as information. Nothing is blocked or placed                                                                                                                                                                                                    | Buys can be linked to the same experiment. Nothing combines them                                                                                                                                                                                               | Whether adding is allowed, and only after a favorable move; same or new experiment ([decision 3](#before-implementation)) |
+| Reducing | A stated reduction condition: a target, a partial level, or exposure above budget after a price move                                                                                                               | Shown as its own decision, apart from exiting. A Risk flag prompts a review and never reduces by itself                                                                                                                                                                                                                                                          | Sells can be linked. RISK/TRIM and tactical SELL exist only on the HUD and in Paper Trading                                                                                                                                                                    | Whether to scale out, and on what basis; what a Risk flag requires                                                        |
+| Exiting  | The stated invalidation met, the horizon reached, a target reached, or the owner's discretion                                                                                                                      | The reason is recorded as one of those four. The record's close stays a separate fact ([position lifecycle](#position-lifecycle))                                                                                                                                                                                                                                | `stop`, `target`, `exit` and `horizon` exist only as owner rule entries, and none is evaluated. One explicit close                                                                                                                                             | Close or touch; how an intraday session ends; whether the invalidation trails                                             |
+
+**What invalidates a weeks-to-months Long.** A red daily candle is one bar closing below its open.
+On its own it is counter-movement. Only the plan's stated invalidation ends the thesis:
+
+- a close on the context timeframe beyond the level whose break would end the up-structure;
+- the direction assessment on the context timeframe turning Down, if the plan adopted that;
+- the horizon passing without the progress the plan stated.
+
+Weeks of red daily candles that stay above the stated level remain counter-movement.
+
+### B. Two paths
+
+**Is it one strategy family?**
+
+- **Plausible for the plan's structure.** Both paths need a direction, an invalidation stated
+  before entry, sizing that accounts for movement, and a horizon. The plan record, the sizing
+  arithmetic and the four separate decisions can be shared.
+- **Not established for parameters or evidence.** Costs relative to movement, noise relative to
+  trend, session effects and data latency all change with bar length.
+- **Model 1.0.0 has been studied on daily bars only.** It is defined on 199 closed daily candles.
+  Its thresholds are fixed per bar: ATR/close ≥ 4% means HIGH_VOLATILITY on any bar length, so the
+  same reading on an hourly chart measures something else. The Pine HUD runs on any chart, but no
+  study covers its non-daily readings.
+- **Evidence for one path is not evidence for the other.** Proposed: one plan contract, with
+  parameters versioned and validated separately for each path.
+
+| Aspect            | Shared                                                                              | Intraday                                                                   | Weeks to months                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Holding horizon   | Stated with each plan                                                               | Within one session; the session itself (UTC day or another) is not defined | Weeks to months, stated                                                            |
+| Context timeframe | Recorded with the plan                                                              | Shorter than daily; not chosen                                             | Daily or weekly; not chosen. Today's daily scan is one candidate                   |
+| Entry timeframe   | Recorded with the plan                                                              | Minutes to hours; not chosen                                               | Daily, or shorter for timing; not chosen                                           |
+| Review frequency  | Recorded with the plan                                                              | During the session, while a position is open                               | At each context close, or less often                                               |
+| Data              | **Not evaluated** when the data is older than the review frequency                  | Needs intraday candles close to real time. Popup's evidence has none       | Existing daily TradingView scans and saved snapshots                               |
+| Direction         | Up, Down, Unclear                                                                   | Its own definition and validation                                          | Its own definition and validation                                                  |
+| Movement          | Measured and shown with its bar length                                              | Per intraday bar; not computed in Popup                                    | ATR(14) ÷ close of the daily bar, in every scan today                              |
+| Invalidation      | Structured: level, close or touch, timeframe, plus the horizon                      | A structure break on the entry timeframe, or the session ending            | A structure break judged on the context close. Red daily candles alone are not one |
+| Costs             | Fees stated; slippage named as excluded                                             | Large relative to movement; every figure needs them                        | Smaller relative to movement; still stated                                         |
+| Sizing            | The scenario arithmetic below                                                       | Same                                                                       | Same                                                                               |
+| Short, leverage   | Each would be its own plan; neither is available                                    | Product vision only                                                        | Product vision only. Funding builds up over weeks                                  |
+| Validation        | The same method: a frozen spec, a retrospective replay, then prospective collection | A separate study                                                           | A separate study                                                                   |
+
+### C. Budget, risk and existing holdings
+
+- **Sizing** (implemented for one Spot plan). Quantity is the smaller of the available budget ÷
+  entry and the planned loss ÷ the distance to invalidation. Stated fees are included. This is
+  the existing [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) formula,
+  with its stop reference read as the invalidation.
+- **Movement enters through that distance** (proposed explanation). When the invalidation is
+  structural, more movement puts it further away. The same planned loss then buys fewer units.
+  High volatility reduces size; it does not exclude the pair.
+- **Existing holdings** (proposed). Popup verifies no holding. The owner states the existing
+  position in the pair, or confirms a balance read they requested, shown with its read time. An
+  addition is sized so that the combined planned loss and combined exposure stay within the
+  stated limits. A balance never becomes an experiment's holding by inference.
+- **Across plans** (owner decision). Popup could show total planned loss across open plans, and
+  exposure per pair and across pairs that tend to move together. Whether any of these is capped,
+  and at what value, is for the owner to state. The paper policies are not adopted for real
+  money. These are the 2% per trade at 2 × ATR and the 6% open-risk cap in `risk.ts`, the profile
+  caps, and the tactical and HUD bands.
+- **Leverage** (not authorized). Leverage changes exposure and the loss per unit of movement, not
+  the quality of the thesis. A leveraged plan would also need its liquidation reference beyond its
+  invalidation, and funding for its horizon. The offline arithmetic exists in the
+  [leverage simulation](LEVERAGE_SIMULATION.md).
+
+### D. Examples (synthetic)
+
+The pair is EXAMPLEUSDT. Every number is an input chosen for illustration. None is a
+recommendation or a threshold. The lines in quotes are the proposed visible output.
+
+1. **Direction with tolerable counter-movement** (weeks to months, Long).
+   - **Plan:** direction Up, stated by the owner on the daily timeframe. Entry 100. Invalidation:
+     a daily close below 88, the last higher low.
+   - **Then:** price falls to 93 over five red daily candles.
+   - **Shows:** "Direction: Up (owner-stated, daily) · Counter-movement inside the plan: −7% from
+     entry; invalidation (daily close < 88) not met · Thesis intact by its stated rule · Model
+     Risk flag: high volatility — not an exit rule". No SELL and no HOLD.
+2. **High movement, no clear direction** (intraday).
+   - **Situation:** hourly bars swing widely both ways.
+   - **Shows:** "Movement: ATR(14) on 1h is x% of price · Direction: Unclear · Plan incomplete: a
+     Long or a Short needs a direction; movement alone is not an entry".
+3. **Favorable and risk evidence together** (weeks to months).
+   - **Situation:** the day's scan has ZC LONG met and Risk: high volatility.
+   - **Shows:** both lines, with no precedence and no combined label.
+   - **Sizing:** budget 1,000 USDT, planned loss 50 USDT, entry 100. The wider movement puts the
+     structural invalidation at 90 rather than 95, so the plan reads "5 units, limited by planned
+     loss" instead of 10.
+4. **Missing or stale data.**
+   - An intraday plan reviews hourly. Its last candle closed at 13:00 UTC, and it is now 15:10 UTC.
+     It reads "Not evaluated: last candle 13:00 UTC, older than the review frequency".
+   - A weeks-to-months plan reads "Stale: evaluated day D−1; a newer daily close exists".
+   - An intraday plan with only a daily scan reads "Not evaluated: no intraday data in Popup".
+   - None of these becomes HOLD or an exit. Missing data never becomes a sale.
+5. **Invalidation.**
+   - **Weeks to months:** the daily close is 87, below the stated 88. It reads "Invalidated: daily
+     close 87 < 88 on D (stated rule) · Exit: your decision, recorded with its reason · No Short
+     opened: a Short needs its own plan".
+   - **Intraday:** the stated session ends with the position open. It reads "Horizon reached".
+
+### Candidate rules (not approved)
+
+| Candidate                                                                                                                    | Plain-language rationale                                                                               | Proposed evaluation                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direction from structure on the context timeframe: higher highs and higher lows read Up, the reverse Down, otherwise Unclear | A Long needs price rising on the scale the trade lives on. Movement says how far, not which way        | A frozen spec for each path, then a retrospective replay. Measure how often each state persisted over the path's horizon, against the base rate for the same pairs and days. Then prospective collection. Unclear is a valid outcome, not a failure |
+| Invalidation at the structure break, judged on the context close                                                             | The thesis's own premise fails there. A fixed percentage ignores whether a move is normal for the pair | Fix each candidate definition before reading outcomes. Replay how often invalidation occurred, and what followed counter-moves that stayed inside it compared with breaks                                                                           |
+| Compare the distance to invalidation with measured movement                                                                  | An invalidation within one bar's typical movement is likely to be met by noise                         | Replay how often invalidation was met against the distance in ATR multiples, reported as a curve. No cut-off is chosen from the same data                                                                                                           |
+| Time invalidation at the end of the horizon                                                                                  | A thesis that has not progressed ties up budget. An intraday position is not meant to carry overnight  | Replay the time to invalidation or to progress, for each path                                                                                                                                                                                       |
+| Add only while the thesis is intact, within the combined planned loss                                                        | Adding to a failing thesis increases the loss on the weakest evidence                                  | Staying within the planned loss is arithmetic, not a strategy. Adding only after a favorable move needs a replay                                                                                                                                    |
+
+Each candidate would be versioned, frozen before its results are read, and studied separately for
+each path. The owner approves it before any screen treats it as more than a question. This is the
+[scanner research](SCANNER_RESEARCH.md) method. A passed evaluation describes the rule on past
+data. It does not establish profit with real money.
+
+### Owner decisions and next task
+
+1. **Which path first.**
+   - **Weeks to months:** reuses the daily scans, saved snapshots and experiment review.
+   - **Intraday:** first needs an intraday data source and its own validation before anything is
+     shown.
+2. **Who states direction and invalidation.**
+   - **The owner, per plan:** Popup records them. Only a structured invalidation level would ever
+     be checked against data. This needs no strategy approval.
+   - **Popup, through a candidate rule:** only after that rule's frozen evaluation and the owner's
+     approval.
+3. **Money.** One budget for both paths, or separate budgets. And whether to cap total planned
+   loss across open plans, with the value stated by the owner.
+
+**Smallest next task (not started).** In the Manual Spot scenario, also show the distance from
+entry to the stop reference as a multiple of the evaluated day's ATR(14), taken from the same
+saved scan. It is labelled as a description of past daily movement. It concerns weeks to months
+only, the path that has daily data. It adds no threshold, judgement, request, schema, snapshot or
+model change. It makes counter-movement tolerance visible before a plan is recorded. It needs no
+strategy decision, and it is useful whichever path is chosen first.
+
 ## Not in this increment
 
 - No correction, withdrawal or reopening of a close: the one close entry is final.
