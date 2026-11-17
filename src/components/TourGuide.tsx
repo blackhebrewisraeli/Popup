@@ -49,7 +49,7 @@ function TourTooltip({
   primaryProps,
   skipProps,
   tooltipProps,
-}: TooltipRenderProps) {
+}: Readonly<TooltipRenderProps>) {
   return (
     <div
       {...tooltipProps}
@@ -88,7 +88,7 @@ function TourTooltip({
 }
 
 function TourLoader() {
-  return <span className="tour-loader" role="status" aria-label="Loading the next step" />;
+  return <output className="tour-loader" aria-label="Loading the next step" />;
 }
 
 /**
