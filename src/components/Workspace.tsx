@@ -1,6 +1,15 @@
-import { Link, useLocation, useMatch, useNavigate } from '@tanstack/react-router';
+import { Link, useLocation, useMatch, useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  lazy,
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Activity,
   ArrowDown,
@@ -356,7 +365,7 @@ export function MarketsSection({
   onInvest: () => void;
 }>) {
   return (
-    <section className="markets" data-tour="markets" aria-label="Markets directory">
+    <section className="markets" aria-label="Markets directory">
       <div className="markets-head">
         <div>
           <h2 className="markets-title">Markets directory</h2>
@@ -492,6 +501,7 @@ export function ResearchZone({
           value={place}
           ariaLabel="Research"
           className="scan-views research-places"
+          tour="research-places"
           onChange={onPlace}
           options={[
             { value: 'scan', label: 'Scan' },
@@ -568,6 +578,14 @@ function Terminal() {
   if (onPaper) view = 'paper';
   else if (onAccount) view = 'account';
   const setView = (next: WorkspaceView) => void navigate({ to: VIEW_PATHS[next] });
+  // The tour's only move: Research › Scan. Navigating to the current URL would reload the route.
+  const router = useRouter();
+  const openResearchScan = useCallback(() => {
+    setResearchPlace('scan');
+    if (router.state.location.pathname !== VIEW_PATHS.research) {
+      void router.navigate({ to: VIEW_PATHS.research });
+    }
+  }, [router]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const { user, signOut } = useAuth();
   const { portfolios, activePortfolioType } = usePortfolio();
@@ -629,9 +647,11 @@ function Terminal() {
             value={view}
             ariaLabel="Workspace"
             onChange={setView}
+            tour="workspace-nav"
             options={[
               {
                 value: 'research',
+                tour: 'nav-research',
                 label: (
                   <>
                     <Search size={14} /> Research
@@ -640,6 +660,7 @@ function Terminal() {
               },
               {
                 value: 'paper',
+                tour: 'nav-paper',
                 label: (
                   <>
                     <Activity size={14} /> Paper Desk <span className="segment-tag">Sim</span>
@@ -648,6 +669,7 @@ function Terminal() {
               },
               {
                 value: 'account',
+                tour: 'nav-account',
                 label: (
                   <>
                     <UserRound size={14} /> Account
@@ -684,13 +706,7 @@ function Terminal() {
               <ThemeToggle />
             </div>
             {user && <HeaderProfile user={user} onSignOut={() => void signOut()} />}
-            <TourGuide
-              onViewChange={(next) => {
-                // The tour's Research steps point at the directory and its portfolio builder.
-                if (next === 'research') setResearchPlace('directory');
-                setView(next);
-              }}
-            />
+            <TourGuide openResearchScan={openResearchScan} />
           </div>
         </div>
       </header>

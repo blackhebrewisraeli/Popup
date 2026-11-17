@@ -1,88 +1,131 @@
 import type { Step } from 'react-joyride';
 
-export type TourView = 'research' | 'paper';
+/**
+ * One tour step. `targets` are `data-tour` names, preferred first: the step anchors to the first
+ * one shown on the page. Each list ends with a target the workspace always shows (a header tab,
+ * or the Research bar once the step has opened Research › Scan), so a step never depends on
+ * loaded data, an opened file, a balance, a subscription or the owner check.
+ */
+export type TourStepSpec = {
+  id: string;
+  title: string;
+  content: string;
+  targets: readonly [string, ...string[]];
+  /** Switch to Research › Scan before showing the step. The tour navigates nowhere else. */
+  opensResearchScan?: boolean;
+};
 
-/** A tour step plus the zone its target lives on (none = always mounted). */
-export type TourStep = Step & { view?: TourView };
-
-/** Tags each step with the zone its target lives on. */
-const inZone = (view: TourView, steps: Step[]): TourStep[] =>
-  steps.map((step) => ({ ...step, view }));
-
-/** High-impact, recruiter-facing tour steps (react-joyride). */
-export const tourSteps: TourStep[] = [
+/** Ordered by task: read the scan, open a saved one, record a real trade, practice on paper. */
+export const TOUR_STEPS: readonly TourStepSpec[] = [
   {
-    id: 'welcome',
-    target: '.terminal-header',
-    title: 'Welcome to Popup',
+    id: 'workspace',
+    title: 'Your workspace',
     content:
-      'A quantitative research and paper trading environment: research signals, then test them with simulated money. This tour switches between Research and the Paper Desk for you.',
-    placement: 'bottom',
+      'Research holds the market scan and its evidence, Paper Desk is a simulator, and Account holds your settings. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
+    targets: ['workspace-nav'],
   },
   {
-    id: 'live-prices',
-    target: '.connection-status',
-    title: 'Live Prices',
+    id: 'research-scan',
+    title: 'Research › Scan',
     content:
-      'Real-time 600ms updates via Binance WebSockets, optimized with useSyncExternalStore to prevent render-churn.',
-    placement: 'bottom',
+      'Scan scores a fixed list of instruments on daily candles that have closed, and shows the evidence behind each result. Live prices move during the day, but they are not intraday signals. Only crypto pairs are scanned here; stocks and ETFs appear in Markets directory without a score.',
+    targets: ['research-places', 'nav-research'],
+    opensResearchScan: true,
   },
-  ...inZone('research', [
-    {
-      id: 'multi-factor-scanner',
-      target: '[data-tour="markets"]',
-      title: 'Research · Explainable Multi-Factor Score',
-      content:
-        'Open any asset for its 0–100 Multi-Factor Score: RSI mean reversion, MACD momentum and ATR volatility, re-weighted by the detected Market Regime (Trending, Mean-Reverting, High-Volatility) with a one-line rationale. Indicator math runs in a Web Worker, so the UI never blocks.',
-      placement: 'top',
-    },
-    {
-      id: 'quant-analyzer',
-      target: '[data-tour="robo"]',
-      title: 'Quant Analyzer',
-      content:
-        'Builds a simulated portfolio from regime-weighted Multi-Factor Scores and suggests ATR position sizes that risk at most 2% of capital on a 2×ATR stop.',
-      placement: 'bottom',
-    },
-  ]),
-  ...inZone('paper', [
-    {
-      id: 'backtester',
-      target: '.backtest-card',
-      title: 'Strategy Backtest',
-      content:
-        'Replay the past year with realistic friction (commission + slippage in bps), percentage or ATR trailing stops, win rate, and alpha versus a buy-and-hold benchmark.',
-      placement: 'top',
-    },
-    {
-      id: 'simulated-portfolio',
-      target: '[data-tour="sim-portfolio"]',
-      title: 'Simulated Portfolio',
-      content:
-        'Simulated cash and fills only; holdings you track for real live under Account. Set target weights and Rebalancing suggests the trades to restore them once a holding drifts more than 5 pts. Every position keeps FIFO lots with cost basis including fees and slippage. Share Portfolio publishes a read-only link with percentages only: no balances or share counts.',
-      placement: 'bottom',
-    },
-    {
-      id: 'pnl-attribution',
-      target: '[data-tour="pnl-attribution"]',
-      title: 'P&L Attribution & Trade Ledger',
-      content:
-        'Unrealized vs. realized P&L and total execution drag, backed by a trade ledger below that exports to CSV in one click.',
-      placement: 'top',
-    },
-  ]),
+  {
+    id: 'scan-facts',
+    title: 'Score, Long and Model Risk',
+    content:
+      'Each candidate shows separate facts. The score (0–100) measures how closely its readings match the model, and orders the rank. Long conditions and the Model Risk flag are checked on their own. A high rank or score is not an instruction to buy, and a Risk flag is not an instruction to sell.',
+    targets: ['scan-key', 'research-places', 'nav-research'],
+    opensResearchScan: true,
+  },
+  {
+    id: 'saved-scan',
+    title: 'Open a saved crypto scan',
+    content:
+      'Opens one saved TradingView crypto scan file from your computer and checks it in this browser. It shows that past scan as it was saved: it does not run a new scan, fetch prices or refresh itself.',
+    targets: ['open-saved-scan', 'research-places', 'nav-research'],
+    opensResearchScan: true,
+  },
+  {
+    id: 'manual-spot',
+    title: 'Real trades: Manual Spot experiments',
+    content:
+      'You place real Spot trades yourself on Binance; Popup only reads Binance and never places orders. For sign-ins with access (currently the owner account only), Account › Manual Spot experiments records your decision, an optional plan and the executions you link.',
+    targets: ['nav-account'],
+  },
+  {
+    id: 'simulated',
+    title: 'Simulated: Paper Desk and Build Portfolio',
+    content:
+      'Paper Desk and Build Portfolio (in Markets directory) use simulated cash and simulated fills. Nothing there reaches Binance or your Manual Spot records. Replay this tour any time from Tour.',
+    targets: ['nav-paper'],
+  },
 ];
 
+/** How long a step waits for its preferred target (a route, chunk or scan still rendering). */
+export const TARGET_WAIT_MS = 2500;
+const POLL_MS = 50;
+
+const selector = (name: string) => `[data-tour="${name}"]`;
+
+/** Shown on the page: not inside `hidden`, `display: none` or `visibility: hidden`. */
+function isShown(element: Element): boolean {
+  for (
+    let node: Element | null = element;
+    node && node !== document.body;
+    node = node.parentElement
+  ) {
+    if (node instanceof HTMLElement && node.hidden) return false;
+    const { display, visibility } = getComputedStyle(node);
+    if (display === 'none' || visibility === 'hidden') return false;
+  }
+  return true;
+}
+
+/** The first shown element among `names`, in order of preference. */
+export function findTarget(names: readonly string[]): HTMLElement | null {
+  for (const name of names) {
+    const shown = [...document.querySelectorAll<HTMLElement>(selector(name))].find(isShown);
+    if (shown) return shown;
+  }
+  return null;
+}
+
+/** Resolves once `name` is shown, or after `timeoutMs`; never rejects, so the tour moves on. */
+export function waitForTarget(name: string, timeoutMs = TARGET_WAIT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const check = () => {
+      if (findTarget([name]) || Date.now() >= deadline) resolve();
+      else setTimeout(check, POLL_MS);
+    };
+    check();
+  });
+}
+
 /**
- * Gives each step a `before` hook that switches to its zone first.
- * Joyride then waits for the target and skips the step if it never mounts
- * (e.g. the scanner is still loading), so the tour never stalls.
+ * Joyride steps for `specs`. A step that opens Research › Scan switches there first and waits for
+ * its preferred target, then anchors to whichever of its targets is shown. Header steps are
+ * `isFixed`: the header is sticky, so Joyride neither scrolls the page nor loses the target.
  */
-export function withViewSwitching(
-  steps: readonly TourStep[],
-  onViewChange: (view: TourView) => void,
+export function buildTourSteps(
+  specs: readonly TourStepSpec[],
+  openResearchScan: () => void,
 ): Step[] {
-  return steps.map(({ view, ...step }) =>
-    view ? { ...step, before: () => Promise.resolve(onViewChange(view)) } : step,
-  );
+  return specs.map(({ id, title, content, targets, opensResearchScan }) => ({
+    id,
+    title,
+    content,
+    target: () => findTarget(targets),
+    placement: 'bottom',
+    isFixed: !opensResearchScan,
+    ...(opensResearchScan && {
+      before: () => {
+        openResearchScan();
+        return waitForTarget(targets[0]);
+      },
+    }),
+  }));
 }

@@ -504,7 +504,7 @@ function Candidate({
 /** Rank, score, Long and model Risk in plain words, with the model's own thresholds. */
 function CandidateKey({ modelVersion }: Readonly<{ modelVersion: string }>) {
   return (
-    <dl className="scan-candidate-key">
+    <dl className="scan-candidate-key" data-tour="scan-key">
       <div>
         <dt>Rank</dt>
         <dd>

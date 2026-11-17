@@ -731,7 +731,6 @@ export function RoboAdvisor({
         ref={triggerRef}
         type="button"
         className="robo-trigger"
-        data-tour="robo"
         onClick={openModal}
         aria-haspopup="dialog"
       >
