@@ -367,6 +367,109 @@ describes the scan candidate.
 - **Compatibility.** Existing experiments are not backfilled: they read as **No scenario
   recorded**. An insert that leaves the column out, as earlier frontends send, still works.
 
+## Decision lifecycle: current behavior and proposed product contract
+
+Checked against `main` at `4e91384` (2026-11-17). This section describes code and proposes
+display wording. It approves, activates or changes no strategy, and merging it does not either.
+Existing experiments and frozen studies keep exactly what they recorded. The math stays in
+[QUANT_MODEL_VERIFICATION.md](QUANT_MODEL_VERIFICATION.md#exact-mathematical-contract) and the
+meaning of each label in [MODEL_DIAGNOSTIC.md](MODEL_DIAGNOSTIC.md#what-each-label-establishes).
+
+One engine (`scoreFactors` in `src/lib/canonicalModel.ts`) scores every surface below. Each
+surface applies its own policy to its own ledger. **None of them is the policy of a real Spot
+experiment:** an experiment's only policy is what the owner records in it.
+
+### Current behavior (implemented)
+
+| Surface / policy                                                                                | Condition                                                                                              | Actual consumer and account scope                                                                                                                                                                                                | Establishes                                            | Does not establish                                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Score and rank: `evaluateCandles`; rank in `marketScanner.ts`                                   | 0–100 composite on the last closed daily bar; rank is score order within one asset class               | Research Scan and Markets; copied into `source_evidence` by `candidateEvidence` (`spotExperiments.ts`)                                                                                                                           | Order within one scan's evaluated pairs                | Entry eligibility, a probability or a forecast                                                                           |
+| Pine action band: `action` in `pine/zerochart_quant_hud.pine`                                   | ≥ 78 STRONG BUY, ≥ 60 BUY, > 28 WAIT, > 15 RISK/TRIM, else STRONG SELL; with a size and "Exit at" stop | The HUD table on a TradingView chart. No app code reads it                                                                                                                                                                       | A score band                                           | Long, an entry, a reduction or a sale                                                                                    |
+| Setups: `modelSetups` (Pine `longSetup`, `riskSetup`)                                           | Long: score ≥ 78 and momentum ≥ +0.05% of price. Risk: score ≤ 28 or HIGH_VOLATILITY                   | Scan rows and evidence (`candidateStatus`, `riskLabel` in `scanReview.ts`); copied as `long` and `risk` into `source_evidence`                                                                                                   | A standing condition on that closed bar. Both can hold | That it began that day, an order or an exit                                                                              |
+| Pine transitions: `longSignal`, `riskSignal`, `stopBreached`                                    | The bar a setup turns true, or the indicator's trailing stop flips                                     | `tv-webhook` → `trading_signals` → Action Center **Execute** (`execute_tactical_signal`) into the Paper Trading ledger; [Decision Journal](DECISION_JOURNAL.md)                                                                  | An event for one alerted symbol and timeframe          | Anything about an experiment: no key links `trading_signals` to these tables ([above](#separate-from-popups-books))      |
+| Profile eligibility: `qualifiesForRiskProfile`, `RISK_PROFILE_POLICIES` (`portfolioBuilder.ts`) | Minimum score 60 / 60 / 71; conservative excludes HIGH_VOLATILITY; aggressive needs positive momentum  | `buildQuantPortfolio` → **Build Portfolio** → `execute_paper_portfolio` (Paper Trading, simulated); the scan's profile filter. The local [validation lab](STRATEGY_VALIDATION.md) keeps its own frozen copy (`evaluationLab.ts`) | Fit to a paper profile's filter                        | Long, or a real-money entry                                                                                              |
+| Sizing and gates: `recommendPositionSize`, `checkNewEntry`, `checkSell` (`risk.ts`)             | 2% of capital at a 2 × ATR stop; 6% open-risk cap; no sale beyond the ledger's holding                 | Build Portfolio, asset details (reference capital), trade tickets on Popup's own ledgers                                                                                                                                         | Sizing and checks inside Popup's ledgers               | A Spot allocation or stop. The [Manual Spot scenario](TRADINGVIEW_CRYPTO_SCAN.md#manual-spot-scenario) does not reuse it |
+| Tactical signals: `generateTacticalSignals` (`tacticalSignals.ts`)                              | SELL a held asset scoring < 50; BUY an unheld one scoring ≥ 85 while cash remains; no score, no signal | Tactical Signals and the Paper Trading terminal, over Paper Trading positions only                                                                                                                                               | A paper idea                                           | Anything about real holdings                                                                                             |
+| Rebalance: `computeRebalancePlan` (`rebalance.ts`)                                              | A holding or idle cash more than 5 points off owner-set targets. Reads no score                        | `RebalancePanel` on Simulation (Paper Desk) and Tracked Holdings (Account, logged by hand)                                                                                                                                       | Drift from stated targets in that ledger               | A model view or a Binance position. Tracked Holdings is neither read from Binance nor linked to experiments              |
+| Manual Spot experiment: `spotExperiments.ts`, `SpotExperiments.tsx`                             | The owner records, links, states and closes                                                            | These owner-only tables; real trades placed by hand in Binance                                                                                                                                                                   | What the owner stored, and when the database stored it | That a rule was met or followed (`ruleVersions` only lists them), a position, a total or P&L                             |
+| Binance reads: `binance-spot-account`, `reconcileSpotQuantity`                                  | Balance and execution reads the owner requests                                                         | Account's Binance card. Reconciliation of real reads shows **Indeterminate** while [D3](BINANCE_SPOT_RECONCILIATION.md#d3-check-2026-11-13) is open                                                                              | A balance at read time; fills in one bounded window    | That a balance belongs to an experiment, or a verified holding                                                           |
+
+### Position lifecycle
+
+| Stage    | Implemented today                                                                                                                                                                                                             | Not defined                                                                                                             | Smallest proposed display (not implemented)                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Entry    | [Record experiment](#recording-from-a-saved-scan) from a reproduced saved scan: copied rank, Long, Risk and freshness; a pair without Long is labelled not model-backed; the owner's decision; optional scenario; linked buys | What qualifies an entry: Long, a fresh event or neither. The copied evidence holds no alert event (`candidateEvidence`) | **Entry evidence** from stored facts: Long met or not · Model Risk flag or none · rank (ordering only) · as of day · alert event not recorded |
+| Holding  | Nothing computes a holding. Fills show as stored; observations as dated statements; balances and reconciliation stay separate                                                                                                 | A holding rule; whether and how current evidence is compared                                                            | **Holding: not verified by Popup**                                                                                                            |
+| Adding   | More buys can be linked to the same experiment (same pair and account label)                                                                                                                                                  | Whether an addition belongs to the same experiment or a new one, and on what basis                                      | Buy count only, as the record summary already shows                                                                                           |
+| Reducing | Sells can be linked; a partial exit is some linked sells. RISK/TRIM and tactical SELL exist only on the HUD and in Paper Trading                                                                                              | A reduction rule; what a Risk flag means for an open experiment                                                         | A Risk flag on an open experiment reads **Model Risk warning, not an exit rule**                                                              |
+| Exiting  | `stop`, `target`, `exit` and `horizon` exist only as [owner rule entries](#rules). Nothing evaluates them against prices or fills                                                                                             | Any exit criterion, level or horizon the owner has not approved                                                         | Approved rules: **Approved, not evaluated by Popup**. Others stay **Not decided**                                                             |
+| Closure  | One explicit `close` entry. Sells never close, and a close does not lock the record ([how](#fills-partial-exits-and-closing))                                                                                                 | Nothing structural                                                                                                      | Keep. With sells linked and no close: **Sells linked; open until the owner closes it**                                                        |
+
+### Proposed display semantics (not implemented)
+
+Each pair below stays two separate facts, never merged into one verdict:
+
+- **Rank and eligibility.** Rank orders a scan; profile eligibility is a paper filter. Neither is
+  an entry.
+- **Standing setup and event.** "Long conditions met" is standing, as of the scan's day. An event
+  is shown only when a received alert is recorded with its bar time.
+- **Risk warning and exit.** A Risk flag names its clause. An exit exists only as an approved owner
+  rule or the owner's close.
+- **Scenario and rule.** A [scenario snapshot](#scenario-snapshot) sets no rule.
+- **Linked fill and holding.** Linked fills are client-submitted copies; the holding is not
+  verified.
+- **Sell and closure.** Only the `close` entry closes.
+- **Saved and current evidence.** Copied evidence carries its scan and day, and stays historical.
+  Popup reads no current evidence for an experiment.
+
+**Long and Risk together** appear side by side, both always shown, with no precedence and no
+combined label, as `candidateEvidence` and the scan rows already record them. Under model 1.0.0
+this needs HIGH_VOLATILITY ([reachability](MODEL_DIAGNOSTIC.md#structural-reachability)).
+
+**Absence is not a state.** No Long reads **Long conditions not met**. Missing or stale evidence
+reads **Not evaluated** or **Stale** with its reason. No sell reads **No linked sell**. None of
+these becomes HOLD, and missing data never becomes a sale.
+
+### Strategy decisions (owner approval required; none made)
+
+An entry criterion; holding, adding and reducing rules; exit, stop, target and horizon values; an
+allocation ceiling; what a Risk flag requires; any precedence between Long and Risk. Today each
+can exist only as an approved rule entry in one experiment. A product-wide policy would need its own
+versioned contract and would not apply to earlier experiments.
+
+### Illustrative examples (synthetic, not observed market results)
+
+- **BUY band without Long.** RSI 45, momentum +0.2%, ATR/close 2% → NEUTRAL, score 64. The HUD
+  says BUY and the conservative and moderate profiles fit, but Long needs 78: **Long conditions not
+  met**.
+- **High score with high-volatility Risk.** RSI 35, momentum +0.8%, ATR/close 4.5% →
+  HIGH_VOLATILITY, score 67. The HUD says BUY, the moderate profile fits, and **Model Risk flag:
+  high volatility** holds. If Risk began on that bar, a configured Pine alert sends SELL. Each is
+  shown as its own fact.
+- **Standing setup, no new event.** Long held on days D−1 and D. Pine's `longSignal` is true on
+  D−1 only. A scan of D shows **Long conditions met**; the proposed wording adds that it is
+  standing, as of D, with no alert event recorded.
+- **Missing or stale evidence.** Evidence recorded after a newer UTC day closed is stored with
+  `stale: true` and labelled **Historical scan**. A browser score on old candles is `STALE_DATA`,
+  and the tactical feed stays silent. Neither becomes HOLD or an exit.
+- **A linked sell that does not close.** A `ZCTUSDT` experiment links a buy of 100 and a sell of 100
+  and has no close entry. The summary reads **2 linked: 1 buy, 1 sell** and **Not closed: no close
+  recorded**. The sell matching every unit bought does not change that.
+
+### Before implementation
+
+Owner decisions:
+
+1. Approve or amend the wording above, including that it restates the stored facts of existing
+   experiments without assigning them a policy.
+2. Whether an open experiment shows current model evidence for its pair (from which saved scan, up
+   to what age), and whether a Risk flag there is display-only or a prompt to review an owner rule.
+3. Whether an addition or a re-entry is linked to the same experiment or recorded as a new one.
+
+**Recommended next task (not started):** add **Entry evidence**, **Holding: not verified by
+Popup** and **not evaluated by Popup** to Account's existing record summary, from stored rows only.
+No new reads, schema, model or rule change. It needs decision 1 only.
+
 ## Not in this increment
 
 - No correction, withdrawal or reopening of a close: the one close entry is final.
