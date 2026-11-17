@@ -92,10 +92,11 @@ export function computeWithCache(
  * asynchronous (Web Crypto) and never cached: its key would keep the file's bytes alive after the
  * owner closes it.
  */
-export function handleFinanceRequest(
+export async function handleFinanceRequest(
   request: FinanceRequest,
   cache: FinanceCache | null,
 ): Promise<FinanceResult> {
   if (request.kind === 'savedScanFile') return checkSavedScanFile(request.bytes);
-  return Promise.resolve(cache ? computeWithCache(request, cache).value : computeFinance(request));
+  // Async, so a synchronous throw here rejects and the worker still answers with its ID.
+  return cache ? computeWithCache(request, cache).value : computeFinance(request);
 }
