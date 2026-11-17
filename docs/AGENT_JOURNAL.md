@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · Draft PR [#194](https://github.com/blackhebrewisraeli/Popup/pull/194), branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
+- **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · PR [#194](https://github.com/blackhebrewisraeli/Popup/pull/194), branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
   - **Changed:** [Two trading paths](MANUAL_SPOT_EXPERIMENTS.md#two-trading-paths-proposal-for-owner-review) proposes product behavior for owner review. It covers:
     - a lifecycle table for entry, holding, adding, reducing and exiting;
     - a comparison of the two paths;
@@ -29,10 +29,17 @@ whether to act, and where; Popup places no orders.
     - five synthetic examples;
     - candidate rules, each with a rationale and a proposed evaluation.
 
-    Direction, movement, invalidation and money stay separate, and so do a Risk flag, bearish evidence, exiting a Long and opening a Short. Nothing is approved or implemented. No formula, threshold, Pine script, policy or frozen study changed, and no paper policy is adopted for real money.
+    Direction, movement, invalidation and money stay separate, and so do a Risk flag, bearish evidence, exiting a Long and opening a Short.
+
+    After the owner's review, the section also:
+    - assesses counter-movement from the entry reference and the stated structure, never from candle colour;
+    - states that volatility does not set a structural level;
+    - separates a close-based invalidation, the scenario's stop reference and a real protective order. The scenario's planned loss does not cap a close-based exit.
+
+    It records the owner's destination: an explained direction and invalidation proposal derived from an evaluated rule, with owner-entered levels as interim planning only. It also records the recommended order: weeks to months first, keeping intraday in the design. Nothing is approved or implemented. No formula, threshold, Pine script, policy or frozen study changed, and no paper policy is adopted for real money.
 
   - **Evidence:** links and anchors checked, Prettier clean, `npm run build` passes.
-  - **Not done:** the three owner decisions in the section; every candidate rule is unevaluated.
+  - **Not done:** the budget decision; every candidate rule is unevaluated.
   - **Next:** owner review. The smallest follow-up shows the stop distance as a multiple of the evaluated day's ATR(14) in the Manual Spot scenario. Not started.
 
 - **2026-11-17 · Review another saved scan inside a Manual Spot experiment · Draft PR [#193](https://github.com/blackhebrewisraeli/Popup/pull/193), branch `feat/experiment-scan-review`, from `290f84d`. No migration.**
