@@ -7,6 +7,9 @@ own content, as for [Opportunity Radar](opportunity-radar.v1.json). Merging free
 change is a v2 file, never an edit. Approval starts no run and activates no strategy, setting,
 screen or trade. Where this page and the JSON differ, the JSON governs.
 
+**Run once, 2026-11-18, at `17370f1`: primary classification INCONCLUSIVE.** The aggregates and
+the reproduction record are in [Recorded run](#recorded-run-2026-11-18).
+
 **Revision 2, before any run or merge.** It replaces the earlier interval, which corrected only
 lag-1 autocorrelation and treated the base rate as fixed, with a block bootstrap. It narrows the
 base rate so that the signed excess is mean-zero under a stated null, and it makes every
@@ -14,9 +17,9 @@ unavailable case explicit. The JSON's `revisions` lists the changes. The candida
 configurations and horizons are unchanged.
 
 It evaluates the [research candidate](MANUAL_SPOT_EXPERIMENTS.md#research-candidate-swing-structure-swing-structure-direction-010)
-`swing-structure-direction` 0.1.0 exactly as merged in `9a5ba29`. Nothing has been run. No market
-data was read to write it: only the export's sha256 was recomputed, to confirm the file is the
-recorded one.
+`swing-structure-direction` 0.1.0 exactly as merged in `9a5ba29`. Nothing had been run when it was
+written. No market data was read to write it: only the export's sha256 was recomputed, to confirm
+the file is the recorded one.
 
 ## Questions
 
@@ -204,9 +207,9 @@ synthetic candles only:
 Mutations of look-ahead, baseline eligibility, reference replacement and bootstrap recomputation
 each fail those tests.
 
-**The study has not been run.** No export, real candle, market outcome or experiment record has
-been read. The runner below reads the export, verifies its identities and writes the results. It
-is run only if the owner decides.
+**Synthetic only when merged.** No export, real candle, market outcome or experiment record had
+been read. The runner below reads the export, verifies its identities and writes the results. The
+study was later run once: see [Recorded run](#recorded-run-2026-11-18).
 
 **Readings of open details.** Where the text leaves a detail open, the module takes these
 readings. None changes a threshold, a gate or the primary cell.
@@ -224,8 +227,8 @@ readings. None changes a threshold, a gate or the primary cell.
 
 ## Running the study: runner verified on synthetic data only
 
-**Not run.** The runner has run only on synthetic exports in temporary directories. The real
-export, a market outcome or an experiment record has never been read by it.
+**Verified on synthetic exports first.** Its tests use synthetic exports in temporary
+directories. Its one run on the real export is recorded [below](#recorded-run-2026-11-18).
 
 ```bash
 npm run evaluate -- swing-structure-evaluation
@@ -300,3 +303,135 @@ the bytes at that path, outside the file. On `CONFLICT` that is the kept file. I
   run through the real analysis.
 - **Mutations.** Removing any identity check, re-reading the export, or overwriting a result each
   fails a test.
+
+## Recorded run (2026-11-18)
+
+**Primary classification: INCONCLUSIVE.** All seven gates are FALSE, none UNAVAILABLE. It is not
+ADVERSE: both upper bounds are above zero. Aggregates only; the per-observation rows stay in the
+local, git-ignored result.
+
+### Identity and reproduction
+
+| Item               | Value                                                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commit             | `17370f1f40e92a7bb6e48b66a0e9eb32e0397669` ([#198](https://github.com/blackhebrewisraeli/Popup/pull/198) merged), tracked files `MATCH_COMMIT` |
+| specificationId    | `99fff59080a3b2f94ee5fdb1310cce7624912d7eafdad3fe8b82c4c3203dece2`, spec blob `36963b9d…`, `MATCH`                                             |
+| Code blobs         | candidate `c081159b…`, `candleValidation.ts` `f2d11061…` (both `MATCH`); analysis `390fe8c6…`; runner `4f76c1ee…`                              |
+| Export             | `20261111T183825Z.json`, 1,838,933 bytes, sha256 `8d251bbfed6089d0a10abf336a53ae895298639fa651888966c672c6227cbba4`                            |
+| Members            | BNB, BTC, ETH, SOL, XRP: symbol and input hash `MATCH`, 1,000 mapped candles each                                                              |
+| Result             | `.zerochart-reports/swing-structure-evaluation-99fff59080a3.json`, 25,651,648 bytes                                                            |
+| Result sha256      | `0c66a85fde36f1479fbeb2f1ee9fc72ac45759e4fb3386089f2cfdf967859154`                                                                             |
+| Run 1              | `CREATED`; `savedSha256` = `contentSha256` = `0c66a85f…`                                                                                       |
+| Run 2, same commit | `UNCHANGED`; both hashes `0c66a85f…`; file bytes and modification time untouched; tracked tree still clean                                     |
+
+**Reproducing it.** The commit is in the result's manifest, so reproduce at `17370f1`, not at this
+document's commit or any later one. There, with the export at its path, the command reports
+`UNCHANGED`, or `CREATED` with the same sha256 where no result exists yet. At any other commit it
+reports `CONFLICT` by design and overwrites nothing.
+
+### Completeness and exclusions
+
+Each member has 999 of the 999 required bars (2024-02-16 to 2026-11-10), with none missing,
+duplicate or invalid. No observation is `INVALID_INPUT`, `WINDOW_INCOMPLETE` or `INSUFFICIENT` in
+any configuration. Every 5, 20 and 60-day outcome is `AVAILABLE` on all 759 daily and 38 grid
+dates, and no forward scan is `INCOMPLETE`. The exclusion lists are empty.
+
+### B. Primary cell: L5R5, 20 days, G0
+
+| Statistic      | Value                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| Dates (n)      | 37 of 38 grid dates (one date had no Up or Down member)                                  |
+| Observations   | 114: Up 61 on 29 dates, Down 53 on 25 dates                                              |
+| M              | −0.0138                                                                                  |
+| ℓ = 4 interval | −0.0518 to +0.0242; se\* 0.0194; 10,000 of 10,000 replicates defined, their mean −0.0201 |
+| ℓ = 8 interval | −0.0543 to +0.0268; se\* 0.0207; 10,000 of 10,000 defined, their mean −0.0232            |
+| U, Dn          | −0.0238, −0.0130                                                                         |
+| Hit excess     | −0.0578                                                                                  |
+| M(−j)          | BNB −0.0176, BTC −0.0183, ETH −0.0276, SOL −0.0105, XRP −0.0069                          |
+| M₀ to M₁₉      | all available; median −0.0129; range −0.0288 to +0.0094; 3 of 20 above zero              |
+
+**Interpretability:** every condition holds. Dates 37 ≥ 25; Up 61 ≥ 30 on 29 ≥ 10 dates; Down
+53 ≥ 30 on 25 ≥ 10 dates; 0 invalid or incomplete observations and 0 unavailable outcomes for
+every member (limit 3); the ℓ = 4 interval is available.
+
+**Gates:** 1 (ℓ = 4 lower bound > 0) FALSE, 2 (ℓ = 8 lower bound > 0) FALSE, 3 (U > 0) FALSE,
+4 (Dn > 0) FALSE, 5 (every M(−j) > 0) FALSE for all five members, 6 (hit excess > 0) FALSE,
+7 (phase median > 0) FALSE.
+
+**In plain terms.** M is a mean of log-price changes from the open after the observation, net of
+each pair's own base rate. On these dates, the 20 days after an Up or Down state moved on average
+about 0.014 in log terms, roughly 1.4% of price, against the stated direction. The stated direction
+was right 5.8 percentage points less often than each pair's base share of rises or falls. The
+intervals run from about −0.05 to about +0.025. So the data neither show the states pointing the right way nor rule
+that out, and they do not reach ADVERSE either. INCONCLUSIVE is not evidence of no effect. U, Dn,
+the hit excess, every M(−j) and 17 of 20 phases lean the same way, but they reuse M's data and are
+not independent confirmations. This is not a portfolio return, and a Down observation is not a
+Short profit.
+
+### A. Coverage and latency (L5R5)
+
+- **Coverage, daily dates:** 3,795 member-dates, all with valid input. Up 32.3%, Down 28.6%,
+  Unclear 39.1% (mixed structure 38.6%, equal pivot level 0.5%). On G0: Up 61, Down 53, Unclear
+  76 of 190.
+- **Latency:** every pivot is confirmed exactly 5 days (R) after its candle. A state becomes
+  knowable a median 8 days (Up) and 6 days (Down) after its reference pivot's candle, quartiles 5
+  and 14, at most 36. At observation the state is a median 4 days old and its reference 14 days
+  old, at most 46 (Up) and 51 (Down).
+- **Persistence:** 22 to 26 direction changes per member per 365 days. Runs last a median 13 days
+  (Up) and 15 days (Down).
+- **Other configurations, descriptive:** 59% to 61% of daily member-dates are directional in
+  each. Confirmation always takes R days. Direction changes per member per year: L3R3 36 to 42,
+  L10R10 10 to 16, L5R2 29 to 37.
+
+### C. Structural reference (L5R5, 20 days headline)
+
+114 observations, 104 distinct references. Before the observation, by close: 96 no breach, 2
+`BEFORE_ESTABLISHMENT`, 16 `AFTER_ESTABLISHMENT`; by extreme: 95, 2 and 17. At observation, 14
+closes were already beyond the reference.
+
+| Pre-observation category | Close breached within 20 days | Median days (quartiles) | Extreme breached within 20 days | Median days (quartiles) |
+| ------------------------ | ----------------------------- | ----------------------- | ------------------------------- | ----------------------- |
+| None                     | 35 of 96 (36.5%)              | 10 (5 to 12.5)          | 44 of 95 (46.3%)                | 8 (4.75 to 11)          |
+| `BEFORE_ESTABLISHMENT`   | 2 of 2                        | 1                       | 2 of 2                          | 1                       |
+| `AFTER_ESTABLISHMENT`    | 16 of 16                      | 1 (1 to 1.5), max 12    | 17 of 17                        | 1 (1 to 1), max 12      |
+
+No scan was `INCOMPLETE`. Without an earlier breach, a close beyond the frozen reference followed
+within 5, 20 and 60 days in 10.4%, 36.5% and 54.2% of cases, and an extreme in 15.8%, 46.3% and
+62.1% (5 and 60 days exploratory). In the `AFTER_ESTABLISHMENT` group the reference was already
+breached at observation, so the next-day breaches are largely mechanical. C has no baseline: it
+describes the reference and does not validate a stop-loss or invalidation rule.
+
+### Exploratory cells, not classified
+
+| Cell        | Dates, observations | M       | ℓ = 4 interval     | ℓ = 8 interval     |
+| ----------- | ------------------- | ------- | ------------------ | ------------------ |
+| L5R5, 5d    | 37, 114             | −0.0140 | −0.0299 to +0.0020 | −0.0303 to +0.0023 |
+| L5R5, 60d   | 37, 114             | −0.0171 | none at 60 days    | none at 60 days    |
+| L3R3, 5d    | 36, 118             | −0.0039 | −0.0184 to +0.0107 | −0.0143 to +0.0066 |
+| L3R3, 20d   | 36, 118             | +0.0072 | −0.0300 to +0.0444 | −0.0379 to +0.0523 |
+| L3R3, 60d   | 36, 118             | +0.0053 | none at 60 days    | none at 60 days    |
+| L10R10, 5d  | 35, 105             | −0.0055 | −0.0196 to +0.0086 | −0.0191 to +0.0081 |
+| L10R10, 20d | 35, 105             | −0.0067 | −0.0436 to +0.0303 | −0.0423 to +0.0289 |
+| L10R10, 60d | 35, 105             | +0.0066 | none at 60 days    | none at 60 days    |
+| L5R2, 5d    | 37, 105             | −0.0053 | −0.0204 to +0.0099 | −0.0213 to +0.0108 |
+| L5R2, 20d   | 37, 105             | +0.0072 | −0.0307 to +0.0451 | −0.0315 to +0.0458 |
+| L5R2, 60d   | 37, 105             | −0.0281 | none at 60 days    | none at 60 days    |
+
+Every exploratory interval contains zero. The primary cell's breakdowns are descriptive as well:
+M per member runs from −0.073 (XRP) to +0.029 (ETH), and per half-year from −0.112 (2026H1) to
++0.109 (2026H2, 3 dates). No cell, member or period is selected from these, and none becomes a
+preferred configuration.
+
+### What this run does not change
+
+- It used a small, correlated sample, 37 dates on five co-moving pairs, and interval coverage is
+  nominal and unverified at this size.
+- The export had been examined before, by the crypto scanner study. This is not an untouched
+  holdout.
+- The members were picked by market capitalization after the period, with survivorship.
+- There are no costs, sizing, fills or exits. Log-price changes are not portfolio returns.
+- It says nothing about intraday, equities, other timeframes, TRXUSDT, the owner's manual Spot
+  experiment or its original recommendation.
+- No strategy, setting, alert, screen or trade was activated, and none follows from this result.
+  Even INFORMATIVE would not have authorized activation. Any further study needs its own frozen
+  specification.
