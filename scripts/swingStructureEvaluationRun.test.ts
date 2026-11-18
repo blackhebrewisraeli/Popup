@@ -462,7 +462,7 @@ describe('export metadata and members, after the export identity holds', () => {
       expect(members[ticker], ticker).toEqual(
         tradingViewCryptoCandles(entryOf(file, ticker).response, { symbol, from: FIRST }),
       );
-      expect((members[ticker] as unknown[]).length).toBe(1000);
+      expect(members[ticker] as unknown[]).toHaveLength(1000);
     }
   });
 

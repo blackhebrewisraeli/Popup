@@ -98,23 +98,22 @@ async function git(repository: string, args: string[]): Promise<string> {
 
 /** candidate.rule and reproducibility.code: the files that execute, byte for byte as pinned. */
 async function verifyCode(spec: FrozenSpecification, repository: string) {
-  const candidate: Record<string, { blob: string; pinned: 'MATCH' }> = {};
+  const blobOf = async (path: string) =>
+    gitBlob(await bytesOf(join(repository, path), path, 'CODE_IDENTITY'));
   const pinned = Object.entries(spec.candidate.sourceBlobs).sort(([a], [b]) => byCodeUnit(a, b));
-  for (const [path, expected] of pinned) {
-    const blob = gitBlob(await bytesOf(join(repository, path), path, 'CODE_IDENTITY'));
+  const blobs = await Promise.all(pinned.map(([path]) => blobOf(path)));
+  const candidate: Record<string, { blob: string; pinned: 'MATCH' }> = {};
+  pinned.forEach(([path, expected], i) => {
+    const blob = blobs[i] ?? '';
     if (blob !== expected) {
       refuse('CODE_IDENTITY', `${path} is blob ${blob}, not the pinned ${expected}`);
     }
     candidate[path] = { blob, pinned: 'MATCH' };
-  }
-  const recorded = async (path: string) => ({
-    path,
-    blob: gitBlob(await bytesOf(join(repository, path), path, 'CODE_IDENTITY')),
   });
   return {
     candidate,
-    analysis: await recorded(ANALYSIS_PATH),
-    runner: await recorded(RUNNER_PATH),
+    analysis: { path: ANALYSIS_PATH, blob: await blobOf(ANALYSIS_PATH) },
+    runner: { path: RUNNER_PATH, blob: await blobOf(RUNNER_PATH) },
   };
 }
 
@@ -127,7 +126,7 @@ async function verifyRepository(repository: string) {
   if (!/^[0-9a-f]{40}$/.test(commit)) refuse('REPOSITORY', `HEAD is not a commit: ${commit}`);
   const changed = (await git(repository, ['status', '--porcelain', '--untracked-files=no'])).trim();
   if (changed !== '') {
-    refuse('REPOSITORY', `tracked files differ from ${commit}: ${changed.split('\n').join('; ')}`);
+    refuse('REPOSITORY', `tracked files differ from ${commit}: ${changed.replaceAll('\n', '; ')}`);
   }
   return { commit, trackedFiles: 'MATCH_COMMIT' as const };
 }
@@ -160,37 +159,12 @@ async function verifyExport(spec: FrozenSpecification, root: string) {
 
   const hashes = instrumentHashes(file);
   const from = utcDay(spec.data.bars.firstBar);
-  const tickers = Object.keys(spec.universe.members).sort(byCodeUnit);
   const members: Record<string, ReturnType<typeof tradingViewCryptoCandles>> = {};
   const manifest: Record<string, { symbol: string; inputHash: string; candles: number }> = {};
-  for (const ticker of tickers) {
-    const symbol = spec.universe.members[ticker];
-    if (symbol === undefined || CRYPTO_TRADINGVIEW_SYMBOLS[ticker] !== symbol) {
-      refuse('DATA_UNAVAILABLE', `${ticker}: ${symbol} is not its committed symbol`);
-    }
-    const entries = file.instruments.filter((entry) => entry.ticker === ticker);
-    const [entry] = entries;
-    if (entries.length !== 1 || !entry) {
-      refuse('DATA_UNAVAILABLE', `${ticker} appears ${entries.length} times, not once`);
-    }
-    if (entry.symbol !== symbol) {
-      refuse('DATA_UNAVAILABLE', `${ticker} was retrieved as ${entry.symbol}, not ${symbol}`);
-    }
-    const inputHash = hashes[ticker];
-    if (inputHash === undefined || inputHash !== spec.data.inputHashes[ticker]) {
-      refuse('DATA_UNAVAILABLE', `${ticker} entry hashes to ${inputHash}, not its input hash`);
-    }
-    if (entry.response === undefined) {
-      refuse('DATA_UNAVAILABLE', `${ticker} has no response: ${entry.error ?? 'none recorded'}`);
-    }
-    let candles: ReturnType<typeof tradingViewCryptoCandles>;
-    try {
-      candles = tradingViewCryptoCandles(entry.response, { symbol, from });
-    } catch (error) {
-      return refuse('DATA_UNAVAILABLE', `${ticker}: ${errorText(error)}`);
-    }
-    members[ticker] = candles;
-    manifest[ticker] = { symbol, inputHash, candles: candles.length };
+  for (const ticker of Object.keys(spec.universe.members).sort(byCodeUnit)) {
+    const member = verifyMember(spec, file, hashes, ticker, from);
+    members[ticker] = member.candles;
+    manifest[ticker] = member.manifest;
   }
   return {
     members,
@@ -208,6 +182,41 @@ async function verifyExport(spec: FrozenSpecification, root: string) {
       members: manifest,
     },
   };
+}
+
+/** One member: present once, under its committed and frozen symbol, with its input hash. */
+function verifyMember(
+  spec: FrozenSpecification,
+  file: TradingViewOhlcvExport,
+  hashes: Readonly<Record<string, string>>,
+  ticker: string,
+  from: number,
+) {
+  const symbol = spec.universe.members[ticker];
+  if (symbol === undefined || CRYPTO_TRADINGVIEW_SYMBOLS[ticker] !== symbol) {
+    refuse('DATA_UNAVAILABLE', `${ticker}: ${symbol} is not its committed symbol`);
+  }
+  const entries = file.instruments.filter((entry) => entry.ticker === ticker);
+  const [entry] = entries;
+  if (entries.length !== 1 || !entry) {
+    refuse('DATA_UNAVAILABLE', `${ticker} appears ${entries.length} times, not once`);
+  }
+  if (entry.symbol !== symbol) {
+    refuse('DATA_UNAVAILABLE', `${ticker} was retrieved as ${entry.symbol}, not ${symbol}`);
+  }
+  const inputHash = hashes[ticker];
+  if (inputHash === undefined || inputHash !== spec.data.inputHashes[ticker]) {
+    refuse('DATA_UNAVAILABLE', `${ticker} entry hashes to ${inputHash}, not its input hash`);
+  }
+  if (entry.response === undefined) {
+    refuse('DATA_UNAVAILABLE', `${ticker} has no response: ${entry.error ?? 'none recorded'}`);
+  }
+  try {
+    const candles = tradingViewCryptoCandles(entry.response, { symbol, from });
+    return { candles, manifest: { symbol, inputHash, candles: candles.length } };
+  } catch (error) {
+    return refuse('DATA_UNAVAILABLE', `${ticker}: ${errorText(error)}`);
+  }
 }
 
 export interface SwingStructureRunResult {
