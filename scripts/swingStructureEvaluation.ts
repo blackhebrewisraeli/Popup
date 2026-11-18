@@ -114,7 +114,10 @@ function finite(value: number, what: string): number {
 }
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
-const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const byCodeUnit = (a: string, b: string) => {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+};
 const closeOf = (open: number) => open + DAY_MS - 1;
 export const isoDate = (time: number) => new Date(time).toISOString().slice(0, 10);
 
@@ -226,12 +229,13 @@ export function barOn(index: BarIndex, day: number): BarCheck {
   return issues.length > 0 ? { status: 'INVALID', issues } : { status: 'OK', candle: only.candle };
 }
 
-const barFact = (check: BarCheck) =>
-  check.status === 'OK'
-    ? { status: 'OK' as const }
-    : check.status === 'MISSING'
-      ? { status: 'MISSING' as const }
-      : { status: 'INVALID' as const, issues: check.issues };
+/** A bar check without the candle itself, for reports. */
+function barFact(
+  check: BarCheck,
+): { status: 'OK' | 'MISSING' } | { status: 'INVALID'; issues: string[] } {
+  if (check.status === 'INVALID') return { status: 'INVALID', issues: check.issues };
+  return { status: check.status };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Observations
@@ -630,8 +634,7 @@ function baseRate(cell: PreparedCell, member: number, k: number, order: readonly
   let falls = 0;
   const row = member * n;
   const from = k * n;
-  for (let j = 0; j < order.length; j++) {
-    const kk = order[j]!;
+  for (const kk of order) {
     if (eligible[from + kk] !== 1) continue;
     const value = outcomes[row + kk]!;
     if (Number.isNaN(value)) continue;
@@ -703,6 +706,25 @@ export interface CellAggregate {
   E: number[];
 }
 
+/** One position's sums over the terms that `include` keeps, members in ticker order. */
+function positionSums(terms: readonly Term[], include: (term: Term) => boolean) {
+  const sums = { e: 0, a: 0, count: 0, up: 0, ups: 0, down: 0, downs: 0 };
+  for (const term of terms) {
+    if (!include(term)) continue;
+    sums.e += term.e;
+    sums.a += term.a;
+    sums.count += 1;
+    if (term.sign === 1) {
+      sums.up += term.e;
+      sums.ups += 1;
+    } else {
+      sums.down += term.e;
+      sums.downs += 1;
+    }
+  }
+  return sums;
+}
+
 /**
  * E(D), M, U, Dn and the hit excess over the terms that `include` keeps. Each position counts once,
  * members equally within it. For Down, b - r is computed as s x (r - b) = e, which is exact.
@@ -719,38 +741,19 @@ export function aggregateTerms(
   let upObservations = 0;
   let downObservations = 0;
   for (const terms of positions) {
-    let sumE = 0;
-    let sumA = 0;
-    let count = 0;
-    let sumUp = 0;
-    let ups = 0;
-    let sumDown = 0;
-    let downs = 0;
-    for (const term of terms) {
-      if (!include(term)) continue;
-      sumE += term.e;
-      sumA += term.a;
-      count += 1;
-      if (term.sign === 1) {
-        sumUp += term.e;
-        ups += 1;
-      } else {
-        sumDown += term.e;
-        downs += 1;
-      }
-    }
+    const sums = positionSums(terms, include);
     // degenerateCases.emptyDate: K_D empty, so E(D) is undefined and D is not in G*.
-    if (count === 0) continue;
-    E.push(sumE / count);
-    A.push(sumA / count);
-    observations += count;
-    if (ups > 0) {
-      U.push(sumUp / ups);
-      upObservations += ups;
+    if (sums.count === 0) continue;
+    E.push(sums.e / sums.count);
+    A.push(sums.a / sums.count);
+    observations += sums.count;
+    if (sums.ups > 0) {
+      U.push(sums.up / sums.ups);
+      upObservations += sums.ups;
     }
-    if (downs > 0) {
-      Dn.push(sumDown / downs);
-      downObservations += downs;
+    if (sums.downs > 0) {
+      Dn.push(sums.down / sums.downs);
+      downObservations += sums.downs;
     }
   }
   return {
@@ -1001,7 +1004,7 @@ export function classifyPrimaryCell(input: PrimaryClassificationInput) {
     member,
     ...positive(value),
   }));
-  const missing = memberGates.find((gate) => gate.value === 'UNAVAILABLE');
+  const missing = memberGates.some((gate) => gate.value === 'UNAVAILABLE');
   const gate5: GateValue = missing
     ? { value: 'UNAVAILABLE', reason: 'NO_DATES_WITHOUT_MEMBER' }
     : { value: memberGates.every((gate) => gate.value === 'TRUE') ? 'TRUE' : 'FALSE' };
@@ -1159,12 +1162,10 @@ function latency(observations: readonly Observation[]) {
   return { Up: forState('Up'), Down: forState('Down') };
 }
 
-const directionOf = (o: Observation) =>
-  o.state === 'INVALID_INPUT' || o.state === 'WINDOW_INCOMPLETE'
-    ? null
-    : o.state === 'Up' || o.state === 'Down'
-      ? o.state
-      : 'Unclear';
+function directionOf(o: Observation): 'Up' | 'Down' | 'Unclear' | null {
+  if (o.state === 'INVALID_INPUT' || o.state === 'WINDOW_INCOMPLETE') return null;
+  return o.state === 'Up' || o.state === 'Down' ? o.state : 'Unclear';
+}
 
 /**
  * analyses.A.transitions on consecutive daily dates: a change is a different direction (Up, Down
@@ -1218,14 +1219,24 @@ const halfYear = (date: number) => {
   return `${d.getUTCFullYear()}H${d.getUTCMonth() < 6 ? 1 : 2}`;
 };
 
-/**
- * Runs A, B and C on `members`, the mapped candles of each universe member in export order. Only
- * bars closed by the export cutoff are used. Any refusal stops the whole study.
- */
-export function evaluateSwingStructureStudy(
-  spec: SwingStructureEvaluationSpecification,
-  members: Readonly<Record<string, readonly DailyCandle[]>>,
-) {
+/** Everything the parts of the study read: schedule, candles, observations and outcomes. */
+interface Study {
+  spec: SwingStructureEvaluationSpecification;
+  schedule: StudySchedule;
+  g0: readonly number[];
+  tickers: readonly string[];
+  configurations: readonly Configuration[];
+  horizons: readonly number[];
+  closedCandles: number;
+  exportCutoff: number;
+  first: number;
+  series: (ticker: string) => MemberSeries;
+  observationsOf: (configurationId: string, ticker: string) => Observation[];
+  observationAt: (configurationId: string, ticker: string, date: number) => Observation;
+  outcomeOf: (ticker: string, h: number, date: number) => Outcome;
+}
+
+function checkSpecification(spec: SwingStructureEvaluationSpecification): void {
   if (spec.specificationId !== SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID) {
     refuse('SPECIFICATION', `not specification ${SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID}`);
   }
@@ -1237,6 +1248,14 @@ export function evaluateSwingStructureStudy(
   ) {
     refuse('SPECIFICATION', 'candidate or timeframe differs from the one implemented');
   }
+}
+
+/** Every observation on every daily date and every outcome: A uses them all, B and C the grids. */
+function prepareStudy(
+  spec: SwingStructureEvaluationSpecification,
+  members: Readonly<Record<string, readonly DailyCandle[]>>,
+): Study {
+  checkSpecification(spec);
   const schedule = studySchedule(spec);
   const tickers = Object.keys(spec.universe.members).sort(byCodeUnit);
   // universe.fixed: never fewer members, never others.
@@ -1244,10 +1263,10 @@ export function evaluateSwingStructureStudy(
     refuse('DATA_UNAVAILABLE', `members must be exactly ${tickers.join(', ')}`);
   }
   const exportCutoff = Date.parse(spec.data.export.retrievalStartedAt);
-  const W = spec.window.closedCandles;
+  const closedCandles = spec.window.closedCandles;
   const configurations = spec.configurations;
   const horizons = [...spec.horizons.utcDays].sort((a, b) => a - b);
-  const series = new Map<string, MemberSeries>(
+  const seriesByTicker = new Map<string, MemberSeries>(
     tickers.map((ticker) => {
       // The forming bar, and anything else not closed by the cutoff, is never used.
       const usable = mappedSeries(ticker, members[ticker] ?? []).filter(
@@ -1256,12 +1275,11 @@ export function evaluateSwingStructureStudy(
       return [ticker, { usable, index: indexBars(usable) }];
     }),
   );
-  const seriesOf = (ticker: string) => series.get(ticker) ?? refuse('DATA_UNAVAILABLE', ticker);
+  const series = (ticker: string) =>
+    seriesByTicker.get(ticker) ?? refuse('DATA_UNAVAILABLE', ticker);
   const first = schedule.daily[0] ?? refuse('SPECIFICATION', 'no daily dates');
   const position = (date: number) => (date - first) / DAY_MS;
-  const g0 = schedule.phases[0] ?? [];
 
-  // Every observation on every daily date: A uses them all, B and C the grids among them.
   const observations = new Map(
     configurations.map((configuration) => [
       configuration.id,
@@ -1269,7 +1287,7 @@ export function evaluateSwingStructureStudy(
         tickers.map((ticker) => [
           ticker,
           schedule.daily.map((date) =>
-            observe(seriesOf(ticker).usable, ticker, date, configuration, W),
+            observe(series(ticker).usable, ticker, date, configuration, closedCandles),
           ),
         ]),
       ),
@@ -1281,37 +1299,13 @@ export function evaluateSwingStructureStudy(
     observationsOf(configurationId, ticker)[position(date)] ??
     refuse('SPECIFICATION', `${ticker} ${isoDate(date)}`);
 
-  // timing.lookAheadCheck on every primary-grid observation.
-  for (const configuration of configurations) {
-    for (const ticker of tickers) {
-      const { usable } = seriesOf(ticker);
-      for (const date of g0) {
-        const tau = closeOf(date);
-        const extended = evaluateSwingStructure({
-          candles: [
-            ...observationWindow(usable, date, W),
-            ...usable.filter((candle) => candle.timestamp > tau),
-          ],
-          timeframe: DAILY,
-          config: { leftBars: configuration.leftBars, rightBars: configuration.rightBars },
-          cutoff: tau,
-        });
-        assertNoLookAhead(
-          observationAt(configuration.id, ticker, date).candidate,
-          extended,
-          `${ticker} ${isoDate(date)} ${configuration.id}`,
-        );
-      }
-    }
-  }
-
   const outcomes = new Map(
     tickers.map((ticker) => [
       ticker,
       new Map(
         horizons.map((h) => [
           h,
-          schedule.daily.map((date) => outcomeAt(seriesOf(ticker).index, date, h, exportCutoff)),
+          schedule.daily.map((date) => outcomeAt(series(ticker).index, date, h, exportCutoff)),
         ]),
       ),
     ]),
@@ -1319,22 +1313,85 @@ export function evaluateSwingStructureStudy(
   const outcomeOf = (ticker: string, h: number, date: number) =>
     outcomes.get(ticker)?.get(h)?.[position(date)] ?? refuse('SPECIFICATION', `${ticker} ${h}`);
 
-  const table = (configurationId: string, h: number, dates: readonly number[]): CellTable => ({
+  return {
+    spec,
+    schedule,
+    g0: schedule.phases[0] ?? [],
+    tickers,
+    configurations,
+    horizons,
+    closedCandles,
+    exportCutoff,
+    first,
+    series,
+    observationsOf,
+    observationAt,
+    outcomeOf,
+  };
+}
+
+/** timing.lookAheadCheck on every primary-grid observation. */
+function checkPrimaryGridLookAhead(study: Study): void {
+  for (const configuration of study.configurations) {
+    for (const ticker of study.tickers) {
+      const { usable } = study.series(ticker);
+      for (const date of study.g0) {
+        const tau = closeOf(date);
+        const extended = evaluateSwingStructure({
+          candles: [
+            ...observationWindow(usable, date, study.closedCandles),
+            ...usable.filter((candle) => candle.timestamp > tau),
+          ],
+          timeframe: DAILY,
+          config: { leftBars: configuration.leftBars, rightBars: configuration.rightBars },
+          cutoff: tau,
+        });
+        assertNoLookAhead(
+          study.observationAt(configuration.id, ticker, date).candidate,
+          extended,
+          `${ticker} ${isoDate(date)} ${configuration.id}`,
+        );
+      }
+    }
+  }
+}
+
+function cellTable(
+  study: Study,
+  configurationId: string,
+  h: number,
+  dates: readonly number[],
+): CellTable {
+  const { tickers, observationAt, outcomeOf } = study;
+  const rAt = (ticker: string, d: number) => {
+    const outcome = outcomeOf(ticker, h, d);
+    return outcome.status === 'AVAILABLE' ? outcome.r : null;
+  };
+  return {
     members: tickers,
     dates,
     sign: tickers.map((ticker) => dates.map((d) => observationAt(configurationId, ticker, d).sign)),
-    r: tickers.map((ticker) =>
-      dates.map((d) => {
-        const outcome = outcomeOf(ticker, h, d);
-        return outcome.status === 'AVAILABLE' ? outcome.r : null;
-      }),
-    ),
+    r: tickers.map((ticker) => dates.map((d) => rAt(ticker, d))),
     closeCategory: tickers.map((ticker) =>
       dates.map((d) => observationAt(configurationId, ticker, d).preObservation?.close ?? null),
     ),
-  });
+  };
+}
 
-  // ------------------------------------------------------------------------------- B
+const summaryOf = (a: CellAggregate) => ({
+  dates: a.dates,
+  observations: a.observations,
+  upObservations: a.upObservations,
+  downObservations: a.downObservations,
+  M: a.M,
+  U: a.U,
+  Dn: a.Dn,
+  hitExcess: a.hitExcess,
+});
+
+/** Every configuration and horizon on G0, with intervals at the interval horizons. */
+function analyseCells(study: Study) {
+  const { spec, g0, closedCandles } = study;
   const { primary: shortBlock, longer: longBlock } = spec.uncertainty.blockLengths;
   const gridId = spec.observations.primaryGrid.id;
   const orders = new Map(
@@ -1343,30 +1400,17 @@ export function evaluateSwingStructureStudy(
       bootstrapOrders(spec.uncertainty.random, gridId, ell, spec.uncertainty.replicates, g0.length),
     ]),
   );
-  const intervalOptions = (blockLength: number) => ({
-    blockLength,
-    z: spec.uncertainty.zQuantile,
-    minimumDates: spec.interpretability.minimumDates,
-  });
-  const halfYears = [...new Set(g0.map(halfYear))];
-  const summaryOf = (a: CellAggregate) => ({
-    dates: a.dates,
-    observations: a.observations,
-    upObservations: a.upObservations,
-    downObservations: a.downObservations,
-    M: a.M,
-    U: a.U,
-    Dn: a.Dn,
-    hitExcess: a.hitExcess,
-  });
-
-  const analysed = configurations.flatMap((configuration) =>
-    horizons.map((h) => {
-      const cell = prepareCell(table(configuration.id, h, g0), h, W);
+  return study.configurations.flatMap((configuration) =>
+    study.horizons.map((h) => {
+      const cell = prepareCell(cellTable(study, configuration.id, h, g0), h, closedCandles);
       const positions = cellTerms(cell);
       const aggregate = aggregateTerms(positions);
-      const interval = (ell: number) =>
-        bootstrapInterval(cell, aggregate, orders.get(ell) ?? [], intervalOptions(ell));
+      const interval = (blockLength: number) =>
+        bootstrapInterval(cell, aggregate, orders.get(blockLength) ?? [], {
+          blockLength,
+          z: spec.uncertainty.zQuantile,
+          minimumDates: spec.interpretability.minimumDates,
+        });
       // uncertainty.overlapRule: no interval and no standard error at h = 60.
       const intervals = spec.uncertainty.intervalHorizons.includes(h)
         ? { primary: interval(shortBlock), longer: interval(longBlock) }
@@ -1376,113 +1420,118 @@ export function evaluateSwingStructureStudy(
       return { configuration, h, cell, positions, aggregate, intervals, isPrimary };
     }),
   );
+}
 
-  // analyses.B.primaryCell: the only classified result.
-  const primaryInput = analysed.find((a) => a.isPrimary);
-  if (!primaryInput?.intervals) return refuse('SPECIFICATION', 'no primary cell with intervals');
-  const primary = (() => {
-    const { configuration, h, positions, aggregate, intervals } = primaryInput;
-    const phases = schedule.phases.map((dates, p) => {
-      const a = aggregateTerms(cellTerms(prepareCell(table(configuration.id, h, dates), h, W)));
-      return {
-        phase: p,
-        gridDates: dates.length,
-        dates: a.dates,
-        observations: a.observations,
-        M: a.M,
-      };
-    });
-    const phaseMedian = medianOfPhases(phases.map((p) => p.M));
-    const lomo = leaveOneMemberOut(tickers, positions);
-    const countOnGrid = (test: (date: number) => boolean) => g0.filter(test).length;
+type AnalysedCell = ReturnType<typeof analyseCells>[number];
+
+/** analyses.B.primaryCell: the only classified result. */
+function primaryReport(
+  study: Study,
+  analysed: AnalysedCell & { intervals: { primary: Interval; longer: Interval } },
+) {
+  const { spec, tickers, g0, observationAt, outcomeOf } = study;
+  const { configuration, h, positions, aggregate, intervals } = analysed;
+  const phases = study.schedule.phases.map((dates, p) => {
+    const cell = prepareCell(cellTable(study, configuration.id, h, dates), h, study.closedCandles);
+    const a = aggregateTerms(cellTerms(cell));
     return {
-      configuration: configuration.id,
-      horizon: h,
-      grid: gridId,
-      ...summaryOf(aggregate),
-      upDates: aggregate.upDates,
-      downDates: aggregate.downDates,
-      intervals,
-      leaveOneMemberOut: lomo,
-      phases,
-      phaseMedian,
-      ...classifyPrimaryCell({
-        aggregate,
-        intervals,
-        leaveOneMemberOut: perMember(tickers, (t) => lomo[t]?.M ?? unavailable('NO_VALUES')),
-        phaseMedian,
-        invalidOrIncompleteByMember: perMember(tickers, (ticker) =>
-          countOnGrid((d) => {
-            const { state } = observationAt(configuration.id, ticker, d);
-            return state === 'INVALID_INPUT' || state === 'WINDOW_INCOMPLETE';
-          }),
-        ),
-        unavailableOutcomesByMember: perMember(tickers, (ticker) =>
-          countOnGrid((d) => outcomeOf(ticker, h, d).status !== 'AVAILABLE'),
-        ),
-        thresholds: spec.interpretability,
-      }),
+      phase: p,
+      gridDates: dates.length,
+      dates: a.dates,
+      observations: a.observations,
+      M: a.M,
     };
-  })();
+  });
+  const phaseMedian = medianOfPhases(phases.map((p) => p.M));
+  const lomo = leaveOneMemberOut(tickers, positions);
+  const countOnGrid = (test: (date: number) => boolean) => g0.filter(test).length;
+  const inputDefect = (ticker: string, d: number) => {
+    const { state } = observationAt(configuration.id, ticker, d);
+    return state === 'INVALID_INPUT' || state === 'WINDOW_INCOMPLETE';
+  };
+  return {
+    configuration: configuration.id,
+    horizon: h,
+    grid: spec.observations.primaryGrid.id,
+    ...summaryOf(aggregate),
+    upDates: aggregate.upDates,
+    downDates: aggregate.downDates,
+    intervals,
+    leaveOneMemberOut: lomo,
+    phases,
+    phaseMedian,
+    ...classifyPrimaryCell({
+      aggregate,
+      intervals,
+      leaveOneMemberOut: perMember(tickers, (t) => lomo[t]?.M ?? unavailable('NO_VALUES')),
+      phaseMedian,
+      invalidOrIncompleteByMember: perMember(tickers, (ticker) =>
+        countOnGrid((d) => inputDefect(ticker, d)),
+      ),
+      unavailableOutcomesByMember: perMember(tickers, (ticker) =>
+        countOnGrid((d) => outcomeOf(ticker, h, d).status !== 'AVAILABLE'),
+      ),
+      thresholds: spec.interpretability,
+    }),
+  };
+}
 
-  const cells = analysed.map(
-    ({ configuration, h, cell, positions, aggregate, intervals, isPrimary }) => {
-      return {
-        configuration: configuration.id,
-        horizon: h,
-        grid: gridId,
-        role: isPrimary ? ('primary' as const) : ('exploratory' as const),
-        ...summaryOf(aggregate),
-        upDates: aggregate.upDates,
-        downDates: aggregate.downDates,
-        ...(intervals ? { intervals } : { quartilesOfE: summarize(aggregate.E) }),
-        breakdowns: {
-          members: perMember(tickers, (ticker) =>
-            summaryOf(aggregateTerms(positions, (t) => tickers[t.member] === ticker)),
-          ),
-          halfYears: Object.fromEntries(
-            halfYears.map((label) => [
-              label,
-              {
-                gridDates: g0.filter((d) => halfYear(d) === label).length,
-                ...summaryOf(
-                  aggregateTerms(positions, (t) => halfYear(g0[t.original] ?? 0) === label),
-                ),
-              },
-            ]),
-          ),
-          preObservationClose: Object.fromEntries(
-            PRE_OBSERVATION_CATEGORIES.map((category) => [
-              category,
-              summaryOf(
-                aggregateTerms(
-                  positions,
-                  (t) => cell.table.closeCategory[t.member]?.[t.original] === category,
-                ),
-              ),
-            ]),
-          ),
-        },
-        terms: positions.flat().map((t) => ({
-          member: tickers[t.member] ?? '',
-          date: isoDate(g0[t.original] ?? 0),
-          sign: t.sign,
-          r: t.r,
-          b: t.b,
-          piPlus: t.piPlus,
-          piMinus: t.piMinus,
-          baselineDates: t.baselineDates,
-          e: t.e,
-          a: t.a,
-        })),
-      };
+/** One G0 cell with its breakdowns and per-observation terms. Exploratory unless primary. */
+function cellReport(study: Study, analysed: AnalysedCell) {
+  const { tickers, g0 } = study;
+  const { configuration, h, cell, positions, aggregate, intervals, isPrimary } = analysed;
+  const halfYears = [...new Set(g0.map(halfYear))];
+  const where = (include: (t: Term) => boolean) => summaryOf(aggregateTerms(positions, include));
+  return {
+    configuration: configuration.id,
+    horizon: h,
+    grid: study.spec.observations.primaryGrid.id,
+    role: isPrimary ? ('primary' as const) : ('exploratory' as const),
+    ...summaryOf(aggregate),
+    upDates: aggregate.upDates,
+    downDates: aggregate.downDates,
+    ...(intervals ? { intervals } : { quartilesOfE: summarize(aggregate.E) }),
+    breakdowns: {
+      members: perMember(tickers, (ticker) => where((t) => tickers[t.member] === ticker)),
+      halfYears: Object.fromEntries(
+        halfYears.map((label) => [
+          label,
+          {
+            gridDates: g0.filter((d) => halfYear(d) === label).length,
+            ...where((t) => halfYear(g0[t.original] ?? 0) === label),
+          },
+        ]),
+      ),
+      preObservationClose: Object.fromEntries(
+        PRE_OBSERVATION_CATEGORIES.map((category) => [
+          category,
+          where((t) => cell.table.closeCategory[t.member]?.[t.original] === category),
+        ]),
+      ),
     },
-  );
+    terms: positions.flat().map((t) => ({
+      member: tickers[t.member] ?? '',
+      date: isoDate(g0[t.original] ?? 0),
+      sign: t.sign,
+      r: t.r,
+      b: t.b,
+      piPlus: t.piPlus,
+      piMinus: t.piMinus,
+      baselineDates: t.baselineDates,
+      e: t.e,
+      a: t.a,
+    })),
+  };
+}
 
-  // ------------------------------------------------------------------------------- A
-  const A = configurations.map((configuration) => {
+/** Question A, per configuration, on the daily dates and on G0. */
+function analyseA(study: Study) {
+  const { tickers, schedule, g0 } = study;
+  return study.configurations.map((configuration) => {
     const byMember = (dates: readonly number[]) =>
-      perMember(tickers, (ticker) => dates.map((d) => observationAt(configuration.id, ticker, d)));
+      perMember(tickers, (ticker) =>
+        dates.map((d) => study.observationAt(configuration.id, ticker, d)),
+      );
     const dateSet = (dates: readonly number[]) => {
       const rows = byMember(dates);
       const pooled = tickers.flatMap((ticker) => rows[ticker] ?? []);
@@ -1501,115 +1550,162 @@ export function evaluateSwingStructureStudy(
       transitions: transitions(byMember(schedule.daily)),
     };
   });
+}
 
-  // ------------------------------------------------------------------------------- C
-  const forwardRows: {
-    configuration: string;
-    member: string;
-    date: number;
-    observation: Observation;
-    at: ReturnType<typeof atObservation>;
-    forward: Record<number, ForwardScan>;
-  }[] = [];
-  for (const configuration of configurations) {
-    for (const ticker of tickers) {
-      const { index } = seriesOf(ticker);
-      for (const date of g0) {
-        const observation = observationAt(configuration.id, ticker, date);
-        const { reference, sign } = observation;
-        if (!reference || sign === 0) continue;
-        const dayBar = barOn(index, date);
-        if (dayBar.status !== 'OK') {
-          return refuse('TIMING_INVARIANT', `${ticker} ${isoDate(date)}: D's bar is not usable`);
-        }
-        forwardRows.push({
-          configuration: configuration.id,
-          member: ticker,
-          date,
-          observation,
-          at: atObservation(dayBar.candle.close, reference, sign),
-          forward: Object.fromEntries(
-            horizons.map((h) => [h, forwardScan(index, date, reference, h, exportCutoff)]),
-          ),
-        });
-      }
-    }
+interface ForwardRow {
+  configuration: string;
+  member: string;
+  date: number;
+  observation: Observation;
+  at: ReturnType<typeof atObservation>;
+  forward: Record<number, ForwardScan>;
+}
+
+/** One Up or Down observation on G0 with its position at D and its forward scans; else null. */
+function forwardRow(
+  study: Study,
+  configurationId: string,
+  ticker: string,
+  date: number,
+): ForwardRow | null {
+  const observation = study.observationAt(configurationId, ticker, date);
+  const { reference, sign } = observation;
+  if (!reference || sign === 0) return null;
+  const { index } = study.series(ticker);
+  const dayBar = barOn(index, date);
+  if (dayBar.status !== 'OK') {
+    return refuse('TIMING_INVARIANT', `${ticker} ${isoDate(date)}: D's bar is not usable`);
   }
-  const referenceKey = (row: (typeof forwardRows)[number]) =>
-    `${row.member}|${row.observation.reference?.kind}|${row.observation.reference?.candleOpenTime}`;
-  const distinct = (rows: readonly (typeof forwardRows)[number][]) =>
-    new Set(rows.map(referenceKey)).size;
-  const C = configurations.map((configuration) => {
+  return {
+    configuration: configurationId,
+    member: ticker,
+    date,
+    observation,
+    at: atObservation(dayBar.candle.close, reference, sign),
+    forward: Object.fromEntries(
+      study.horizons.map((h) => [h, forwardScan(index, date, reference, h, study.exportCutoff)]),
+    ),
+  };
+}
+
+/** Question C's observations: every Up or Down observation on G0, for every configuration. */
+function forwardRowsOf(study: Study): ForwardRow[] {
+  return study.configurations.flatMap((configuration) =>
+    study.tickers.flatMap((ticker) =>
+      study.g0.flatMap((date) => forwardRow(study, configuration.id, ticker, date) ?? []),
+    ),
+  );
+}
+
+/** dependence.persistence: distinct (member, kind, candleOpenTime) references. */
+const distinctReferences = (rows: readonly ForwardRow[]) =>
+  new Set(
+    rows.map(
+      (row) =>
+        `${row.member}|${row.observation.reference?.kind}|${row.observation.reference?.candleOpenTime}`,
+    ),
+  ).size;
+
+function pooledAndMembers<T>(
+  rows: readonly ForwardRow[],
+  tickers: readonly string[],
+  build: (subset: readonly ForwardRow[]) => T,
+) {
+  return {
+    pooled: build(rows),
+    members: perMember(tickers, (ticker) => build(rows.filter((row) => row.member === ticker))),
+  };
+}
+
+const inCategory = (
+  rows: readonly ForwardRow[],
+  kind: 'close' | 'extreme',
+  category: PreObservationCategory,
+) => rows.filter((row) => row.observation.preObservation?.[kind] === category);
+
+function categoryCounts(rows: readonly ForwardRow[], kind: 'close' | 'extreme') {
+  return Object.fromEntries(
+    PRE_OBSERVATION_CATEGORIES.map((category) => [
+      category,
+      inCategory(rows, kind, category).length,
+    ]),
+  );
+}
+
+/** analyses.C.summary for one group: INCOMPLETE is counted apart, never read as no breach. */
+function forwardSummary(group: readonly ForwardRow[], h: number, kind: 'close' | 'extreme') {
+  const complete = group.flatMap((row) => {
+    const scan = row.forward[h];
+    return scan?.status === 'COMPLETE' ? [scan[kind]] : [];
+  });
+  const breached = complete.flatMap((b) => (b.breached && b.days !== null ? [b.days] : []));
+  return {
+    observations: group.length,
+    incomplete: group.length - complete.length,
+    complete: complete.length,
+    breached: breached.length,
+    shareBreached: share(breached.length, complete.length),
+    daysToFirstBreach: summarize(breached),
+    distinctReferences: distinctReferences(group),
+  };
+}
+
+/** analyses.C.groups: close with close and extreme with extreme, never pooled across categories. */
+function forwardByCategory(
+  rows: readonly ForwardRow[],
+  tickers: readonly string[],
+  h: number,
+  kind: 'close' | 'extreme',
+) {
+  return Object.fromEntries(
+    PRE_OBSERVATION_CATEGORIES.map((category) => [
+      category,
+      pooledAndMembers(rows, tickers, (subset) =>
+        forwardSummary(inCategory(subset, kind, category), h, kind),
+      ),
+    ]),
+  );
+}
+
+/** Question C, per configuration. */
+function analyseC(study: Study, forwardRows: readonly ForwardRow[]) {
+  const { tickers } = study;
+  return study.configurations.map((configuration) => {
     const rows = forwardRows.filter((row) => row.configuration === configuration.id);
-    const pooledAndMembers = <T>(build: (subset: typeof rows) => T) => ({
-      pooled: build(rows),
-      members: perMember(tickers, (ticker) => build(rows.filter((row) => row.member === ticker))),
-    });
-    const categories = (kind: 'close' | 'extreme') =>
-      pooledAndMembers((subset) =>
-        Object.fromEntries(
-          PRE_OBSERVATION_CATEGORIES.map((category) => [
-            category,
-            subset.filter((row) => row.observation.preObservation?.[kind] === category).length,
-          ]),
-        ),
-      );
-    const forwardGroup = (h: number, kind: 'close' | 'extreme', category: PreObservationCategory) =>
-      pooledAndMembers((subset) => {
-        const group = subset.filter((row) => row.observation.preObservation?.[kind] === category);
-        const complete = group.flatMap((row) => {
-          const scan = row.forward[h];
-          return scan?.status === 'COMPLETE' ? [scan[kind]] : [];
-        });
-        const breached = complete.flatMap((b) => (b.breached && b.days !== null ? [b.days] : []));
-        return {
-          observations: group.length,
-          incomplete: group.length - complete.length,
-          complete: complete.length,
-          breached: breached.length,
-          shareBreached: share(breached.length, complete.length),
-          daysToFirstBreach: summarize(breached),
-          distinctReferences: distinct(group),
-        };
-      });
+    const split = <T>(build: (subset: readonly ForwardRow[]) => T) =>
+      pooledAndMembers(rows, tickers, build);
     return {
       configuration: configuration.id,
       observations: rows.length,
-      distinctReferences: distinct(rows),
+      distinctReferences: distinctReferences(rows),
       atObservation: {
-        close: categories('close'),
-        extreme: categories('extreme'),
-        closeBeyondReference: pooledAndMembers((s) => s.filter((row) => row.at.closeBeyond).length),
-        signedDistance: pooledAndMembers((s) => summarize(s.map((row) => row.at.signedDistance))),
+        close: split((s) => categoryCounts(s, 'close')),
+        extreme: split((s) => categoryCounts(s, 'extreme')),
+        closeBeyondReference: split((s) => s.filter((row) => row.at.closeBeyond).length),
+        signedDistance: split((s) => summarize(s.map((row) => row.at.signedDistance))),
       },
       forward: Object.fromEntries(
-        horizons.map((h) => [
+        study.horizons.map((h) => [
           h,
           {
-            close: Object.fromEntries(
-              PRE_OBSERVATION_CATEGORIES.map((c) => [c, forwardGroup(h, 'close', c)]),
-            ),
-            extreme: Object.fromEntries(
-              PRE_OBSERVATION_CATEGORIES.map((c) => [c, forwardGroup(h, 'extreme', c)]),
-            ),
+            close: forwardByCategory(rows, tickers, h, 'close'),
+            extreme: forwardByCategory(rows, tickers, h, 'extreme'),
           },
         ]),
       ),
     };
   });
+}
 
-  // ------------------------------------------------------------------------------- exclusions
+/** reporting: per member, bars found against the bars required, with every defect listed. */
+function completenessOf(study: Study) {
+  const { spec } = study;
   const required: number[] = [];
-  for (
-    let d = utcDay(spec.data.bars.firstBar);
-    d <= utcDay(spec.data.bars.lastClosedBar);
-    d += DAY_MS
-  ) {
-    required.push(d);
-  }
+  const last = utcDay(spec.data.bars.lastClosedBar);
+  for (let d = utcDay(spec.data.bars.firstBar); d <= last; d += DAY_MS) required.push(d);
   const requiredDays = new Set(required);
-  const completeness = perMember(tickers, (ticker) => {
-    const { index, usable } = seriesOf(ticker);
+  return perMember(study.tickers, (ticker) => {
+    const { index, usable } = study.series(ticker);
     const checks = required.map((d) => ({ date: isoDate(d), check: barOn(index, d) }));
     return {
       required: required.length,
@@ -1625,31 +1721,53 @@ export function evaluateSwingStructureStudy(
         .map((candle) => candle.timestamp),
     };
   });
-  const exclusions = {
-    observations: configurations.flatMap((configuration) =>
-      tickers.flatMap((ticker) =>
-        observationsOf(configuration.id, ticker).flatMap((o) =>
-          o.state === 'INVALID_INPUT' || o.state === 'WINDOW_INCOMPLETE'
-            ? [
-                {
-                  member: ticker,
-                  configuration: configuration.id,
-                  date: isoDate(o.date),
-                  state: o.state,
-                  issues:
-                    o.candidate.status === 'INVALID_INPUT'
-                      ? o.candidate.issues.map((issue) => issue.code)
-                      : [],
-                },
-              ]
-            : [],
-        ),
-      ),
+}
+
+function excludedObservations(study: Study) {
+  return study.configurations.flatMap((configuration) =>
+    study.tickers.flatMap((ticker) =>
+      study.observationsOf(configuration.id, ticker).flatMap((o) => {
+        if (o.state !== 'INVALID_INPUT' && o.state !== 'WINDOW_INCOMPLETE') return [];
+        const issues =
+          o.candidate.status === 'INVALID_INPUT' ? o.candidate.issues.map((i) => i.code) : [];
+        return [
+          {
+            member: ticker,
+            configuration: configuration.id,
+            date: isoDate(o.date),
+            state: o.state,
+            issues,
+          },
+        ];
+      }),
     ),
+  );
+}
+
+const OUTCOME_STATUSES = ['AVAILABLE', 'MISSING', 'INVALID'] as const;
+
+function outcomeCounts(study: Study, dates: readonly number[]) {
+  const count = (ticker: string, h: number) =>
+    Object.fromEntries(
+      OUTCOME_STATUSES.map((status) => [
+        status,
+        dates.filter((d) => study.outcomeOf(ticker, h, d).status === status).length,
+      ]),
+    );
+  return Object.fromEntries(
+    study.horizons.map((h) => [h, perMember(study.tickers, (ticker) => count(ticker, h))]),
+  );
+}
+
+/** missingData.reporting: every INVALID_INPUT, WINDOW_INCOMPLETE, MISSING, INVALID and INCOMPLETE. */
+function exclusionsOf(study: Study, forwardRows: readonly ForwardRow[]) {
+  const { tickers, horizons, schedule } = study;
+  return {
+    observations: excludedObservations(study),
     outcomes: tickers.flatMap((ticker) =>
       horizons.flatMap((h) =>
         schedule.daily.flatMap((date) => {
-          const outcome = outcomeOf(ticker, h, date);
+          const outcome = study.outcomeOf(ticker, h, date);
           return outcome.status === 'AVAILABLE'
             ? []
             : [{ member: ticker, horizon: h, date: isoDate(date), ...outcome }];
@@ -1659,55 +1777,31 @@ export function evaluateSwingStructureStudy(
     forward: forwardRows.flatMap((row) =>
       horizons.flatMap((h) => {
         const scan = row.forward[h];
-        return scan?.status === 'INCOMPLETE'
-          ? [
-              {
-                member: row.member,
-                configuration: row.configuration,
-                date: isoDate(row.date),
-                horizon: h,
-                bars: scan.bars,
-              },
-            ]
-          : [];
+        if (scan?.status !== 'INCOMPLETE') return [];
+        const { member, configuration } = row;
+        return [{ member, configuration, date: isoDate(row.date), horizon: h, bars: scan.bars }];
       }),
     ),
-    outcomeCounts: Object.fromEntries(
-      (
-        [
-          ['daily', schedule.daily],
-          ['primaryGrid', g0],
-        ] as const
-      ).map(([name, dates]) => [
-        name,
-        Object.fromEntries(
-          horizons.map((h) => [
-            h,
-            perMember(tickers, (ticker) =>
-              Object.fromEntries(
-                (['AVAILABLE', 'MISSING', 'INVALID'] as const).map((status) => [
-                  status,
-                  dates.filter((d) => outcomeOf(ticker, h, d).status === status).length,
-                ]),
-              ),
-            ),
-          ]),
-        ),
-      ]),
-    ),
+    outcomeCounts: {
+      daily: outcomeCounts(study, schedule.daily),
+      primaryGrid: outcomeCounts(study, study.g0),
+    },
   };
+}
 
-  // ------------------------------------------------------------------------------- rows
+/** reproducibility.attribution: one row per observation, in its order. */
+function observationRows(study: Study, forwardRows: readonly ForwardRow[]) {
+  const { spec, horizons } = study;
   const forwardByKey = new Map(
     forwardRows.map((row) => [`${row.configuration}|${row.member}|${row.date}`, row]),
   );
-  const g0Set = new Set(g0);
-  const rows = configurations.flatMap((configuration) =>
-    tickers.flatMap((ticker) =>
-      observationsOf(configuration.id, ticker).map((o) => {
+  const g0 = new Set(study.g0);
+  const spacing = spec.observations.primaryGrid.spacingDays;
+  return study.configurations.flatMap((configuration) =>
+    study.tickers.flatMap((ticker) =>
+      study.observationsOf(configuration.id, ticker).map((o) => {
         const c = forwardByKey.get(`${configuration.id}|${ticker}|${o.date}`);
         return {
-          // reproducibility.attribution, in its order.
           studyId: spec.studyId,
           specificationId: spec.specificationId,
           candidateId: SWING_STRUCTURE_CANDIDATE_ID,
@@ -1722,23 +1816,43 @@ export function evaluateSwingStructureStudy(
           tau: o.tau,
           candidate: o.candidate,
           state: o.state,
-          primaryGrid: g0Set.has(o.date),
-          phase: position(o.date) % spec.observations.primaryGrid.spacingDays,
+          primaryGrid: g0.has(o.date),
+          phase: ((o.date - study.first) / DAY_MS) % spacing,
           preObservation: o.preObservation,
-          outcomes: Object.fromEntries(horizons.map((h) => [h, outcomeOf(ticker, h, o.date)])),
+          outcomes: Object.fromEntries(
+            horizons.map((h) => [h, study.outcomeOf(ticker, h, o.date)]),
+          ),
           ...(c && { atObservation: c.at, forward: c.forward }),
         };
       }),
     ),
   );
+}
 
+/**
+ * Runs A, B and C on `members`, the mapped candles of each universe member in export order. Only
+ * bars closed by the export cutoff are used. Any refusal stops the whole study.
+ */
+export function evaluateSwingStructureStudy(
+  spec: SwingStructureEvaluationSpecification,
+  members: Readonly<Record<string, readonly DailyCandle[]>>,
+) {
+  const study = prepareStudy(spec, members);
+  checkPrimaryGridLookAhead(study);
+  const analysed = analyseCells(study);
+  const primaryCell = analysed.find((a) => a.isPrimary);
+  if (!primaryCell?.intervals) return refuse('SPECIFICATION', 'no primary cell with intervals');
+  const primary = primaryReport(study, { ...primaryCell, intervals: primaryCell.intervals });
+  const cells = analysed.map((a) => cellReport(study, a));
+  const forwardRows = forwardRowsOf(study);
+  const { schedule, g0, tickers, first } = study;
   return {
     studyId: spec.studyId,
     specificationId: spec.specificationId,
     candidate: { id: SWING_STRUCTURE_CANDIDATE_ID, version: SWING_STRUCTURE_CANDIDATE_VERSION },
     members: Object.fromEntries(tickers.map((t) => [t, spec.universe.members[t] ?? null])),
     timeframe: DAILY,
-    exportCutoff,
+    exportCutoff: study.exportCutoff,
     quantileMethod: QUANTILE_METHOD,
     schedule: {
       daily: {
@@ -1749,18 +1863,18 @@ export function evaluateSwingStructureStudy(
       primaryGrid: g0.map(isoDate),
       phaseGridSizes: schedule.phases.map((dates) => dates.length),
     },
-    completeness,
-    A,
+    completeness: completenessOf(study),
+    A: analyseA(study),
     B: { primary, cells },
     C: {
       headlineCell: {
         configuration: spec.primary.configuration,
         horizon: spec.primary.horizonUtcDays,
       },
-      configurations: C,
+      configurations: analyseC(study, forwardRows),
     },
-    exclusions,
-    observations: rows,
+    exclusions: exclusionsOf(study, forwardRows),
+    observations: observationRows(study, forwardRows),
   };
 }
 
