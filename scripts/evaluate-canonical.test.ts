@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   runScannerResearchV2: vi.fn(),
   runScannerResearchCrypto: vi.fn(),
   runModelDiagnosticCrypto: vi.fn(),
+  runSwingStructureEvaluation: vi.fn(),
 }));
 
 // Network edges are stubbed; the evaluation store and the scanner run for real.
@@ -102,6 +103,10 @@ vi.mock('./scannerResearchCrypto', () => ({
 vi.mock('./modelDiagnostic', () => ({
   runModelDiagnosticCrypto: mocks.runModelDiagnosticCrypto,
   diagnosticSummary: () => ({ definitionId: 'diagnostic' }),
+}));
+
+vi.mock('./swingStructureEvaluationRun', () => ({
+  runSwingStructureEvaluation: mocks.runSwingStructureEvaluation,
 }));
 
 const { main } = await import('./evaluate-canonical');
@@ -373,6 +378,39 @@ describe('evaluate-canonical CLI', () => {
     await cli('model-diagnostic-crypto', 'exports/x.json');
     expect(printed()).toMatchObject({ status: 'CONFLICT', reportPath: null });
     expect(process.exitCode).toBe(1);
+  });
+
+  it('runs the frozen swing-structure study only as specified, with no option to change it', async () => {
+    const saved = {
+      status: 'UNCHANGED',
+      resultsPath: '.zerochart-reports/swing-structure-evaluation-99fff59080a3.json',
+      savedSha256: 'a'.repeat(64),
+      contentSha256: 'a'.repeat(64),
+    };
+    mocks.runSwingStructureEvaluation.mockResolvedValue(saved);
+    await cli('swing-structure-evaluation');
+    expect(mocks.runSwingStructureEvaluation).toHaveBeenCalledWith();
+    expect(printed()).toEqual(saved);
+    expect(process.exitCode).toBeUndefined();
+
+    mocks.runSwingStructureEvaluation.mockResolvedValue({ ...saved, status: 'CONFLICT' });
+    await cli('swing-structure-evaluation');
+    expect(printed()).toMatchObject({ status: 'CONFLICT' });
+    expect(process.exitCode).toBe(1);
+
+    mocks.runSwingStructureEvaluation.mockClear();
+    for (const args of [
+      ['exports/other.json'],
+      ['--root', 'elsewhere'],
+      ['--export-sha256', 'f'.repeat(64)],
+      ['--replicates', '100'],
+      ['--output-dir', 'reports'],
+    ]) {
+      await expect(cli('swing-structure-evaluation', ...args)).rejects.toThrow(
+        `swing-structure-evaluation: unknown or incomplete option ${args[0]}`,
+      );
+    }
+    expect(mocks.runSwingStructureEvaluation).not.toHaveBeenCalled();
   });
 
   it('refuses a store outside the workspace', async () => {
