@@ -23,7 +23,10 @@ export type CandleIssueCode =
   | 'DUPLICATE_SESSION'
   | 'MISSING_SESSION'
   | 'ADJUSTMENT_BASIS_MISMATCH'
-  | 'UNADJUSTED_SPLIT';
+  | 'UNADJUSTED_SPLIT'
+  // swing-structure-direction research candidate (scripts/swingStructure.ts)
+  | 'TIMESTAMP_OUT_OF_ORDER'
+  | 'MISSING_INTERVAL';
 
 export interface DailyCandle {
   timestamp: number;

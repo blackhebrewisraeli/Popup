@@ -21,6 +21,22 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-18 · Swing-structure research candidate (`swing-structure-direction` 0.1.0) · Draft PR [#195](https://github.com/blackhebrewisraeli/Popup/pull/195), branch `research/swing-structure-candidate`, from `53249bb`. Offline research only.**
+  - **Changed:**
+    - An exact [candidate contract](MANUAL_SPOT_EXPERIMENTS.md#research-candidate-swing-structure-swing-structure-direction-010), written before the code.
+    - `scripts/swingStructure.ts`, one pure function that implements it. Its inputs are a supplied closed-candle series, a stated timeframe, required left and right bar counts, and a cutoff.
+    - It reports Up, Down or Unclear from the two latest confirmed pivot highs and lows. Each pivot carries its candle time and the time it became knowable.
+    - It names a structural reference: the latest higher low for Up, the latest lower high for Down.
+    - Separately, it reports the first close and the first extreme beyond that reference. A breach changes no direction and is no action.
+    - Two codes join the candle issue union. No existing check changed.
+    - Nothing in the app, worker, Pine, portfolio or experiments calls it. No model, scanner, threshold, frozen contract, migration or request changed.
+  - **Evidence:**
+    - 34 synthetic tests cover the contract's cases, including prefix invariance and immunity to later candles.
+    - Two look-ahead mutations were each caught. Reading pivots from candles after the cutoff fails 6 named tests, including 10 and 11. Dating a pivot at its own candle fails 13, including 7.
+    - The code was restored byte-identical. Typecheck, build, lint and the full suite pass.
+  - **Not done:** no market data read and no parameter chosen. Passing shows causal behavior, not usefulness.
+  - **Next:** owner review. Proposed, not started: freeze an evaluation spec before replaying any data. It would fix the pairs, the period, the left/right grid and the base rate in advance.
+
 - **2026-11-18 · Two trading paths proposal (intraday, weeks to months) · PR [#194](https://github.com/blackhebrewisraeli/Popup/pull/194), branch `docs/two-trading-paths-proposal`, from `82ef781`. Docs only.**
   - **Changed:** [Two trading paths](MANUAL_SPOT_EXPERIMENTS.md#two-trading-paths-proposal-for-owner-review) proposes product behavior for owner review. It covers:
     - a lifecycle table for entry, holding, adding, reducing and exiting;
