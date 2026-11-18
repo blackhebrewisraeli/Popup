@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-18 · Swing-structure research candidate (`swing-structure-direction` 0.1.0) · Draft PR, branch `research/swing-structure-candidate`, from `53249bb`. Offline research only.**
+- **2026-11-18 · Swing-structure research candidate (`swing-structure-direction` 0.1.0) · Draft PR [#195](https://github.com/blackhebrewisraeli/Popup/pull/195), branch `research/swing-structure-candidate`, from `53249bb`. Offline research only.**
   - **Changed:**
     - An exact [candidate contract](MANUAL_SPOT_EXPERIMENTS.md#research-candidate-swing-structure-swing-structure-direction-010), written before the code.
     - `scripts/swingStructure.ts`, one pure function that implements it. Its inputs are a supplied closed-candle series, a stated timeframe, required left and right bar counts, and a cutoff.
