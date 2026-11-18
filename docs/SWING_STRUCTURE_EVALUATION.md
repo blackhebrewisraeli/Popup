@@ -181,6 +181,43 @@ study.
   represent calendar months.
 - **No strategy.** No costs, sizing, exits or execution.
 
-**Next step (not started):** write the analysis module against this contract on synthetic
-fixtures, including look-ahead, frozen-reference and pre-observation-breach cases, and commit it
-before it reads the export. Then run it once, if the owner decides to.
+## Analysis module: verified on synthetic data only
+
+[`scripts/swingStructureEvaluation.ts`](../scripts/swingStructureEvaluation.ts) computes A, B
+and C on candles passed in memory. It calls the candidate as published and refuses on any timing
+invariant, look-ahead difference, pending outcome, empty base rate or non-finite value. Before
+any computation, every study evaluation rehashes the specification object it was given. It refuses
+unless that content hashes to `99fff590…`, the id the object declares. A changed copy that keeps
+the id is refused, and so is a consistently rehashed alternative.
+
+**Synthetic verification.**
+[`swingStructureEvaluation.test.ts`](../scripts/swingStructureEvaluation.test.ts) checks it on
+synthetic candles only:
+
+- window and outcome boundaries, and look-ahead;
+- base rates, weights and ties against hand-worked values;
+- the pinned bootstrap draws;
+- frozen references and breach timing;
+- every classification and unavailable state;
+- one synthetic run through the frozen schedule, serialized deterministically.
+
+Mutations of look-ahead, baseline eligibility, reference replacement and bootstrap recomputation
+each fail those tests.
+
+**The study has not been run.** No export, real candle, market outcome or experiment record has
+been read. Reading the export, verifying its identities and writing the results is a separate
+step, taken only if the owner decides to run it.
+
+**Readings of open details.** Where the text leaves a detail open, the module takes these
+readings. None changes a threshold, a gate or the primary cell.
+
+- **Interpretability counts:** Up and Down observations and dates are those entering M: Up or Down
+  with an available 20-day outcome.
+- **Replicate sums:** sums run in replicate order, a repeated position counting each time.
+- **Quantiles and the phase median:** linear interpolation (type 7), the repository's existing
+  method. For 20 phases it is the mean of the 10th and 11th values.
+- **Valid input (A):** neither `INVALID_INPUT` nor `WINDOW_INCOMPLETE`.
+- **A direction change:** a different direction (Up, Down or Unclear) on the next daily date, both
+  with valid input. Run lengths keep runs that touch either end of the period.
+- **Unavailable interval:** se* is reported only with an interval. Defined replicates and their
+  mean are reported whenever replicates were drawn.
