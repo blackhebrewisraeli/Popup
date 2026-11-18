@@ -59,6 +59,7 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   ├── scannerResearch.ts            Retrospective scanner study (frozen in docs/scanner-research.v1.json)
 │   ├── scannerResearchV2.ts          Its v2: v1's groups against a volatility-matched baseline
 │   ├── scannerResearchReport.ts      Its private HTML report
+│   ├── swingStructure.ts             Research candidate: swing-structure direction; offline, unapproved
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)

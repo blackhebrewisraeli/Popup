@@ -767,6 +767,131 @@ each path. The owner approves it before any screen treats it as more than a ques
 [scanner research](SCANNER_RESEARCH.md) method. A passed evaluation describes the rule on past
 data. It does not establish profit with real money.
 
+### Research candidate: swing structure (`swing-structure-direction` 0.1.0)
+
+This contract makes the first two candidate rules exact. It was written before the code, and
+[`scripts/swingStructure.ts`](../scripts/swingStructure.ts) implements it as one pure offline
+function. The candidate is not approved. It is not connected to the scanner, the finance worker,
+Pine, portfolio decisions, experiments or any screen. Every number in its tests is a test input,
+not a setting. No parameter was tuned, and no historical data was read. No existing experiment
+or record is given a result.
+
+**Inputs.** All four are required. Nothing has a default.
+
+- `candles`: closed candles in the order supplied, in the existing candle shape. Each has an
+  open time `timestamp` and a `closeTime`, both in epoch ms, plus `high`, `low`, `close` and an
+  optional `open`.
+- `timeframe`: `{ label, intervalMs }`, stated by the caller. No bar length is assumed.
+- `config`: `{ leftBars, rightBars }`. Both are positive integers.
+- `cutoff`: epoch ms.
+
+A malformed timeframe, configuration or cutoff throws, and nothing is evaluated.
+
+**Candles used at the cutoff.**
+
+- A candle is used only when `timestamp + intervalMs − 1 ≤ cutoff`. Later candles are never read.
+- Each used candle must close at exactly `timestamp + intervalMs − 1`, the repository's
+  inclusive-end convention. It must pass the existing `validatePrices` checks: finite and
+  positive prices, high ≥ low, open and close inside [low, high].
+- Each used candle must open exactly `intervalMs` after the previous one.
+- A candle whose open time is not a positive integer is reported wherever it sits, because it
+  cannot be placed on either side of the cutoff.
+- Any failure gives status `INVALID_INPUT`, listing the issues: `CLOSE_TIME_CONVENTION_MISMATCH`,
+  a price issue, `DUPLICATE_TIMESTAMP`, `TIMESTAMP_OUT_OF_ORDER`, `MISSING_INTERVAL` or
+  `INVALID_TIMESTAMP`. The observation then has no direction.
+- Nothing is sorted, deduplicated, filled or repaired.
+
+**Pivots.** For the used candle at position i, with L = `leftBars` and R = `rightBars`:
+
+- **Pivot high:** its high is strictly above each of the L previous highs, and at or above each of
+  the R following highs.
+- **Pivot low:** its low is strictly below each of the L previous lows, and at or below each of
+  the R following lows.
+- **Window:** a pivot needs L used candles before it and R after it.
+- **Knowable:** the pivot's `availableAt` is the close time of candle i + R, not of candle i.
+  Until then it is not reported at all. If a right-window candle exceeds it, it never appears.
+- **Equal prices and plateaus:** only the first bar of a run of equal highs can be the pivot
+  high, because an equal high in its left window blocks each later bar. Two separate pivots at
+  the same price are both kept. Lows are the mirror image. Prices are compared exactly, with no
+  tolerance.
+- **Both at once:** a candle that qualifies as both, such as an outside bar, appears in both
+  lists. Each list is ordered by candle time. Highs and lows need not alternate.
+
+**Direction.** H1 and H2 are the two latest confirmed pivot highs, oldest first. L1 and L2 are the
+two latest confirmed pivot lows.
+
+| Condition                     | Status         | Direction | Reason                          |
+| ----------------------------- | -------------- | --------- | ------------------------------- |
+| Fewer than two highs or lows  | `INSUFFICIENT` | Unclear   | `INSUFFICIENT_CONFIRMED_PIVOTS` |
+| H2 = H1, or L2 = L1           | `EVALUATED`    | Unclear   | `EQUAL_PIVOT_LEVEL`             |
+| H2 > H1 and L2 > L1           | `EVALUATED`    | Up        | `HIGHER_HIGH_AND_HIGHER_LOW`    |
+| H2 < H1 and L2 < L1           | `EVALUATED`    | Down      | `LOWER_HIGH_AND_LOWER_LOW`      |
+| Any other combination (mixed) | `EVALUATED`    | Unclear   | `MIXED_STRUCTURE`               |
+
+`establishedAt` is the latest `availableAt` of the four pivots. The state cannot be dated earlier,
+and in particular never to a pivot's own candle.
+
+**Structural reference.** For Up it is L2, the latest higher low. For Down it is H2, the latest
+lower high. Unclear has none. It describes structure. It is not an order, an executable stop, a
+loss cap, or a recommendation to open or close anything.
+
+**Breach.** The search covers the used candles that open after the reference's `availableAt`.
+Two separate facts are reported:
+
+- `firstClose`: the first candle that closes beyond the reference, below it for Up and above it
+  for Down;
+- `firstExtreme`: the first candle whose low (Up) or high (Down) is beyond it.
+
+Equal is not beyond. Each event carries its candle's open time and `knowableAt`, the close time of
+that candle. A move through the level inside a candle becomes known only at that candle's close.
+A breach changes neither the direction nor the reference. Nothing becomes SELL, Short or an exit.
+The direction changes only when new pivots confirm, by the table above.
+
+**Output.**
+
+- Always: `candidateId`, `candidateVersion`, `config`, `timeframe` and `cutoff`.
+- `INVALID_INPUT`: `issues`.
+- Otherwise:
+  - `closedCandles` and `latestCloseTime`;
+  - `direction`, `reason` and `establishedAt`;
+  - `supportingHighs` and `supportingLows`: up to two each, with price, `candleOpenTime` and
+    `availableAt`;
+  - `reference`;
+  - `breach`.
+
+There is no probability, confidence or profitability figure.
+
+**Causality.** Evaluating a longer series at a cutoff gives the same observation as evaluating only
+the candles used at that cutoff. Appending candles never changes an earlier observation.
+
+**Walkthrough (synthetic, daily, L = R = 1).**
+
+| Day | High | Low  | Close | Known at this day's close                                                           |
+| --- | ---- | ---- | ----- | ----------------------------------------------------------------------------------- |
+| D0  | 10   | 8    | 9     |                                                                                     |
+| D1  | 12   | 10   | 11    |                                                                                     |
+| D2  | 11   | 9    | 10    | Pivot high 12 (D1)                                                                  |
+| D3  | 14   | 11   | 12.5  | Pivot low 9 (D2)                                                                    |
+| D4  | 13   | 10   | 11.5  | Pivot high 14 (D3). `INSUFFICIENT`: two highs, one low                              |
+| D5  | 15   | 12   | 13.5  | Pivot low 10 (D4). Up: 14 > 12 and 10 > 9. Reference 10 (D4)                        |
+| D6  | 12   | 10.5 | 11    | Pivot high 15 (D5). Still Up: 15 > 14                                               |
+| D7  | 11   | 9.5  | 10.2  | `firstExtreme`: low 9.5 is below 10. Still Up                                       |
+| D8  | 10.4 | 9    | 9.4   | `firstClose`: close 9.4 is below 10. Still Up                                       |
+| D9  | 10   | 9.2  | 9.6   | Pivot low 9 (D8). Lows 10 → 9, highs 14 → 15: Unclear (`MIXED_STRUCTURE`), not Down |
+
+At D5's close, `establishedAt` is D5's close, never D4, the reference's own candle. From D6 it
+is D6's close, because the four supporting pivots changed.
+
+**Unresolved.** These remain open:
+
+- L, R and the timeframe;
+- whether two pivots of each kind are enough;
+- a close or an extreme as the breach;
+- a price tolerance;
+- calendar bars such as months, and equity sessions, where a weekend reads as `MISSING_INTERVAL`.
+
+Nothing has been evaluated on market data.
+
 ### Destination, order and open decision
 
 The owner stated the following on review (2026-11-18). The proposal stays unapproved.
