@@ -21,6 +21,13 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-18 · Swing-structure evaluation module, synthetic data only · Draft PR [#197](https://github.com/blackhebrewisraeli/Popup/pull/197), branch `research/swing-structure-evaluation-impl`, from `88a5e92`.**
+  - **Changed:** `scripts/swingStructureEvaluation.ts` computes A, B and C of spec `99fff590…` on in-memory candles. It covers the timing invariants, the look-ahead check, outcomes, observation-specific base rates, M and its robustness gates, frozen-reference breaches, the SHA-256 block bootstrap and the classification. It loads only that specification.
+  - **Evidence:** `swingStructureEvaluation.test.ts` (61 tests) uses synthetic candles only. It covers hand-worked weights and ties, the pinned draw vectors, every classification and unavailable state, and a synthetic run through the frozen schedule with deterministic output. Ten mutations of look-ahead, eligibility, reference and bootstrap were each caught. The full suite, typecheck, lint and build pass.
+  - **Readings:** open details are listed in [the spec's page](SWING_STRUCTURE_EVALUATION.md#analysis-module-verified-on-synthetic-data-only). None changes a threshold or gate.
+  - **Not done:** the study was not run. No export, real candle, outcome or experiment record was read. The spec, candidate and `candleValidation.ts` are unchanged.
+  - **Next:** owner review. Then, as a separate task, a real-data runner: read and verify the export, record the blob ids and write once through `saveResearchResults`. It runs only if the owner decides.
+
 - **2026-11-18 · Swing-structure evaluation specification v1 (proposed, revision 2) · PR [#196](https://github.com/blackhebrewisraeli/Popup/pull/196), branch `research/swing-structure-evaluation-spec`, from `9a5ba29`. Docs and one structural test.**
   - **Revision 2 (review):**
     - **Interval:** the AR(1)-inflated t interval is replaced by a moving block bootstrap over whole grid dates. Blocks are 4 and 8 positions, with 10,000 replicates and SHA-256 seeded draws. Base rates and every statistic are recomputed in each replicate.
