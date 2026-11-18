@@ -90,6 +90,7 @@ import { RESEARCH_OUTPUT_DIR, researchSummary, runScannerResearch } from './scan
 import { researchSummaryCrypto, runScannerResearchCrypto } from './scannerResearchCrypto';
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 import { diagnosticSummary, runModelDiagnosticCrypto } from './modelDiagnostic';
+import { runSwingStructureEvaluation } from './swingStructureEvaluationRun';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -123,7 +124,8 @@ const USAGE = `Usage:
   npm run evaluate -- scanner-research EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]
-  npm run evaluate -- model-diagnostic-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]`;
+  npm run evaluate -- model-diagnostic-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]
+  npm run evaluate -- swing-structure-evaluation   (frozen study; reads only the export its spec names)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -606,6 +608,18 @@ const commandHandlers: Record<string, CommandHandler> = {
       (options) => runModelDiagnosticCrypto({ ...options, scanStore }),
       diagnosticSummary,
     );
+  },
+  // docs/swing-structure-evaluation.v1.json: export, output and every identity are frozen there,
+  // so the command takes no options. It writes one git-ignored result and never overwrites it.
+  'swing-structure-evaluation': async (value, args) => {
+    assertOptions(
+      'swing-structure-evaluation',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runSwingStructureEvaluation();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
   },
   replay: (value, args) => replay(requiredValue('replay', value), args),
   observe: (value, args) =>

@@ -205,8 +205,8 @@ Mutations of look-ahead, baseline eligibility, reference replacement and bootstr
 each fail those tests.
 
 **The study has not been run.** No export, real candle, market outcome or experiment record has
-been read. Reading the export, verifying its identities and writing the results is a separate
-step, taken only if the owner decides to run it.
+been read. The runner below reads the export, verifies its identities and writes the results. It
+is run only if the owner decides.
 
 **Readings of open details.** Where the text leaves a detail open, the module takes these
 readings. None changes a threshold, a gate or the primary cell.
@@ -221,3 +221,82 @@ readings. None changes a threshold, a gate or the primary cell.
   with valid input. Run lengths keep runs that touch either end of the period.
 - **Unavailable interval:** se* is reported only with an interval. Defined replicates and their
   mean are reported whenever replicates were drawn.
+
+## Running the study: runner verified on synthetic data only
+
+**Not run.** The runner has run only on synthetic exports in temporary directories. The real
+export, a market outcome or an experiment record has never been read by it.
+
+```bash
+npm run evaluate -- swing-structure-evaluation
+```
+
+The command takes no options. The export path, expected hashes, members, bootstrap settings and
+output path all come from the verified specification. Any argument is refused.
+
+**Prerequisites:**
+
+- The owner has decided to run the study.
+- A checkout of a commit on `main` whose tracked files are unchanged (`git status` shows no
+  modified tracked file).
+- The export at `.zerochart-tradingview/20261111T183825Z.json` on the owner's machine,
+  git-ignored. Nothing is retrieved.
+
+**Order of checks.** [`scripts/swingStructureEvaluationRun.ts`](../scripts/swingStructureEvaluationRun.ts)
+stops at the first failure. Nothing is analysed or written before every check passes.
+
+1. **Specification:** read once. The analysis module's own validator checks that its content hashes
+   to `99fff590…`.
+2. **Candidate code:** the working bytes of `scripts/swingStructure.ts` and
+   `src/lib/candleValidation.ts` must be blobs `c081159b…` and `f2d11061…`. The files themselves
+   are hashed, not their committed versions (`CODE_IDENTITY`).
+3. **Repository:** `HEAD` is recorded, and every tracked file must match it, so the commit names all
+   the code that runs (`REPOSITORY`).
+4. **Export bytes:** read once. The sha256 must be `8d251bbf…` before the bytes are parsed. Every
+   later check and the mapping use these bytes (`DATA_UNAVAILABLE`).
+5. **Export metadata:** the existing `parseExport` check, the `crypto-usdt-v1` universe, and the
+   frozen retrieval start and end.
+6. **Members:** each of the five appears exactly once, under its committed and frozen symbol, with
+   its frozen input hash. A missing, duplicated or changed member stops the study. It never runs
+   on four.
+7. **Mapping:** the existing `tradingViewCryptoCandles`, from 2024-02-16. Whatever it refuses
+   stops the study. Gaps and duplicates inside a member's bars are not repaired. The analysis
+   classifies them per observation, as the specification says.
+8. **Analysis:** `evaluateSwingStructureStudy`, unchanged. A refusal there writes nothing.
+
+**Output:** `.zerochart-reports/swing-structure-evaluation-99fff59080a3.json`, written once
+through `saveResearchResults`:
+
+- **`CREATED`:** the first write.
+- **`UNCHANGED`:** a rerun produced the same bytes.
+- **`CONFLICT`:** the bytes differ. Nothing is overwritten, and the command exits 1.
+
+The file holds `{ manifest, results }`.
+
+- **`manifest`:** the spec id and blob, the commit, the candidate's verified blobs, the blobs of
+  the analysis module and the runner, the export's file name, size, sha256, universe and retrieval
+  times, the mapping, and each member's symbol, input hash and candle count.
+- **`results`:** the analysis output, verbatim.
+
+It holds no wall-clock time and no absolute path. The command prints `savedSha256`, the sha256 of
+the bytes at that path, outside the file. On `CONFLICT` that is the kept file. It also prints
+`contentSha256`, the hash of this run's bytes.
+
+**Readings and limits:**
+
+- **Commit in the result.** The manifest records the commit, so a rerun at another commit reports
+  `CONFLICT`, even if only documents changed. To confirm a reproduction, rerun at the same commit.
+- **Loaded, then checked.** The candidate and its dependency are loaded when the command starts.
+  Their bytes are checked before any analysis, at the paths they were loaded from. A file changed
+  between start and check would not be detected.
+- **Synthetic verification.**
+  [`swingStructureEvaluationRun.test.ts`](../scripts/swingStructureEvaluationRun.test.ts) uses
+  synthetic exports in temporary directories. A synthetic file cannot hash to the frozen
+  identities, so a test-only mock presents the fixture's digests as the frozen ones. The runner
+  has no option, parameter or flag that accepts other identities.
+- **What the tests cover.** Each refusal above, in order. That the export is read once. That the
+  analysis receives exactly the five mapped members. `CREATED`, `UNCHANGED` and `CONFLICT` with
+  the earlier bytes kept. A deterministic manifest. That importing the runner does nothing. One
+  run through the real analysis.
+- **Mutations.** Removing any identity check, re-reading the export, or overwriting a result each
+  fails a test.
