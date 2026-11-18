@@ -21,7 +21,7 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-18 · Swing-structure study runner, synthetic data only · Draft PR, branch `research/swing-structure-evaluation-runner`, from `2c98580`.**
+- **2026-11-18 · Swing-structure study runner, synthetic data only · Draft PR [#198](https://github.com/blackhebrewisraeli/Popup/pull/198), branch `research/swing-structure-evaluation-runner`, from `2c98580`.**
   - **Changed:** `scripts/swingStructureEvaluationRun.ts` and `npm run evaluate -- swing-structure-evaluation` (no options). The runner checks, in order, the spec through the existing validator, the candidate's working-file blobs, a tracked tree matching `HEAD`, and the export's sha256 before parsing. It then checks the metadata and the five members' symbols and input hashes, and maps them with `tradingViewCryptoCandles`. After the unchanged analysis, it writes `{ manifest, results }` once through `saveResearchResults`.
   - **Evidence:** `swingStructureEvaluationRun.test.ts` (30 tests) uses synthetic exports in temporary directories, plus one CLI test. 13 mutations (each identity check removed, an export re-read, two kinds of overwrite, CLI options accepted) were each caught. The full suite, typecheck, lint and build pass.
   - **Readings:** the commit is inside the result, so a rerun at another commit reports `CONFLICT`. Details are in [the spec's page](SWING_STRUCTURE_EVALUATION.md#running-the-study-runner-verified-on-synthetic-data-only).
