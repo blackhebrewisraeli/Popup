@@ -21,6 +21,13 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-18 · Swing-structure study run and reproduced · Docs-only PR, branch `docs/swing-structure-study-result`, from the run commit `17370f1`.**
+  - **Result:** primary L5R5 / 20 days / G0 is **INCONCLUSIVE**. M −0.0138, ℓ = 4 interval −0.0518 to +0.0242, ℓ = 8 −0.0543 to +0.0268. All seven gates FALSE, none UNAVAILABLE. Every interpretability condition holds, and there are no exclusions. Aggregates are in [the spec's page](SWING_STRUCTURE_EVALUATION.md#recorded-run-2026-11-18).
+  - **Evidence:** `npm run evaluate -- swing-structure-evaluation` at `17370f1` on a clean tree: run 1 `CREATED`, run 2 `UNCHANGED`, both `0c66a85f…`. The primary M, U, Dn, hit excess and all 114 terms were recomputed independently from the export's opens and matched to about 1e-15.
+  - **Readings:** the result names `17370f1`, so reproduce there. At this document's commit or later the runner reports `CONFLICT` by design. The export and the result stay local and git-ignored.
+  - **Not done:** no strategy, alert, model, experiment record, account or production service was touched. Nothing is selected from the exploratory cells. The result says nothing about TRXUSDT or the owner's experiment.
+  - **Next:** owner review and merge of the docs PR. Any further study needs its own frozen specification.
+
 - **2026-11-18 · Swing-structure study runner, synthetic data only · Draft PR [#198](https://github.com/blackhebrewisraeli/Popup/pull/198), branch `research/swing-structure-evaluation-runner`, from `2c98580`.**
   - **Changed:** `scripts/swingStructureEvaluationRun.ts` and `npm run evaluate -- swing-structure-evaluation` (no options). The runner checks, in order, the spec through the existing validator, the candidate's working-file blobs, a tracked tree matching `HEAD`, and the export's sha256 before parsing. It then checks the metadata and the five members' symbols and input hashes, and maps them with `tradingViewCryptoCandles`. After the unchanged analysis, it writes `{ manifest, results }` once through `saveResearchResults`.
   - **Evidence:** `swingStructureEvaluationRun.test.ts` (30 tests) uses synthetic exports in temporary directories, plus one CLI test. 13 mutations (each identity check removed, an export re-read, two kinds of overwrite, CLI options accepted) were each caught. The full suite, typecheck, lint and build pass.
