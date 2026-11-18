@@ -7,6 +7,12 @@ own content, as for [Opportunity Radar](opportunity-radar.v1.json). Merging free
 change is a v2 file, never an edit. Approval starts no run and activates no strategy, setting,
 screen or trade. Where this page and the JSON differ, the JSON governs.
 
+**Revision 2, before any run or merge.** It replaces the earlier interval, which corrected only
+lag-1 autocorrelation and treated the base rate as fixed, with a block bootstrap. It narrows the
+base rate so that the signed excess is mean-zero under a stated null, and it makes every
+unavailable case explicit. The JSON's `revisions` lists the changes. The candidate, pairs, dates,
+configurations and horizons are unchanged.
+
 It evaluates the [research candidate](MANUAL_SPOT_EXPERIMENTS.md#research-candidate-swing-structure-swing-structure-direction-010)
 `swing-structure-direction` 0.1.0 exactly as merged in `9a5ba29`. Nothing has been run. No market
 data was read to write it: only the export's sha256 was recomputed, to confirm the file is the
@@ -63,32 +69,88 @@ cutoff** τ_D, the close of D; and a breach's **`knowableAt`**, the close of the
   Change r = ln(endpoint ÷ reference).
 - **Signed outcome:** s × r, with s = +1 for Up and −1 for Down. Down is a directional observation,
   not Short profit: no borrow, funding, fees, slippage or execution.
-- **Base rate:** b_i, the mean of r for pair i over every grid date with an available outcome,
-  whatever the candidate said that day. **Signed excess:** e = s × (r − b_i). Without information
-  its expected value is zero, whatever the pair's drift and the mix of Up and Down. Plain s × r
-  would reward following a drift.
-- **Weighting:** pairs equally within a date, giving E(D). Then M is the mean of E(D) over dates,
-  each date once. Configurations and horizons are never pooled.
-- **Uncertainty:** M ± 2.064 × f × sd(E) ÷ √n. 2.064 is the t quantile at 24 degrees of freedom,
-  and f inflates for positive lag-1 autocorrelation of E. No p-value. 60-day windows overlap, and
-  their intervals say so.
+- **Base rate:** b_i(D,h), the mean of r for pair i over the grid dates with an available outcome,
+  whatever the candidate said that day. It leaves out the earlier windows whose path overlaps the
+  observation's 180-day input: the 9 preceding grid dates at 5 and 20 days, 11 at 60.
+  - **Signed excess:** e = s × (r − b_i(D,h)). Plain s × r would reward following a drift.
+- **Weighting:** pairs equally within a date, giving E(D). M is the mean of E(D) over dates, each
+  date once. Configurations and horizons are never pooled.
+
+### When the signed excess is zero on average
+
+Take as the null that each pair's log price is a random walk with constant drift: independent,
+identically distributed increments, with any co-movement between pairs. The candidate compares
+prices only inside its window. So its state is independent of the observation's own change and of
+every change in its base rate, and E[e | s] = 0 for every observation.
+
+- **Why the earlier windows are left out.** A whole-grid base rate would include the windows that
+  formed the state, since Up follows rises. The signed excess would then be biased against the
+  stated direction even under this null. This is a correction in revision 2.
+- **What the null does not give.**
+  - M is mean-zero only approximately. Which dates and pairs carry weight is itself random.
+  - Subtracting a base rate does not give M a known distribution.
+  - Real crypto increments cluster in volatility, so the null is a reference model. Under the
+    weaker condition-on-the-past null, only later windows keep the exact property.
+  - No classification is an exact test.
+
+### Uncertainty
+
+A moving block bootstrap over grid dates (Künsch 1989; Liu and Singh 1992). Every choice is in
+`uncertainty` in the JSON.
+
+- **Unit:** one grid date with all five pairs together. Pairs are never resampled on their own.
+- **Blocks:** ℓ consecutive grid positions, 20 days apart. Positions without a directional
+  observation, or with missing outcomes, keep their place, so no dates become adjacent that are not
+  adjacent on the grid. Blocks never wrap from the last date to the first.
+- **Block lengths:** ℓ = 4 (80 days), about 38^(1/3), the order Hall, Horowitz and Jing (1995) give
+  for variance estimation. ℓ = 8 (160 days) tests longer dependence. Dependence beyond 140 days, such
+  as one regime across the period, is not captured.
+- **Recomputation:** each of 10,000 replicates re-estimates every base rate and recomputes M from
+  scratch.
+- **Draws:** fixed by a SHA-256 counter with a stated seed and rejection rule. Known-answer vectors
+  are pinned by a test.
+- **Interval:** M ± 1.96 × the replicates' standard deviation, centred on the observed M. Not
+  percentiles: the moving block bootstrap under-samples the grid's ends, which would shift their
+  centre.
+- **Small sample:** with 38 positions the 95% level is nominal. Coverage is neither exact nor shown
+  to be conservative, and the intervals may be too narrow.
+- **60-day cells:** no interval or standard error. Their windows overlap, leaving about 13
+  independent ones (Valkanov 2003).
+- **Unavailable cases:** fewer than 25 dates, more than 1% undefined replicates, or zero or
+  non-finite spread give an UNAVAILABLE interval with its reason.
 
 ## Reading the result
 
 The primary cell is interpretable only with at least 25 dates and at least 30 Up and 30 Down
 observations, each on at least 10 dates. No member may have more than 3 of its 38 grid dates
-invalid, incomplete or without an outcome. Otherwise it is **NOT_INTERPRETABLE**.
+invalid, incomplete or without an outcome. Its ℓ = 4 interval must be available. Otherwise it is
+**NOT_INTERPRETABLE**.
 
-- **INFORMATIVE:** the interval's lower bound > 0; Up and Down components each > 0; M > 0 with any
-  one pair left out; the base-rate-adjusted hit rate > 0; and the median of M over the 20 grid
-  phases > 0.
-- **ADVERSE:** the interval's upper bound < 0.
-- **INCONCLUSIVE:** anything else. It is not evidence of no effect.
+Each gate is TRUE, FALSE or UNAVAILABLE. Only TRUE counts, and a value of exactly zero fails a
+strict condition, so no undefined value can drive a result.
 
-Even INFORMATIVE is a retrospective association on partly examined history. It is not a return or
-proof of profit, and it would justify only a separately frozen prospective check. The other 11
-cells, the components, the phases and every breakdown are exploratory: shown with unadjusted
-intervals and never classified. Nothing is selected from them for this study.
+- **INFORMATIVE:** all seven gates TRUE.
+  1. The ℓ = 4 lower bound > 0.
+  2. The ℓ = 8 lower bound > 0.
+  3. U > 0 (Up component).
+  4. Dn > 0 (Down component).
+  5. M > 0 with each pair left out in turn.
+  6. The base-rate-adjusted hit rate > 0.
+  7. The median of M over all 20 grid phases > 0. Every M_p must be available for this gate.
+- **ADVERSE:** both upper bounds < 0. It claims no use for the reversed states, so it carries no
+  robustness gates.
+- **INCONCLUSIVE:** anything else, with every FALSE or UNAVAILABLE gate named. It is not evidence
+  of no effect.
+
+Gates 3 to 7 are preregistered **robustness gates** within the primary interpretation. They reuse
+M's dates, outcomes and base rates, so they are not independent confirmations. They stop
+INFORMATIVE when the sign rests on one state, one pair, a few large moves or one grid phase.
+
+Even INFORMATIVE is a retrospective association on partly examined history, with nominal interval
+coverage. It is not a return or proof of profit, and it would justify only a separately frozen
+prospective check. The other 7 interval cells, the 60-day cells, the components, the phases and
+every breakdown are exploratory and never classified. Nothing is selected from them for this
+study.
 
 ## Data handling and reproduction
 
@@ -112,6 +174,8 @@ intervals and never classified. Nothing is selected from them for this study.
   The drafter also knows the broad crypto history.
 - **Small and correlated.** 38 non-overlapping dates on five correlated pairs. Survivorship comes
   from a market-cap pick made today. INCONCLUSIVE is a likely, legitimate result.
+- **Approximate inference.** Bootstrap coverage is nominal and unverified at this size, and M is
+  only approximately mean-zero under the null.
 - **Narrow scope.** It says nothing about intraday, equities, weekly or monthly bars, other session
   boundaries or venues. Its fixed interval reads equity weekends as `MISSING_INTERVAL` and cannot
   represent calendar months.

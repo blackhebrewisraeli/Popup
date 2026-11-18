@@ -21,14 +21,21 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-18 · Swing-structure evaluation specification v1 (proposed) · Draft PR, branch `research/swing-structure-evaluation-spec`, from `9a5ba29`. Docs and one structural test.**
+- **2026-11-18 · Swing-structure evaluation specification v1 (proposed, revision 2) · PR [#196](https://github.com/blackhebrewisraeli/Popup/pull/196), branch `research/swing-structure-evaluation-spec`, from `9a5ba29`. Docs and one structural test.**
+  - **Revision 2 (review):**
+    - **Interval:** the AR(1)-inflated t interval is replaced by a moving block bootstrap over whole grid dates. Blocks are 4 and 8 positions, with 10,000 replicates and SHA-256 seeded draws. Base rates and every statistic are recomputed in each replicate.
+    - **60-day cells:** no interval.
+    - **Base rate:** it leaves out the earlier windows inside each observation's input, so the signed excess is mean-zero under a stated random-walk null.
+    - **Gates:** UNAVAILABLE states are explicit, and U, Dn, leave-one-out and phase checks are named robustness gates.
+    - **Unchanged:** the candidate, pairs, dates, configurations and horizons.
+    - **Spec ID:** now `99fff590…`.
   - **Changed:** [`swing-structure-evaluation.v1.json`](swing-structure-evaluation.v1.json), with its [explanation](SWING_STRUCTURE_EVALUATION.md), fixes one retrospective study of `swing-structure-direction` 0.1.0 before any run.
     - **Data and universe:** the existing `crypto-usdt-v1` TradingView export, hash-pinned, on the first five pairs by market cap. TRX is sixth and not a member.
     - **Timeframe and window:** UTC daily bars, a 180-candle window, 759 daily dates for coverage.
     - **Primary analysis:** a 38-date, 20-day grid with non-overlapping outcome windows. L5R5 at 20 days is the primary cell; three more configurations and the 5- and 60-day horizons are exploratory.
     - **Baseline and classification:** the outcome is a signed excess over each pair's own base rate. Interpretability minimums and an INFORMATIVE / INCONCLUSIVE / ADVERSE rule are fixed in advance.
     - **Timing:** pivot time, `availableAt`, `establishedAt`, the cutoff and breach `knowableAt` are kept apart. The reference is frozen at the observation. A breach before the observation is its own category, never a forward outcome.
-    - **Test:** `scripts/swingStructureEvaluationSpec.test.ts` checks the spec's self-hash, its agreement with the candidate, provider and universe constants and with the recorded export hashes, and its date arithmetic.
+    - **Test:** `scripts/swingStructureEvaluationSpec.test.ts` checks the spec's self-hash, its agreement with the candidate, provider and universe constants and with the recorded export hashes, its date arithmetic, the base-rate exclusion counts, the interval-horizon rule, and known-answer bootstrap draws.
   - **Not done:** no run, data read or result. Only the export's sha256 was recomputed, to confirm identity. No candidate, model, UI, worker, Pine or experiment change.
   - **Next:** owner review. Then, not started, the analysis module on synthetic fixtures, committed before it reads the export.
 

@@ -34,8 +34,14 @@ interface EvaluationSpecification {
   configurations: { id: string; leftBars: number; rightBars: number; role: string }[];
   horizons: { utcDays: number[]; primary: number };
   primary: { configuration: string; horizonUtcDays: number };
-  uncertainty: { tQuantile: number };
-  interpretability: { minimumDates: number };
+  baseline: { excludedPrecedingGridSteps: Record<string, number> };
+  uncertainty: {
+    blockLengths: { primary: number; longer: number };
+    replicates: number;
+    random: { seed: string; drawMessage: string; testVectors: Record<string, number[]> };
+    intervalHorizons: number[];
+    descriptiveOnlyHorizons: number[];
+  };
 }
 
 const day = (iso: string) => Date.parse(`${iso}T00:00:00.000Z`);
@@ -131,10 +137,67 @@ describe('swing-structure evaluation specification v1', () => {
     expect(new Set(pairs).size).toBe(pairs.length);
   });
 
-  it('states the Student-t quantile at the degrees of freedom its minimum allows', async () => {
-    const { uncertainty, interpretability } = await specification();
-    // t(0.975, 24) = 2.0639; the interval needs at least minimumDates dates.
-    expect(interpretability.minimumDates - 1).toBe(24);
-    expect(uncertainty.tQuantile).toBe(2.064);
+  it('leaves out exactly the earlier grid windows that overlap an observation input', async () => {
+    const { baseline, window, observations, horizons } = await specification();
+    const { dates, spacingDays } = observations.primaryGrid;
+    const mid = day(dates[19]!);
+    for (const h of horizons.utcDays) {
+      // Eligible earlier window: its path ends (open of D'+1+h) no later than the input's first open.
+      const overlapping = dates
+        .map(day)
+        .filter((d) => d < mid && d + (1 + h) * DAY_MS > mid - (window.closedCandles - 1) * DAY_MS);
+      expect(overlapping.length).toBe(baseline.excludedPrecedingGridSteps[String(h)]);
+      expect(overlapping.length).toBe(Math.ceil((h + window.closedCandles) / spacingDays) - 1);
+    }
+  });
+
+  it('gives intervals only where one member never has overlapping outcome windows', async () => {
+    const { uncertainty, horizons, observations } = await specification();
+    const { intervalHorizons, descriptiveOnlyHorizons } = uncertainty;
+    expect([...intervalHorizons, ...descriptiveOnlyHorizons].sort((a, b) => a - b)).toEqual(
+      horizons.utcDays,
+    );
+    expect(intervalHorizons).toContain(horizons.primary);
+    const spacing = observations.primaryGrid.spacingDays;
+    expect(intervalHorizons.every((h) => h <= spacing)).toBe(true);
+    expect(descriptiveOnlyHorizons.every((h) => h > spacing)).toBe(true);
+  });
+
+  it('reproduces its block-bootstrap draws from the stated seed, message and rejection rule', async () => {
+    const { uncertainty, observations } = await specification();
+    const positions = observations.primaryGrid.count;
+    const { primary, longer } = uncertainty.blockLengths;
+    expect(primary).toBe(Math.ceil(Math.cbrt(positions)));
+    expect(longer).toBeGreaterThan(primary);
+
+    // A synthetic re-derivation of the stated sampler, not the runner: starts of the moving blocks.
+    const starts = (grid: string, ell: number, replicate: number) => {
+      const blocks = positions + 1 - ell;
+      const limit = Math.floor(2 ** 32 / blocks) * blocks;
+      return Array.from({ length: Math.ceil(positions / ell) }, (_, index) => {
+        for (let attempt = 0; ; attempt++) {
+          const message = uncertainty.random.drawMessage
+            .replace('{seed}', uncertainty.random.seed)
+            .replace('{grid}', grid)
+            .replace('{blockLength}', String(ell))
+            .replace('{replicate}', String(replicate))
+            .replace('{draw}', String(index + 1))
+            .replace('{attempt}', String(attempt));
+          const x = createHash('sha256').update(message, 'utf8').digest().readUInt32BE(0);
+          if (x < limit) return x % blocks;
+        }
+      });
+    };
+    const vectors = uncertainty.random.testVectors;
+    expect(Object.keys(vectors).sort()).toEqual(['G0-L4-r1', 'G0-L4-r10000', 'G0-L8-r1']);
+    expect(starts('G0', primary, 1)).toEqual(vectors['G0-L4-r1']);
+    expect(starts('G0', primary, uncertainty.replicates)).toEqual(vectors['G0-L4-r10000']);
+    expect(starts('G0', longer, 1)).toEqual(vectors['G0-L8-r1']);
+    for (const ell of [primary, longer]) {
+      // At least four blocks per replicate, none starting past the last full block: no wrap-around.
+      const drawn = starts('G0', ell, 1);
+      expect(drawn.length).toBeGreaterThanOrEqual(4);
+      expect(Math.max(...drawn)).toBeLessThanOrEqual(positions - ell);
+    }
   });
 });
