@@ -1,0 +1,443 @@
+{
+  "schemaVersion": "1",
+  "studyId": "popup-swing-structure-retrospective-crypto-top5-1d-v1",
+  "specificationId": "99fff59080a3b2f94ee5fdb1310cce7624912d7eafdad3fe8b82c4c3203dece2",
+  "status": "PROPOSED",
+  "statusRule": "Proposed until reviewed and merged to main. Merging freezes this file: from then on any change is a new file (v2) with its own studyId and specificationId, never an edit of v1. Approving or merging it activates no strategy, setting, screen or trade, and starts no run.",
+  "draftedAgainst": {
+    "repositoryCommit": "9a5ba29d1fb2c27c06059075ffc6f0dbd18f36d9",
+    "date": "2026-11-18"
+  },
+  "evidenceType": "retrospective-historical-research",
+  "path": "Weeks to months, the proposed first research path, on UTC daily bars. Not intraday, and not a choice of daily bars for the product.",
+  "questions": {
+    "A": "Coverage and latency: how often is direction evaluable, how often is it Unclear, and how long after the pivots that define it does a state become knowable?",
+    "B": "Directional information: are Up and Down observations followed by price changes in their stated direction, beyond each pair's own unconditional base rate over the same observation dates and horizon?",
+    "C": "Structural reference: after the observation, how often and how soon is the reference fixed at that observation breached, by a close and, separately, by an extreme?"
+  },
+  "primaryQuestion": "B",
+  "interpretation": "Retrospective historical research on one retrieval of provider history. Not a backtest, not simulated trades, fills or positions, not a portfolio return, not prospective evidence, not an untouched holdout and not evidence of profitable or executable trading. A statistical association between a state and later price changes does not establish a trading edge.",
+  "priorKnowledge": [
+    "The export below was used by popup-scanner-retrospective-crypto-usdt-v1 (docs/SCANNER_RESEARCH.md#crypto-crypto-usdt-v1). Its aggregate results about model ranks, Long setups and Risk warnings were seen by the owner and by the drafting agent, including that the equal-weight universe rose on average over that study's dates (2024-09-01 to 2026-11-10). They are not about swing structure, but the period of this study overlaps them. It is not an untouched holdout.",
+    "The drafting agent has general public knowledge of the main crypto price moves before mid-2026. Measuring each pair against its own base rate over the same dates removes each pair's average drift, the most direct way such knowledge could favour a direction rule. It removes nothing else.",
+    "No pivot, direction, reference or breach of this candidate has been computed on any real candle. The universe, window, configurations, horizons and dates follow from the candidate contract, the export coverage already recorded in docs/scanner-research-crypto.v1.json (bar counts, first and last bars, completeness), and the weeks-to-months path. For this specification only the export's sha256 was recomputed, to confirm the file is the recorded one. Its contents were not read.",
+    "The candidate rule comes from common chart-reading practice. Familiarity with crypto charts cannot be removed from the people who chose it.",
+    "TRXUSDT was the subject of the owner's trial recommendation and of the real Manual Spot experiment recorded on 2026-11-14. TRX-USDT is not a member, and that experiment begins after the export's cutoff. Nothing here reads, changes or evaluates it."
+  ],
+  "candidate": {
+    "id": "swing-structure-direction",
+    "version": "0.1.0",
+    "contract": "docs/MANUAL_SPOT_EXPERIMENTS.md#research-candidate-swing-structure-swing-structure-direction-010",
+    "entryPoint": "evaluateSwingStructure in scripts/swingStructure.ts",
+    "sourceCommit": "9a5ba29d1fb2c27c06059075ffc6f0dbd18f36d9",
+    "sourceBlobs": {
+      "scripts/swingStructure.ts": "c081159bf7b5f22aa7ceb87874994199809bb256",
+      "src/lib/candleValidation.ts": "f2d1106167bc1f7d29ab837368d6b0f16ff6ef4f"
+    },
+    "rule": "Called as published. Nothing in it is reimplemented, patched, tuned or given a default. The run refuses unless the two files it executes have exactly these git blob ids."
+  },
+  "data": {
+    "provider": "tradingview-mcp-get_ohlcv",
+    "candlePolicy": "tradingview-crypto-daily-v1",
+    "source": "One existing owner-initiated retrieval: the crypto-usdt-v1 export of popup-scanner-retrospective-crypto-usdt-v1. No new retrieval, provider, Binance candle or reconstructed bar. The same retrieval supplies both observations and outcomes.",
+    "export": {
+      "file": ".zerochart-tradingview/20261111T183825Z.json",
+      "location": "The owner's machine, git-ignored. Never committed or uploaded.",
+      "sha256": "8d251bbfed6089d0a10abf336a53ae895298639fa651888966c672c6227cbba4",
+      "retrievalStartedAt": "2026-11-11T18:38:25.830Z",
+      "retrievalCompletedAt": "2026-11-11T18:39:47.666Z",
+      "cutoff": "2026-11-11T18:38:25.830Z, the retrieval start. Only bars that closed by then are used."
+    },
+    "inputHashes": {
+      "rule": "sha256(stableSerialize(instrument entry)): ticker, symbol, receivedAt and the get_ohlcv response verbatim, as recorded in docs/scanner-research-crypto.v1.json",
+      "BNB-USDT": "db9a8e938251acbb233f4229a19f6c83522af3c4d16cdc373e2c76715cf15f5e",
+      "BTC-USDT": "925f283c3db6db9e7f3efe193f7fc11e878436af881bc7b8c8ab6dd88fe2a2c9",
+      "ETH-USDT": "4742a7d6194dea243d77ff54ba4bd932f6daf85f8b83580cc371f0c0ddd9722c",
+      "SOL-USDT": "01e1379b94f5ddb907f3cb49238c77fe475a4b170ff6e71b768cb76945725828",
+      "XRP-USDT": "98346513759fab879b80b1167d35b563a5c1e10671a10069f6296831fc2c0b92"
+    },
+    "mapping": "tradingViewCryptoCandles (scripts/tradingViewImport.ts) with the member's committed symbol and from = 2024-02-16T00:00:00.000Z. The response must name exactly that symbol, 1D and USDT. A bar's t is its opening time in Unix seconds, and closeTime is set to open + 86,399,999 ms, so the candidate's close-time check cannot fail on this data.",
+    "bars": {
+      "firstBar": "2024-02-16",
+      "lastClosedBar": "2026-11-10",
+      "formingBar": "2026-11-11, never used for any purpose",
+      "documentedCoverage": "Recorded before this specification: each member has 1000 bars opening 2024-02-16 through 2026-11-11, at UTC midnight, with no duplicate or missing day. The run checks this and does not assume it."
+    },
+    "whyThisExport": "It is the only crypto history Popup has retrieved, its identity was recorded before this specification, and one retrieval then supplies every candle. A new 1000-bar retrieval would add days at the end and lose as many at the start. Paging deeper history would leave the start, capture and finish workflow and mix retrievals."
+  },
+  "universe": {
+    "id": "crypto-usdt-v1-first5",
+    "selectionRule": "The first five members of crypto-usdt-v1 in its committed walk order (CRYPTO_TRADINGVIEW_SYMBOLS, frozen in f076326 on 2026-11-11 before any candle was retrieved): TradingView's market-capitalization ranking that day. Five keeps the study small and limited to the largest, most liquid pairs, each with the full documented history.",
+    "members": {
+      "BNB-USDT": "BINANCE:BNBUSDT",
+      "BTC-USDT": "BINANCE:BTCUSDT",
+      "ETH-USDT": "BINANCE:ETHUSDT",
+      "SOL-USDT": "BINANCE:SOLUSDT",
+      "XRP-USDT": "BINANCE:XRPUSDT"
+    },
+    "trx": "TRX-USDT is sixth in that order and is not a member. The rule was written knowing the order. The size was chosen for the reasons above, not to include or exclude any pair. The study gives no evidence about TRXUSDT or the owner's experiment in it.",
+    "fixed": "No member is added, removed or replaced. A member that cannot be read stops the study (missingData.study). The universe never shrinks to the members that can be read.",
+    "survivorship": "Chosen by market capitalization on 2026-11-11, after the period. Pairs that are large today partly because their prices rose are present, and pairs that fell away are absent. Each pair's base rate absorbs its own average drift; nothing removes the selection itself."
+  },
+  "timeframe": {
+    "label": "1D",
+    "intervalMs": 86400000,
+    "session": "UTC day: opens 00:00:00.000, closes 23:59:59.999. Crypto trades every day, so the candidate's fixed interval holds. UTC has no daylight saving, and epoch milliseconds have no leap seconds."
+  },
+  "window": {
+    "closedCandles": 180,
+    "rule": "Each observation passes the candidate exactly the member's mapped candles opening on the 180 UTC days D-179 through D, in export order, and nothing else. A candle opening after D is never passed in; the candidate would also exclude it by its own cutoff rule.",
+    "rationale": "A fixed window gives every observation the same history, so INSUFFICIENT means no two confirmed pivots of each kind in the last 180 days, not a short start of the file. 180 days, about six months, leaves room for two confirmed highs and lows at the slowest configuration (a pivot spans 21 bars at L = R = 10), and matches the far end of the weeks-to-months path. Chosen before any pivot was computed."
+  },
+  "observations": {
+    "cutoff": "tau_D = D 00:00:00.000 UTC + 86,399,999 ms, the close of D's candle. The candidate uses a candle only if its open + 86,399,999 ms <= tau_D, so D's candle is the latest one used.",
+    "unit": "One member, one UTC date D, one configuration: the candidate's full output at tau_D.",
+    "daily": {
+      "first": "2024-08-13",
+      "last": "2026-09-10",
+      "count": 759,
+      "rule": "first = first bar + 179 days, so every window is complete; last = last closed bar - 61 days, so every 60-day endpoint bar has closed.",
+      "use": "Question A only, descriptively."
+    },
+    "primaryGrid": {
+      "id": "G0",
+      "spacingDays": 20,
+      "rule": "D_k = 2024-08-13 + 20k days, k = 0..37.",
+      "count": 38,
+      "dates": [
+        "2024-08-13",
+        "2024-09-02",
+        "2024-09-22",
+        "2024-10-12",
+        "2024-11-01",
+        "2024-11-21",
+        "2024-12-11",
+        "2024-12-31",
+        "2025-01-20",
+        "2025-02-09",
+        "2025-03-01",
+        "2025-03-21",
+        "2025-04-10",
+        "2025-04-30",
+        "2025-05-20",
+        "2025-06-09",
+        "2025-06-29",
+        "2025-07-19",
+        "2025-08-08",
+        "2025-08-28",
+        "2025-09-17",
+        "2025-10-07",
+        "2025-10-27",
+        "2025-11-16",
+        "2025-12-06",
+        "2025-12-26",
+        "2026-01-15",
+        "2026-02-04",
+        "2026-02-24",
+        "2026-03-16",
+        "2026-04-05",
+        "2026-04-25",
+        "2026-05-15",
+        "2026-06-04",
+        "2026-06-24",
+        "2026-07-14",
+        "2026-08-03",
+        "2026-08-23"
+      ],
+      "use": "Questions B and C."
+    },
+    "phaseGrids": {
+      "rule": "G_p = every date 2024-08-13 + p + 20k days up to 2026-09-10, for p = 0..19. G_0 is the primary grid. Phases 0 to 18 have 38 dates, phase 19 has 37.",
+      "count": 20,
+      "use": "Phase sensitivity of question B only."
+    },
+    "requiredHistory": "Warm-up: the 179 daily bars before D. Follow-up: the 61 bars D+1 through D+61. Together they need every bar from 2024-02-16 through 2026-11-10, exactly the export's closed bars."
+  },
+  "configurations": [
+    { "id": "L5R5", "leftBars": 5, "rightBars": 5, "role": "primary" },
+    { "id": "L3R3", "leftBars": 3, "rightBars": 3, "role": "exploratory" },
+    { "id": "L10R10", "leftBars": 10, "rightBars": 10, "role": "exploratory" },
+    { "id": "L5R2", "leftBars": 5, "rightBars": 2, "role": "exploratory" }
+  ],
+  "configurationRationale": "At L5R5 a pivot is the extreme of an 11-day span, about a week and a half, so two highs and two lows usually span several weeks: the weeks-to-months scale. Confirmation lags 5 days, a quarter of the primary horizon. L3R3 and L10R10 bracket it at about half and double the span. L5R2 keeps the left window and shortens the right one, to show what a shorter confirmation lag changes. None was run on market data, and none becomes a product setting.",
+  "horizons": {
+    "utcDays": [5, 20, 60],
+    "primary": 20,
+    "rationale": "20 UTC days, about three weeks, is the near end of weeks to months and the horizon of Popup's earlier crypto studies. 60 covers months and 5 the short end; both are exploratory."
+  },
+  "primary": {
+    "question": "B",
+    "configuration": "L5R5",
+    "horizonUtcDays": 20,
+    "grid": "G0",
+    "statistic": "M (baseline.M)",
+    "comparison": "The signed excess of Up and Down observations over each pair's unconditional base rate, each grid date weighted once."
+  },
+  "timing": {
+    "times": {
+      "pivotCandleTime": "pivot.candleOpenTime: the open of the pivot's own candle. That candle closes at candleOpenTime + 86,399,999 ms.",
+      "pivotAvailableAt": "pivot.availableAt: the close of the candle R bars later, R days after the pivot candle's close. Before then the pivot does not exist.",
+      "establishedAt": "The latest availableAt of the four supporting pivots: when the current state became knowable.",
+      "observationCutoff": "tau_D.",
+      "breachKnowableAt": "The close of the candle that breached: the earliest moment that breach is known."
+    },
+    "invariants": [
+      "pivot.availableAt = pivot.candleOpenTime + (R + 1) x 86,400,000 - 1",
+      "every supporting pivot's availableAt <= establishedAt <= tau_D",
+      "reference.availableAt <= establishedAt",
+      "a breach reported at tau_D has reference.availableAt < knowableAt <= tau_D",
+      "a forward breach candle opens at or after tau_D + 1 ms, D+1 00:00 UTC",
+      "the outcome reference bar opens at tau_D + 1 ms"
+    ],
+    "invariantRule": "The run checks every invariant on every observation and refuses on any violation. A violation is a defect, never an exclusion.",
+    "lookAheadCheck": "For every primary-grid observation, the run also evaluates the candidate with every mapped candle opening after D appended to the window. The two outputs must be identical, or the run refuses.",
+    "frozenReference": "The reference is the candidate's reference at tau_D: kind, price, candleOpenTime and availableAt. Behaviour after the observation is measured against that price only. A later observation has its own reference. No reference is replaced by a later pivot, re-dated or carried to another observation.",
+    "noEntry": "An observation is not an entry. No entry, exit, fill or position is simulated, so nothing in this study is post-entry.",
+    "preObservationBreach": {
+      "source": "The candidate's breach at tau_D: firstClose and firstExtreme, found on window candles opening after reference.availableAt.",
+      "categories": {
+        "NONE": "No breach of that kind by tau_D.",
+        "BEFORE_ESTABLISHMENT": "knowableAt <= establishedAt: the reference was already breached when the current state became knowable.",
+        "AFTER_ESTABLISHMENT": "establishedAt < knowableAt <= tau_D: breached after the state was knowable, before the observation."
+      },
+      "rule": "Classified separately for the close and the extreme. Both breached categories are pre-observation facts. They are never a forward breach or a post-observation outcome, never reset and never dropped: C reports them as their own groups. Their observations stay in B, where a breach changes no direction, and B is also broken down by the close category."
+    }
+  },
+  "outcomes": {
+    "notation": "O_i(d), H_i(d), L_i(d), C_i(d): open, high, low and close of member i's bar opening on UTC day d. s = +1 for Up, -1 for Down. ln is the natural logarithm.",
+    "referencePrice": "O_i(D+1), the open of the first bar opening after tau_D, 1 ms later. D's close, which the observation used, is never the reference. A reference price, not a fill.",
+    "endpointPrice": "O_i(D+1+h).",
+    "change": "r_i(D,h) = ln O_i(D+1+h) - ln O_i(D+1). Price only, quoted in USDT.",
+    "signedOutcome": "s x r_i(D,h), positive when price moved the stated way. For Down it is a directional observation, not Short profit: there is no borrow, funding, fee, slippage or execution, and Spot has no short side.",
+    "available": "Both bars exist exactly once in the export, pass validatePrices, and closed by the export cutoff.",
+    "ties": "r = 0 counts as neither a rise nor a fall in any rate, and stays in every denominator. In a breach, equal is not beyond. Every comparison with zero in the classification is strict."
+  },
+  "baseline": {
+    "eligibleBaselineDates": "For an observation of member i at D and horizon h, B(D,h) = the dates D' of the grid being analysed on which member i has an AVAILABLE outcome and whose outcome path cannot overlap the candidate's input for D: D' >= D, so the path starts after tau_D; or D' <= D - h - 180, so the path ends, at the open of D'+1+h, no later than the open of D-179, where the input window starts. D itself is always eligible.",
+    "excludedPrecedingGridSteps": { "5": 9, "20": 9, "60": 11 },
+    "excludedRule": "On a 20-day grid the m nearest earlier grid dates are left out, m = ceil((h + 180) / 20) - 1: 9 for h = 5 and 20, and 11 for h = 60.",
+    "baseRate": "b_i(D,h) = the mean of r_i(D',h) over B(D,h), whatever the candidate's status on D'. It is the pair's unconditional mean h-day change over the same grid, leaving out only the earlier windows inside the observation's input. B(D,h) is never empty when the observation's own outcome is AVAILABLE, because D is in it. Base rates do not depend on the configuration.",
+    "rateBaseRates": "pi+_i(D,h) and pi-_i(D,h): the shares of B(D,h) with r > 0 and with r < 0.",
+    "signedExcess": "e_i(D) = s x (r_i(D,h) - b_i(D,h)) for each Up or Down observation with an AVAILABLE outcome. A raw s x r would reward following a drift; the base rate removes the pair's own average change. When its expectation is zero is stated, with its limits, in nullHypothesis.",
+    "dateValue": "E(D) = the mean of e_i(D) over K_D, the members that are Up or Down at D with an AVAILABLE outcome, each weighted equally. Undefined when K_D is empty.",
+    "M": "M = the mean of E(D) over G*, the grid dates on which E(D) is defined; n = |G*|. Each date counts once, however many members it has.",
+    "components": "U = the mean, over grid dates with at least one Up observation with an AVAILABLE outcome, of that date's mean of (r - b_i(D,h)) over those Up members. Dn = the same over Down members with (b_i(D,h) - r). Each is positive when its state points the right way.",
+    "hitExcess": "a_i(D) = 1[s x r > 0] minus pi+_i(D,h) for Up or pi-_i(D,h) for Down. Averaged per date over K_D, then over G*.",
+    "leaveOneMemberOut": "M(-j) = M recomputed with member j removed from every K_D, for each of the five members. Dates left empty drop out. The other members' base rates are unchanged.",
+    "phaseSensitivity": "M_p = M computed on G_p, with B(D,h) taken on G_p, for p = 0..19.",
+    "denominators": "Every statistic reports its count of dates and of observations. INVALID_INPUT, WINDOW_INCOMPLETE, INSUFFICIENT and Unclear observations enter only the base rates (through their outcomes) and coverage, never K_D."
+  },
+  "nullHypothesis": {
+    "H0": "For each member, log-price increments are independent over time and identically distributed per unit of time, including within bars: a random walk with a constant drift mu_i per day. Members may move together at the same time in any way. Which bars are missing or invalid does not depend on prices.",
+    "consequence": "The candidate compares prices inside its window with each other, so its output at tau_D depends only on the price path from the open of D-179 to tau_D, relative to its own levels. Under H0 the observation's own change r_i(D,h) and every change in B(D,h) depend only on increments outside that path, so they are independent of s, and each has expectation h x mu_i. Hence E[e_i(D) | s] = 0 for every observation, whatever the drift and the mix of Up and Down.",
+    "whyEarlierWindowsAreLeftOut": "A mean over the whole grid would include the earlier windows inside the input, which helped form s: by construction, Up follows rises. Then E[s x b] differs from E[s] x h x mu_i even under H0, and the signed excess carries a bias of order one over the number of grid dates, against the stated direction.",
+    "limits": [
+      "M is not exactly mean-zero under H0. Its weights (which members are directional on which dates, and n) are random and depend on states at other dates, which depend on earlier outcomes. That bias is of order 1/n; its size and sign are not derived here.",
+      "Subtracting a base rate centres the changes; it does not give M a known distribution. Nothing here makes M normal or symmetric under H0. The interval approximates M's sampling variability under the data's own dependence; it is not H0's null distribution.",
+      "H0 is a reference model, not a description of crypto prices, which show volatility clustering. Under the weaker null that each forward change has conditional mean h x mu_i given everything known at its start, the terms of B(D,h) with D' >= D keep that expectation, but those with D' <= D - h - 180 need not, because s is formed after them.",
+      "No classification below is an exact test of H0 at a stated level."
+    ]
+  },
+  "uncertainty": {
+    "method": "Moving block bootstrap over grid dates (Künsch 1989; Liu and Singh 1992), with every statistic of the cell recomputed in each replicate.",
+    "unit": "A grid position k = 0..37: the date D_k = 2024-08-13 + 20k days, with the full record of all five members on that date (statuses, directions, outcomes). Members are never resampled separately, so same-date co-movement stays intact.",
+    "spacing": "Positions are 20 calendar days apart, and a block is ell consecutive positions spanning 20 x ell days. Positions are never dropped, merged or renumbered: a position with no directional observation, or with missing outcomes, keeps its place in every block that contains it, so no two dates become adjacent that are not adjacent on the grid.",
+    "blocks": "For block length ell there are N = 39 - ell blocks, starting at positions 0 to 38 - ell. A replicate draws ceil(38 / ell) starts independently and uniformly, concatenates those blocks in draw order and keeps the first 38 positions. Blocks never wrap from the last position to the first.",
+    "blockLengths": { "primary": 4, "longer": 8 },
+    "blockLengthRationale": "ell = 4 (80 days) is 38^(1/3), about 3.4, rounded up: block lengths of order n^(1/3) are those Hall, Horowitz and Jing (1995) give for estimating a variance. ell = 8 (160 days) tests dependence across most of the 180-day input window and still leaves 5 blocks per replicate. Both are fixed before outcomes are read. No data-driven block length is used.",
+    "dependenceTreatment": "Within a block, dependence between positions up to ell - 1 steps apart is reproduced; at block joins it is cut. Under H0 the terms of M are close to uncorrelated across grid dates, because each outcome window lies after everything that formed earlier terms. Dependence comes instead from predictable returns, volatility clustering and shared base rates. Dependence longer than 7 steps (140 days), such as a single market regime across the period, is captured by neither block length.",
+    "datesWithoutDirectionalObservations": "Resampled like any other position. They contribute their outcomes to base rates and no E value, so n* varies by replicate.",
+    "recomputation": "In each replicate every quantity of the cell is recomputed from the replicate's positions, counted with multiplicity: each b_i(D,h) and pi+-_i(D,h) over the replicate positions whose original dates are in B(D,h), each E, G*, n* and M*. A repeated position is a separate date of the replicate. Eligibility always uses original calendar dates.",
+    "replicates": 10000,
+    "random": {
+      "seed": "popup-swing-structure-v1-mbb",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|t={attempt}",
+      "draw": "For replicate r = 1..10000 and draw j = 1..ceil(38 / ell), starting at attempt t = 0: x = the first 4 bytes, read as a big-endian unsigned integer, of SHA-256 of the UTF-8 drawMessage with grid = G0. Accept when x < floor(2^32 / N) x N, and the block start is x mod N. Otherwise repeat with t + 1. This avoids modulo bias and needs only node:crypto.",
+      "commonDraws": "The same starts serve every configuration and horizon, so cells are compared on identical resamples.",
+      "testVectors": {
+        "G0-L4-r1": [5, 10, 22, 20, 24, 16, 5, 21, 26, 26],
+        "G0-L4-r10000": [22, 4, 23, 33, 15, 7, 14, 26, 10, 31],
+        "G0-L8-r1": [18, 4, 7, 27, 5]
+      }
+    },
+    "interval": "M +/- 1.96 x se*, where se* is the standard deviation (denominator R_defined - 1) of M* over the defined replicates. The centre is always M from the observed data, never the replicates' mean. Reported for both block lengths.",
+    "zQuantile": 1.96,
+    "intervalChoice": "A normal interval with a bootstrap standard error rather than percentiles: the moving block bootstrap under-samples the first and last ell - 1 positions, which would shift a percentile interval's centre. The replicates' mean is reported as a diagnostic of that shift.",
+    "intervalHorizons": [5, 20],
+    "descriptiveOnlyHorizons": [60],
+    "overlapRule": "An interval is computed only where one member's outcome windows on the grid never overlap (h <= 20). At h = 60 consecutive windows share days and about 13 non-overlapping windows remain; inference from overlapping long-horizon windows is unreliable in samples this small (Valkanov 2003). Those cells report M, U, Dn, the hit excess, counts and the quartiles of E(D), with no interval and no standard error.",
+    "availability": [
+      "No interval when the cell's n is below interpretability.minimumDates (25).",
+      "No interval when more than 100 of the 10000 replicates (1%) have no M* because G* is empty. Otherwise se* uses the defined replicates, and their count is reported.",
+      "No interval when fewer than 2 replicates are defined, or se* is 0 or not finite.",
+      "An unavailable interval is reported as UNAVAILABLE with its reason and is never replaced by another method."
+    ],
+    "assumptions": "The grid series is treated as weakly dependent and roughly stationary, so that blocks of 4 or 8 positions are representative and M is close to normal. Neither is verified, and with 38 positions neither can be.",
+    "smallSample": "With 38 positions a replicate holds 10 blocks of 4, or 5 of 8. Block bootstrap variance estimates are biased and variable at this size, heavy-tailed crypto changes slow the approach to normality, and the grid's ends are under-weighted. The 95% level is nominal. No exact or conservative coverage is claimed, and the intervals may be too narrow.",
+    "noPValue": "No p-value. An interval is the range of values compatible with the data under these approximations, not the probability that the candidate works.",
+    "sources": [
+      "Künsch, H. R. (1989). The jackknife and the bootstrap for general stationary observations. Annals of Statistics 17(3), 1217-1241.",
+      "Liu, R. Y. and Singh, K. (1992). Moving blocks jackknife and bootstrap capture weak dependence. In R. LePage and L. Billard (eds.), Exploring the Limits of Bootstrap, 225-248. Wiley.",
+      "Hall, P., Horowitz, J. L. and Jing, B.-Y. (1995). On blocking rules for the bootstrap with dependent data. Biometrika 82(3), 561-574.",
+      "Lahiri, S. N. (2003). Resampling Methods for Dependent Data. Springer.",
+      "Politis, D. N. and Romano, J. P. (1992). A circular block-resampling procedure for stationary data. In Exploring the Limits of Bootstrap, 263-270. Wiley. Not used: its wrap-around would make the last and first grid dates adjacent inside a block.",
+      "Davison, A. C. and Hinkley, D. V. (1997). Bootstrap Methods and their Application. Cambridge University Press, chapters 5 and 8.",
+      "Valkanov, R. (2003). Long-horizon regressions: theoretical results and applications. Journal of Financial Economics 68(2), 201-232.",
+      "NIST FIPS 180-4 (2015). Secure Hash Standard (SHA-256)."
+    ]
+  },
+  "degenerateCases": {
+    "rule": "Every statistic and gate is either a finite number or UNAVAILABLE with a stated reason. UNAVAILABLE never satisfies a condition and is never compared as a number. A non-finite value anywhere in a computation is a defect, and the run refuses.",
+    "emptyBaseline": "Cannot occur for an observation with an AVAILABLE outcome, because D is in B(D,h). If it does, the run refuses.",
+    "emptyDate": "K_D empty: E(D) is undefined and D is not in G*.",
+    "noDirectionalDates": "G* empty: M, the hit excess and both intervals are UNAVAILABLE (NO_DIRECTIONAL_DATES).",
+    "tooFewDates": "n < 25: no interval (TOO_FEW_DATES), and the primary cell is NOT_INTERPRETABLE.",
+    "undefinedReplicates": "More than 100 replicates without M*: interval UNAVAILABLE (TOO_MANY_UNDEFINED_REPLICATES).",
+    "zeroVariance": "Fewer than 2 defined replicates, or se* = 0: interval UNAVAILABLE (ZERO_VARIANCE).",
+    "noUpOrDown": "No date with an Up observation: U is UNAVAILABLE (NO_UP); likewise Dn (NO_DOWN). Too few Up or Down observations under interpretability make the primary cell NOT_INTERPRETABLE.",
+    "leaveOneMemberOut": "M(-j) with no date left: UNAVAILABLE (NO_DATES_WITHOUT_MEMBER).",
+    "phase": "M_p with G*_p empty: UNAVAILABLE. The median of M_0 to M_19 is computed only when all 20 are available; otherwise the phase gate is UNAVAILABLE (PHASE_UNAVAILABLE).",
+    "exactZero": "A value of exactly 0 fails every strict > 0 or < 0 condition."
+  },
+  "dependence": {
+    "overlap": "On the primary grid the spacing equals the primary horizon, so one member's 20-day and 5-day outcome windows never share a day: each ends at the next grid date's reference open. 60-day windows share days across three consecutive grid dates, so the 60-day cells carry no interval (uncertainty.overlapRule). The daily dates of A overlap completely and carry no interval.",
+    "acrossPairs": "Crypto pairs move together. E(D) averages within the date, and the bootstrap resamples whole dates, so members are never counted as independent trials.",
+    "serial": "Handled by the block bootstrap within its stated reach (uncertainty.dependenceTreatment).",
+    "persistence": "A state and its reference often persist across grid dates. C reports the number of distinct references (member, kind, candleOpenTime) beside the count of observations. A persistent state is not evidence of usefulness."
+  },
+  "weighting": {
+    "members": "Equal within each date in E(D). A per-member breakdown weights that member's dates equally.",
+    "dates": "Each date in G* counts once in M, U, Dn and the hit excess.",
+    "configurations": "Never pooled or averaged. Each configuration is its own analysis, with the same base rates.",
+    "horizons": "Never pooled.",
+    "coverage": "A counts each member-date once per configuration, pooled and per member.",
+    "reference": "C counts each Up or Down observation once, pooled and per member, and reports distinct references."
+  },
+  "analyses": {
+    "A": {
+      "dates": "The 759 daily dates for every member and configuration (3,795 member-dates each), and the primary grid.",
+      "statuses": "Shares of INVALID_INPUT, WINDOW_INCOMPLETE, INSUFFICIENT, Unclear (EQUAL_PIVOT_LEVEL), Unclear (MIXED_STRUCTURE), Up and Down, over all member-dates.",
+      "definitions": "Evaluable: status EVALUATED, that is Up, Down, or Unclear by EQUAL_PIVOT_LEVEL or MIXED_STRUCTURE. Directional: Up or Down. Unclear: INSUFFICIENT plus EVALUATED Unclear. Each share is reported over all member-dates and over member-dates with valid input.",
+      "latency": [
+        "Confirmation lag: availableAt minus the pivot candle's close, R days for every pivot. Checked, not estimated.",
+        "Establishment delay: establishedAt minus the close of the reference pivot's candle, in days and at least R: how long after the higher low (Up) or lower high (Down) the state became knowable.",
+        "State age: tau_D minus establishedAt, in days.",
+        "Reference age: tau_D minus the close of the reference pivot's candle, in days."
+      ],
+      "latencySummary": "For Up and Down separately: count, minimum, quartiles, median and maximum, in whole days. All these times are candle closes on the UTC day grid.",
+      "transitions": "On daily dates: direction changes per member per 365 days, and the quartiles of consecutive-day Up and Down run lengths. Descriptive only.",
+      "classification": "None. A is reported in full and not classified."
+    },
+    "B": {
+      "primaryCell": "L5R5, h = 20, G0: M with its ell = 4 and ell = 8 intervals, U, Dn, the hit excess, M(-j) for each member, all twenty M_p and their median, and the classification.",
+      "exploratoryCells": "The other 7 cells at h = 5 and 20: M, both intervals, U, Dn and the hit excess. The 4 cells at h = 60: M, U, Dn, the hit excess, counts and the quartiles of E(D), with no interval. All labelled exploratory and not classified.",
+      "breakdowns": "Per member; by calendar half-year of D (2024H2 to 2026H2), with the count of grid dates in each; and by the pre-observation close category. Descriptive and not classified."
+    },
+    "C": {
+      "observations": "Up and Down observations on G0, for every configuration.",
+      "atObservation": "The pre-observation close and extreme categories; whether C_i(D) is beyond the reference; and the signed distance ln(C_i(D) / price) for Up or ln(price / C_i(D)) for Down, negative when beyond.",
+      "forward": "For h = 5, 20 and 60, over bars opening D+1 through D+h: firstForwardClose, the first bar whose close is beyond the frozen price (below it for Up, above it for Down), and firstForwardExtreme, the first bar whose low (Up) or high (Down) is beyond it. The predicate is the candidate's: strict, so equal is not beyond. Reported as breached by h, and days to the first breach (1 to h).",
+      "complete": "The forward scan needs every bar D+1 through D+h present once and valid. Otherwise that horizon is INCOMPLETE for that observation: counted, and never read as no breach.",
+      "groups": "Forward results are reported separately for each pre-observation category of the same kind, close with close and extreme with extreme, never pooled across categories.",
+      "summary": "Count, share breached by h and quartiles of days to the first breach, per member and pooled, with the number of distinct references.",
+      "headlineCell": "L5R5 at h = 20. Every other cell is exploratory.",
+      "baseline": "None. C describes the reference. It does not test an invalidation rule or a stop and cannot show that either is useful.",
+      "classification": "None."
+    }
+  },
+  "missingData": {
+    "substitution": "None: no forward-fill, interpolation, repair, sorting, deduplication, nearby bar, other retrieval, other provider or Binance candle.",
+    "study": "DATA_UNAVAILABLE stops the study: the export is absent or its sha256 differs; a member's entry is absent or its input hash differs; or the mapping refuses an entry (wrong symbol, interval or currency, a non-numeric bar or a malformed time). The study is never run on fewer members, a shorter period or another retrieval. That would be a new specification.",
+    "observation": {
+      "INVALID_INPUT": "The candidate's own status: a defect among the window's candles, such as a duplicate, an out-of-order or missing day, or a price issue. Every observation whose window contains the defect has it, up to 180 consecutive daily dates per defect.",
+      "WINDOW_INCOMPLETE": "Assigned by the run when the candidate returns no INVALID_INPUT but closedCandles is not 180 or latestCloseTime is not tau_D: the window's first or last day is absent. The observation has no direction."
+    },
+    "outcome": {
+      "MISSING": "No bar opens on the reference or endpoint day.",
+      "INVALID": "That bar fails validatePrices or appears more than once.",
+      "PENDING": "Cannot occur: every endpoint bar closes by 2026-11-10. If it does, the run refuses."
+    },
+    "forwardBreach": "INCOMPLETE, as in analyses.C.",
+    "reporting": "Every status is counted per member, configuration, date set and horizon. The local results list each INVALID_INPUT, WINDOW_INCOMPLETE, MISSING, INVALID and INCOMPLETE case with its member, date and issue codes."
+  },
+  "interpretability": {
+    "rule": "The primary cell is classified only if every condition holds. Otherwise it is NOT_INTERPRETABLE and the failing conditions are named. Every figure is reported either way.",
+    "minimumDates": 25,
+    "minimumUpObservations": 30,
+    "minimumUpDates": 10,
+    "minimumDownObservations": 30,
+    "minimumDownDates": 10,
+    "maximumInvalidOrIncompleteObservationsPerMember": 3,
+    "maximumUnavailableOutcomesPerMember": 3,
+    "scope": "Counts are on G0 under L5R5 at h = 20. The two maxima are per member, out of its 38 grid dates.",
+    "rationale": "25 of the 38 grid dates is a coverage floor: at least two thirds of the period must contribute a value of E. It is not a power calculation. 30 observations on 10 dates per state is the repository's existing too-few-to-read floor, applied to Up and Down because B asks about both. More than 3 missing grid dates for one member would let missing data, not the candidate, shape that member's share. The documented export has none, so exceeding it points to a data problem worth stopping for."
+  },
+  "classification": {
+    "gates": {
+      "1": "The lower bound of the ell = 4 interval > 0.",
+      "2": "The lower bound of the ell = 8 interval > 0.",
+      "3": "U > 0.",
+      "4": "Dn > 0.",
+      "5": "M(-j) > 0 for each of the five members.",
+      "6": "The hit excess > 0.",
+      "7": "The median of M_0 to M_19 > 0."
+    },
+    "gateValues": "Each gate is TRUE, FALSE, or UNAVAILABLE with the reason from degenerateCases. Only TRUE satisfies it.",
+    "INFORMATIVE": "Interpretable, and gates 1 to 7 are all TRUE.",
+    "ADVERSE": "Interpretable, and the upper bounds of both the ell = 4 and the ell = 8 intervals are < 0: Up and Down pointed against the later move, relative to the base rate.",
+    "INCONCLUSIVE": "Interpretable, and neither INFORMATIVE nor ADVERSE. The report names every gate that is FALSE or UNAVAILABLE.",
+    "NOT_INTERPRETABLE": "At least one interpretability condition fails, or the primary cell's ell = 4 interval is UNAVAILABLE. The reasons are named.",
+    "robustnessGates": "Gates 3 to 7 are preregistered robustness gates inside the primary interpretation, not independent confirmations. They reuse the dates, outcomes and base rates of M, so passing them adds no separate evidence. They only stop INFORMATIVE when M's sign rests on one state, one member, a few large moves that the hit excess does not share, or one grid phase. Gate 2 asks gate 1's question under longer dependence.",
+    "asymmetry": "ADVERSE uses only the two intervals. It says that the primary cell's states pointed against the later move. It makes no claim that reversed states would be useful, so it carries no robustness gates.",
+    "meaning": {
+      "INFORMATIVE": "On this history only, L5R5 Up and Down states were followed by 20-day changes in their stated direction beyond each pair's base rate, by more than either interval attributes to sampling variability under its approximations, and not because of one state, one pair or one grid phase. This is retrospective association on history that was partly examined before, with nominal, unverified interval coverage. It is not a trading return or proof of profitability. It would justify only a separately frozen prospective check, never activation.",
+      "INCONCLUSIVE": "The data neither support nor rule out an effect within the interval's range. It is not evidence of no effect.",
+      "ADVERSE": "The states pointed against the subsequent move on this history; the candidate as configured would have misled.",
+      "NOT_INTERPRETABLE": "Too little directional evidence, or too much missing data, to read B."
+    },
+    "prominence": "Each classification is reported with the same prominence. A and C are reported in full whatever B shows.",
+    "noPostHocThresholds": "Every threshold and condition above is fixed here. None is chosen, moved or added after any result is seen."
+  },
+  "multipleComparisons": "Only the primary cell (L5R5, 20 days, G0) is classified. The other 7 interval cells (every configuration at h = 5 and 20), the 4 descriptive cells at h = 60, U, Dn, the phase grids and every breakdown are exploratory: labelled, never classified, and their intervals are unadjusted. Among 8 interval cells, the chance that at least one excludes zero by chance alone would be about one in three if they were independent; they are not, since they share dates and outcomes. No configuration, horizon, member subset, period or threshold is chosen from these results. A later study of anything singled out here must say it was selected after these results, and test it on data that begins after them.",
+  "reproducibility": {
+    "inputManifest": "The run records the export's file name, size, sha256 and retrieval times and each member's input hash, verifies them against data.export and data.inputHashes, and refuses on any difference.",
+    "code": "The run records the repository commit and the git blob ids of the candidate, its validation dependency, the analysis module and this file. It refuses unless the first two equal candidate.sourceBlobs and this file's computed specificationId equals the one it declares.",
+    "specificationId": "sha256(stableSerialize(this object without specificationId)), the identity rule of docs/opportunity-radar.v1.json.",
+    "attribution": "Every observation row carries studyId, specificationId, candidate id and version, configuration id, leftBars, rightBars, timeframe, member, symbol, D and tau_D, then the candidate's output verbatim, then the outcome and breach fields.",
+    "output": ".zerochart-reports/swing-structure-evaluation-<first 12 hex of specificationId>.json, git-ignored, written once with exclusive create through saveResearchResults. A byte-identical rerun reports UNCHANGED; any difference reports CONFLICT and overwrites nothing. resultsSha256 is the sha256 of the file's bytes. The JSON holds no wall-clock time; an optional HTML report beside it may.",
+    "determinism": "Members in ticker code-unit order, configurations in the order above, horizons ascending, dates ascending. Every sum runs in that order, in IEEE-754 doubles, and numbers are serialized by JSON.stringify. The same inputs and code reproduce the same bytes.",
+    "publication": "The repository is public. A pull request or document quotes aggregate figures only; per-date rows stay in the local results."
+  },
+  "reporting": [
+    "Manifest: specificationId, repository commit, blob ids, export identity, per-member input hashes, and the verification result of each.",
+    "Completeness: per member, bars found against bars required (2024-02-16 to 2026-11-10), with every missing, duplicate or invalid bar listed.",
+    "A, per configuration: status shares on daily dates and on G0, pooled and per member; latency summaries; transitions and run lengths.",
+    "B primary: n, observation counts by state, M; for ell = 4 and ell = 8, se*, the interval, the number of defined replicates and the replicates' mean (edge diagnostic); U, Dn, the hit excess, M(-j) for each member, all twenty M_p and their median; each interpretability condition and gate with its value or UNAVAILABLE reason; and the classification.",
+    "B exploratory: the same statistics for the other 7 interval cells, and the descriptive statistics without interval for the 4 cells at h = 60, all labelled exploratory; breakdowns per member, per half-year and per pre-observation close category.",
+    "C, per configuration and horizon: pre-observation categories, position and distance at observation, forward close and extreme breach shares and days to first breach by category, INCOMPLETE counts, and distinct references.",
+    "Exclusions: every status and outcome category, counted per member, configuration, date set and horizon."
+  ],
+  "limitations": [
+    "Retrospective: one provider's history as retrieved on 2026-11-11, not as it stood on each date. Later revisions of past bars are unknown.",
+    "Small: 38 non-overlapping primary dates in about two years, on five pairs that move together. Wide intervals are expected, and INCONCLUSIVE is a likely, legitimate result.",
+    "Approximate inference: the block bootstrap's coverage is nominal and unverified at this size (uncertainty.smallSample), and dependence beyond 140 days is not captured. Under the stated null, M is mean-zero only approximately (nullHypothesis.limits).",
+    "One regime sample: the period's market phases may not recur. The half-year breakdown shows concentration; it does not remove it.",
+    "Selection: the members are today's largest pairs (universe.survivorship).",
+    "Scope: weeks to months on UTC daily bars of five Binance Spot USDT pairs, candidate 0.1.0, the four configurations above. It says nothing about intraday bars, equities or ETFs, weekly or monthly bars, other session boundaries, other venues or other candidate versions. The candidate's fixed-interval rule reads equity weekends and holidays as MISSING_INTERVAL and cannot represent calendar months; this study uses 24/7 UTC days, where the fixed interval holds.",
+    "No costs, fills, slippage, funding, sizing or exits: no strategy is tested.",
+    "Prior exposure (priorKnowledge): this is not an untouched holdout."
+  ],
+  "revisions": [
+    "Revision 2 (2026-11-18, before any run or merge; no market outcome had been read). The interval M +/- 2.064 x f x s_E / sqrt(n), which corrected only lag-1 autocorrelation and treated the base rate as fixed, is replaced by a moving block bootstrap over whole grid dates that re-estimates the base rates and every statistic (uncertainty). The 60-day cells lose their interval (uncertainty.overlapRule). Degenerate and unavailable cases are explicit (degenerateCases), and gates 3 to 7 are named robustness gates (classification.robustnessGates).",
+    "Revision 2, separately: the base rate now leaves out the earlier windows inside each observation's input (baseline.eligibleBaselineDates). With one full-grid base rate the signed excess is not mean-zero even under the stated null, because those windows helped form the state (nullHypothesis.whyEarlierWindowsAreLeftOut). This changes the statistic's definition, not the candidate, universe, observation dates, configurations, horizons or primary cell, which are unchanged."
+  ],
+  "analysisCode": "Written later in its own change, tested on synthetic fixtures (including look-ahead, frozen-reference and pre-observation-breach cases), and committed before it reads the export. It implements this text and cannot change it; where they differ, this specification governs. It runs only after this specification is merged, and only when the owner decides.",
+  "notDone": [
+    "any run, data retrieval, real observation or result",
+    "any change to the candidate, its version, the active model, thresholds, Pine, UI, worker or portfolio decisions",
+    "production, Binance account or TradingView alert access; migrations, database writes, deployment or new dependencies",
+    "simulated trades, portfolio returns, win rates, Sharpe or other risk-adjusted ratios, drawdown, leverage or execution",
+    "any change to an existing study, scan, experiment or campaign",
+    "a replay runner, reporting system or parameter search"
+  ]
+}

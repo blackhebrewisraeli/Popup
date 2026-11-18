@@ -890,7 +890,10 @@ is D6's close, because the four supporting pivots changed.
 - a price tolerance;
 - calendar bars such as months, and equity sessions, where a weekend reads as `MISSING_INTERVAL`.
 
-Nothing has been evaluated on market data.
+Nothing has been evaluated on market data. A proposed
+[evaluation specification](SWING_STRUCTURE_EVALUATION.md) fixes L, R, the timeframe, the pairs,
+the dates and the base rate for one retrospective daily crypto study, before any run. Its choices
+apply to that study only. They resolve none of the questions above for the product.
 
 ### Destination, order and open decision
 
