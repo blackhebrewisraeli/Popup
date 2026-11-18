@@ -135,7 +135,17 @@ export async function loadSwingStructureEvaluationSpecification(
   path = SWING_STRUCTURE_EVALUATION_SPECIFICATION_PATH,
 ): Promise<SwingStructureEvaluationSpecification> {
   const parsed = JSON.parse(await readFile(path, 'utf8')) as SwingStructureEvaluationSpecification;
-  const { specificationId, ...content } = parsed;
+  verifySpecificationIdentity(parsed);
+  return parsed;
+}
+
+/**
+ * reproducibility.specificationId: sha256(stableSerialize(the specification without its id))
+ * must equal the id it declares, and that id must be the one this module implements. Run on the
+ * object actually used, at every evaluation, so a copy or in-place change is refused.
+ */
+export function verifySpecificationIdentity(spec: SwingStructureEvaluationSpecification): void {
+  const { specificationId, ...content } = spec;
   const computed = sha256(stableSerialize(content));
   if (computed !== specificationId) {
     refuse('SPECIFICATION', `content hashes to ${computed}, not its declared ${specificationId}`);
@@ -146,7 +156,6 @@ export async function loadSwingStructureEvaluationSpecification(
       `this module implements ${SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID}, not ${specificationId}`,
     );
   }
-  return parsed;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1236,10 +1245,9 @@ interface Study {
   outcomeOf: (ticker: string, h: number, date: number) => Outcome;
 }
 
+/** Before anything else: the frozen content identity, then the candidate and timeframe. */
 function checkSpecification(spec: SwingStructureEvaluationSpecification): void {
-  if (spec.specificationId !== SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID) {
-    refuse('SPECIFICATION', `not specification ${SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID}`);
-  }
+  verifySpecificationIdentity(spec);
   if (
     spec.candidate.id !== SWING_STRUCTURE_CANDIDATE_ID ||
     spec.candidate.version !== SWING_STRUCTURE_CANDIDATE_VERSION ||

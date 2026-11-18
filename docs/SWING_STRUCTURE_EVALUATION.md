@@ -185,8 +185,10 @@ study.
 
 [`scripts/swingStructureEvaluation.ts`](../scripts/swingStructureEvaluation.ts) computes A, B
 and C on candles passed in memory. It calls the candidate as published and refuses on any timing
-invariant, look-ahead difference, pending outcome, empty base rate or non-finite value. It loads
-only the specification whose content hashes to `99fff590…`.
+invariant, look-ahead difference, pending outcome, empty base rate or non-finite value. Before
+any computation, every study evaluation rehashes the specification object it was given. It refuses
+unless that content hashes to `99fff590…`, the id the object declares. A changed copy that keeps
+the id is refused, and so is a consistently rehashed alternative.
 
 **Synthetic verification.**
 [`swingStructureEvaluation.test.ts`](../scripts/swingStructureEvaluation.test.ts) checks it on

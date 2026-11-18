@@ -161,6 +161,58 @@ describe('identity and preservation', () => {
   });
 });
 
+describe('the full study verifies the specification it is given, before any computation', () => {
+  // Any read of the members is a failure: a refusal must come before a candle is touched.
+  const untouched = new Proxy({} as Record<string, MappedCandle[]>, {
+    get: () => {
+      throw new Error('members were read');
+    },
+    ownKeys: () => {
+      throw new Error('members were read');
+    },
+  });
+  const evaluateWith = (spec: SwingStructureEvaluationSpecification) =>
+    refusal(() => evaluateSwingStructureStudy(spec, untouched));
+
+  it('refuses a copy with a changed interpretability threshold that keeps the frozen id', async () => {
+    const spec = structuredClone(await loadSwingStructureEvaluationSpecification());
+    spec.interpretability.minimumDates = 24;
+    expect(spec.specificationId).toBe(SWING_STRUCTURE_EVALUATION_SPECIFICATION_ID);
+    expect(evaluateWith(spec)).toBe('SPECIFICATION');
+  });
+
+  it('refuses a copy with changed bootstrap settings that keeps the frozen id', async () => {
+    const loaded = await loadSwingStructureEvaluationSpecification();
+    const fewer = structuredClone(loaded);
+    fewer.uncertainty.replicates = 100;
+    const reseeded = structuredClone(loaded);
+    reseeded.uncertainty.random.seed = 'another-seed';
+    expect(evaluateWith(fewer)).toBe('SPECIFICATION');
+    expect(evaluateWith(reseeded)).toBe('SPECIFICATION');
+  });
+
+  it('refuses a loaded specification changed in place before evaluation', async () => {
+    const spec = await loadSwingStructureEvaluationSpecification();
+    spec.interpretability.maximumUnavailableOutcomesPerMember = 10;
+    expect(evaluateWith(spec)).toBe('SPECIFICATION');
+  });
+
+  it('refuses a consistently rehashed alternative as unsupported', async () => {
+    const { specificationId: _id, ...content } = structuredClone(
+      await loadSwingStructureEvaluationSpecification(),
+    );
+    content.interpretability.minimumDates = 24;
+    const rehashed = { ...content, specificationId: sha256(stableSerialize(content)) };
+    expect(evaluateWith(rehashed)).toBe('SPECIFICATION');
+  });
+
+  it('lets the unchanged frozen specification through to the members', async () => {
+    const spec = await loadSwingStructureEvaluationSpecification();
+    expect(() => evaluateSwingStructureStudy(spec, untouched)).toThrow('members were read');
+    expect(refusal(() => evaluateSwingStructureStudy(spec, {}))).toBe('DATA_UNAVAILABLE');
+  });
+});
+
 describe('1. window and outcome boundaries, and timing violations', () => {
   const candles = walk('boundaries', open(0), 260);
   const D = open(200);
