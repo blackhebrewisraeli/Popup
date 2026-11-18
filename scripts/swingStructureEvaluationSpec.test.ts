@@ -140,14 +140,16 @@ describe('swing-structure evaluation specification v1', () => {
   it('leaves out exactly the earlier grid windows that overlap an observation input', async () => {
     const { baseline, window, observations, horizons } = await specification();
     const { dates, spacingDays } = observations.primaryGrid;
-    const mid = day(dates[19]!);
+    const mid = day(dates[19] ?? '');
+    expect(Number.isFinite(mid)).toBe(true);
     for (const h of horizons.utcDays) {
       // Eligible earlier window: its path ends (open of D'+1+h) no later than the input's first open.
       const overlapping = dates
         .map(day)
         .filter((d) => d < mid && d + (1 + h) * DAY_MS > mid - (window.closedCandles - 1) * DAY_MS);
-      expect(overlapping.length).toBe(baseline.excludedPrecedingGridSteps[String(h)]);
-      expect(overlapping.length).toBe(Math.ceil((h + window.closedCandles) / spacingDays) - 1);
+      // A missing declared count fails: no array has length -1.
+      expect(overlapping).toHaveLength(baseline.excludedPrecedingGridSteps[String(h)] ?? -1);
+      expect(overlapping).toHaveLength(Math.ceil((h + window.closedCandles) / spacingDays) - 1);
     }
   });
 
