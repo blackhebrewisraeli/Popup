@@ -5,7 +5,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(42);
+select plan(73);
 
 insert into auth.users (id) values
   ('00000000-0000-4000-8000-0000000000d1'), -- the configured owner
@@ -21,38 +21,83 @@ select
   (select count(*) from public.paper_transactions) as fills;
 
 
--- A batch row whose columns agree with its evidence.
-create function pg_temp.batch_sql(slot date, members int default 1, status text default 'complete')
-returns text language sql as $$
+-- Complete evidence shaped like the collector's, whose columns agree (SYNTHETIC values).
+create function pg_temp.at(slot date, clock text) returns text language sql as $$
+  select to_char(slot + clock::time, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+$$;
+create function pg_temp.evidence(slot date, members int default 1, status text default 'complete')
+returns jsonb language sql as $$
+  select jsonb_build_object(
+    'schemaVersion', 1,
+    'policy', jsonb_build_object('id', 'binance-spot-usdt-liquidity-v1', 'sha256', repeat('b', 64)),
+    'slot', jsonb_build_object(
+      'date', to_char(slot, 'YYYY-MM-DD'),
+      'scheduledFor', pg_temp.at(slot, '00:30'),
+      'retryDeadline', pg_temp.at(slot, '06:00')
+    ),
+    'collection', jsonb_build_object(
+      'exchangeInfo', jsonb_build_object(
+        'endpoint', 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT',
+        'requestedAt', pg_temp.at(slot, '00:33:00'),
+        'receivedAt', pg_temp.at(slot, '00:33:01'),
+        'serverTime', (extract(epoch from (slot + time '00:33:01') at time zone 'UTC') * 1000)::bigint
+      ),
+      'ticker', jsonb_build_object(
+        'endpoint', 'https://api.binance.com/api/v3/ticker/24hr?type=MINI',
+        'requestedAt', pg_temp.at(slot, '00:33:02'),
+        'receivedAt', pg_temp.at(slot, '00:33:03')
+      ),
+      'cutoff', pg_temp.at(slot, '00:33:02')
+    ),
+    'inputs', jsonb_build_object(
+      'listedSymbols', members, 'malformedInstruments', 0,
+      'usdtInstruments', '[]'::jsonb, 'tickers', '[]'::jsonb, 'invalidTickers', '[]'::jsonb
+    ),
+    'result', jsonb_build_object(
+      'status', upper(status),
+      'coverage', '{}'::jsonb,
+      'members', (select coalesce(jsonb_agg(jsonb_build_object('symbol', 'ZCT' || n || 'USDT')), '[]')
+                  from generate_series(1, members) n),
+      'exclusions', '[]'::jsonb
+    )
+  );
+$$;
+-- An insert of this evidence, with the columns of a complete one-member batch unless given.
+create function pg_temp.batch_with(
+  slot date, evidence jsonb, members int default 1, status text default 'complete'
+) returns text language sql as $$
   select format(
     $f$insert into public.discovery_batches
       (policy_id, slot_date, scheduled_for, collected_at, status, member_count, evidence, evidence_sha256)
       values ('binance-spot-usdt-liquidity-v1', %1$L, %2$L, %3$L, %4$L, %5$s, %6$L, %7$L)$f$,
     slot,
     (slot + time '00:30') at time zone 'UTC',
-    (slot + time '00:33') at time zone 'UTC',
+    (slot + time '00:33:03') at time zone 'UTC',
     status,
     members,
-    jsonb_build_object(
-      'schemaVersion', 1,
-      'policy', jsonb_build_object('id', 'binance-spot-usdt-liquidity-v1'),
-      'slot', jsonb_build_object(
-        'date', slot,
-        'scheduledFor', to_char((slot + time '00:30'), 'YYYY-MM-DD"T"HH24:MI:SS.000"Z"')
-      ),
-      'collection', jsonb_build_object('ticker', jsonb_build_object(
-        'receivedAt', to_char((slot + time '00:33'), 'YYYY-MM-DD"T"HH24:MI:SS.000"Z"')
-      )),
-      'result', jsonb_build_object(
-        'status', upper(status),
-        'members', (select coalesce(jsonb_agg(jsonb_build_object('symbol', 'ZCT' || n || 'USDT')), '[]')
-                    from generate_series(1, members) n)
-      )
-    ),
+    evidence,
     repeat('a', 64)
   );
 $$;
-grant execute on function pg_temp.batch_sql(date, int, text) to authenticated, anon;
+create function pg_temp.batch_sql(slot date, members int default 1, status text default 'complete')
+returns text language sql as $$
+  select pg_temp.batch_with(slot, pg_temp.evidence(slot, members, status), members, status);
+$$;
+-- A required-field regression: the slot's own evidence with one change, refused as a check.
+-- An insert the database accepts is undone and reported as 'accepted', so each case is
+-- judged on its own and none can occupy the slot for the next.
+create function pg_temp.try_insert(statement text) returns void language plpgsql as $$
+begin
+  execute statement;
+  raise exception 'accepted' using errcode = 'P0001';
+end;
+$$;
+create function pg_temp.refused(change jsonb, label text) returns text language sql as $$
+  select throws_ok(
+    format('select pg_temp.try_insert(%L)', pg_temp.batch_with('2026-11-23', change)),
+    '23514', null, label
+  );
+$$;
 
 create function pg_temp.as_user(id uuid, role text default null) returns void language sql as $$
   select set_config('request.jwt.claims', jsonb_build_object(
@@ -147,6 +192,55 @@ select throws_ok(
 );
 select lives_ok(pg_temp.batch_sql('2026-11-22', 0, 'empty'), 'an empty batch is a valid result');
 
+-- ── Required evidence fails closed: missing, JSON null or the wrong type ─────
+-- A database check proves the evidence is structurally consistent with its columns. It does
+-- not authenticate what Binance sent; the board's verifier re-derives that separately.
+
+select pg_temp.refused('{}', 'an empty evidence object is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') - 'schemaVersion', 'missing schemaVersion is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{policy,id}', 'missing policy.id is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{policy,sha256}', 'missing policy.sha256 is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{slot,date}', 'missing slot.date is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{slot,scheduledFor}', 'missing slot.scheduledFor is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{slot,retryDeadline}', 'missing slot.retryDeadline is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{collection,ticker,receivedAt}', 'missing collection.ticker.receivedAt is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{collection,exchangeInfo}', 'missing collection.exchangeInfo is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{inputs}', 'missing inputs is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{result,status}', 'missing result.status is refused');
+select pg_temp.refused(pg_temp.evidence('2026-11-23') #- '{result,members}', 'missing result.members is refused');
+
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{schemaVersion}', 'null'), 'a null schemaVersion is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{policy,id}', 'null'), 'a null policy.id is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{slot,date}', 'null'), 'a null slot.date is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,ticker,receivedAt}', 'null'), 'a null receipt time is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{result,status}', 'null'), 'a null result.status is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{result,members}', 'null'), 'null result.members is refused');
+
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{schemaVersion}', '"1"'), 'schemaVersion as text is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{policy}', '"binance-spot-usdt-liquidity-v1"'), 'policy as text is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{slot}', '[]'), 'slot as a list is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,ticker,receivedAt}', '1795107530000'), 'a receipt time as a number is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,ticker,receivedAt}', '"2026-11-23T25:61:00.000Z"'), 'an impossible receipt time is refused, not an error');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,exchangeInfo,serverTime}', '"1795107530000"'), 'serverTime as text is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{inputs,tickers}', '{}'), 'inputs.tickers as an object is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{result,status}', '1'), 'result.status as a number is refused');
+select pg_temp.refused(jsonb_set(pg_temp.evidence('2026-11-23'), '{result,members}', '{"0": {}}'), 'result.members as an object is refused');
+
+select pg_temp.refused(
+  jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,ticker,requestedAt}', to_jsonb(pg_temp.at('2026-11-23', '00:33:04'))),
+  'a ticker requested after it was received is refused'
+);
+select pg_temp.refused(
+  jsonb_set(pg_temp.evidence('2026-11-23'), '{collection,cutoff}', to_jsonb(pg_temp.at('2026-11-23', '00:33:01'))),
+  'a cutoff other than the ticker request is refused'
+);
+
+select is(
+  (select count(*)::int from public.discovery_batches where slot_date = '2026-11-23'), 0,
+  'no refused insert stored anything'
+);
+select lives_ok(pg_temp.batch_sql('2026-11-23'), 'the slot stays free: a valid batch for it follows');
+
 -- ── Attempts ─────────────────────────────────────────────────────────────────
 
 select lives_ok(
@@ -214,7 +308,7 @@ select is_empty($$select * from public.discovery_attempts$$, 'anyone else reads 
 
 select pg_temp.as_user('00000000-0000-4000-8000-0000000000d1');
 select is(
-  (select count(*)::int from public.discovery_batches), 2, 'the owner reads every batch'
+  (select count(*)::int from public.discovery_batches), 3, 'the owner reads every batch'
 );
 select is(
   (select count(*)::int from public.discovery_attempts), 1, 'the owner reads every attempt'
@@ -244,7 +338,7 @@ select throws_ok(
   'nobody can truncate the history'
 );
 select is(
-  (select count(*)::int from public.discovery_batches), 2, 'both batches are still there'
+  (select count(*)::int from public.discovery_batches), 3, 'every batch is still there'
 );
 
 set local role service_role;

@@ -137,13 +137,16 @@ export interface DiscoveryTicker {
   closeTime: number;
 }
 
-export type TickerIssue =
-  | 'TICKER_MISSING'
-  | 'TICKER_DUPLICATE'
-  | 'QUOTE_VOLUME_INVALID'
-  | 'WINDOW_INVALID'
-  | 'WINDOW_OUTDATED'
-  | 'WINDOW_IN_FUTURE';
+const TICKER_ISSUES = [
+  'TICKER_MISSING',
+  'TICKER_DUPLICATE',
+  'QUOTE_VOLUME_INVALID',
+  'WINDOW_INVALID',
+  'WINDOW_OUTDATED',
+  'WINDOW_IN_FUTURE',
+] as const;
+
+export type TickerIssue = (typeof TICKER_ISSUES)[number];
 
 export interface DiscoveryInputs {
   /** Every symbol exchangeInfo listed, any quote. */
@@ -437,14 +440,134 @@ function inputsConsistent(inputs: DiscoveryInputs): boolean {
   return stableSerialize(accounted) === stableSerialize([...eligible].sort(compareTickers));
 }
 
+/** An object with exactly these keys: nothing missing, nothing the format does not have. */
+const hasKeys = (value: unknown, keys: readonly string[]): value is Record<string, unknown> =>
+  isRecord(value) &&
+  Object.keys(value).length === keys.length &&
+  keys.every((key) => Object.hasOwn(value, key));
+
+/** A time exactly as the collector writes it: ISO 8601, milliseconds, UTC. */
+const isIsoTime = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) && new Date(ms).toISOString() === value;
+};
+
+const isCount = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+/** Strictly ascending in code-unit order, which also rules out a repeated symbol. */
+const inSymbolOrder = (symbols: readonly unknown[]) =>
+  symbols.every(
+    (symbol, index) =>
+      index === 0 || compareTickers(String(symbols[index - 1]), String(symbol)) < 0,
+  );
+
+const KNOWN_ISSUES: ReadonlySet<unknown> = new Set(TICKER_ISSUES);
+
+const isStoredInstrument = (value: unknown) =>
+  hasKeys(value, ['symbol', 'baseAsset', 'status', 'spotTradingAllowed']) &&
+  isSymbolText(value['symbol']) &&
+  isSymbolText(value['baseAsset']) &&
+  typeof value['status'] === 'string' &&
+  value['status'] !== '' &&
+  typeof value['spotTradingAllowed'] === 'boolean';
+
+/** Why the stored collection times and sources break the collector's rules; null when they hold. */
+function collectionProblem(evidence: DiscoveryEvidence): string | null {
+  const { collection } = evidence;
+  if (
+    !hasKeys(collection, ['exchangeInfo', 'ticker', 'cutoff']) ||
+    !hasKeys(collection.exchangeInfo, ['endpoint', 'requestedAt', 'receivedAt', 'serverTime']) ||
+    !hasKeys(collection.ticker, ['endpoint', 'requestedAt', 'receivedAt'])
+  ) {
+    return 'its collection metadata is not in the recorded format';
+  }
+  const { exchangeInfo: info, ticker } = collection;
+  const { source } = DISCOVERY_POLICY;
+  if (info.endpoint !== source.exchangeInfo || ticker.endpoint !== source.ticker) {
+    return 'a source endpoint is not the policy’s';
+  }
+  if (!Number.isSafeInteger(info.serverTime) || info.serverTime <= 0) {
+    return 'its serverTime is not a positive integer';
+  }
+  const times = [info.requestedAt, info.receivedAt, ticker.requestedAt, ticker.receivedAt];
+  if (!times.every(isIsoTime) || !isIsoTime(collection.cutoff)) {
+    return 'a collection time is not an exact UTC time';
+  }
+  if (collection.cutoff !== ticker.requestedAt) return 'its cutoff is not the ticker request time';
+  // The slot, then exchangeInfo requested and received, then the ticker, before the deadline.
+  const order = [evidence.slot.scheduledFor, ...times].map(Date.parse);
+  const ordered = order.every((time, index) => index === 0 || (order[index - 1] ?? 0) <= time);
+  if (!ordered || Date.parse(ticker.receivedAt) >= Date.parse(evidence.slot.retryDeadline)) {
+    return 'its collection times are out of order or reach the retry deadline';
+  }
+  return null;
+}
+
 /**
- * A batch is shown only when its bytes match the recorded hash, it was recorded under this
- * policy's identity for its own slot, and its members, order and exclusions re-derive exactly
- * from its stored inputs. Anything else is refused with the reason, never repaired.
+ * Why the stored inputs break the rules the collector applied when it took them; null when
+ * they hold. Windows are judged against the recorded request and receipt times.
  */
-export async function verifyDiscoveryBatch(
-  record: DiscoveryBatchRecord,
-): Promise<DiscoveryVerification> {
+function inputsProblem(evidence: DiscoveryEvidence): string | null {
+  const { inputs } = evidence;
+  const keys = ['listedSymbols', 'malformedInstruments', 'usdtInstruments', 'tickers'];
+  if (
+    !hasKeys(inputs, [...keys, 'invalidTickers']) ||
+    !Array.isArray(inputs.usdtInstruments) ||
+    !Array.isArray(inputs.tickers) ||
+    !Array.isArray(inputs.invalidTickers)
+  ) {
+    return 'its inputs are not in the recorded format';
+  }
+  if (!isCount(inputs.listedSymbols) || !isCount(inputs.malformedInstruments)) {
+    return 'a symbol count is not a whole number';
+  }
+  if (inputs.usdtInstruments.length + inputs.malformedInstruments > inputs.listedSymbols) {
+    return 'its symbol counts do not cover the stored instruments';
+  }
+  if (
+    !inputs.usdtInstruments.every(isStoredInstrument) ||
+    !inSymbolOrder(inputs.usdtInstruments.map((instrument) => instrument.symbol))
+  ) {
+    return 'an instrument is malformed, repeated or out of exact-symbol order';
+  }
+  const timing = {
+    requestedAt: Date.parse(evidence.collection.ticker.requestedAt),
+    receivedAt: Date.parse(evidence.collection.ticker.receivedAt),
+  };
+  for (const ticker of inputs.tickers) {
+    if (
+      !hasKeys(ticker, ['symbol', 'quoteVolume', 'openTime', 'closeTime']) ||
+      !isSymbolText(ticker['symbol'])
+    ) {
+      return 'a ticker entry is malformed';
+    }
+    const issue = tickerIssue(ticker, timing);
+    if (issue === 'QUOTE_VOLUME_INVALID') {
+      return `the quote volume of ${ticker['symbol']} is not a plain decimal`;
+    }
+    if (issue !== null) return `the 24h window of ${ticker['symbol']} fails ${issue}`;
+  }
+  if (!inSymbolOrder(inputs.tickers.map((ticker) => ticker.symbol))) {
+    return 'its tickers are not in exact-symbol order, or repeat one';
+  }
+  const unranked = inputs.invalidTickers;
+  if (
+    !unranked.every(
+      (entry) =>
+        hasKeys(entry, ['symbol', 'issue']) &&
+        isSymbolText(entry['symbol']) &&
+        KNOWN_ISSUES.has(entry['issue']),
+    ) ||
+    !inSymbolOrder(unranked.map((entry) => entry.symbol))
+  ) {
+    return 'an unranked pair records an unknown issue, or repeats or misorders one';
+  }
+  return null;
+}
+
+async function verifyRecord(record: DiscoveryBatchRecord): Promise<DiscoveryVerification> {
   const evidence = record.evidence as DiscoveryEvidence;
   if (!isRecord(evidence) || evidence.schemaVersion !== DISCOVERY_SCHEMA_VERSION) {
     return { ok: false, reason: 'Unknown evidence format' };
@@ -462,29 +585,42 @@ export async function verifyDiscoveryBatch(
       reason: `Recorded under another policy identity than ${DISCOVERY_POLICY_ID}`,
     };
   }
-  try {
-    if (stableSerialize(slotForDate(record.slot_date)) !== stableSerialize(evidence.slot)) {
-      return { ok: false, reason: 'The slot in the evidence is not the batch date’s slot' };
-    }
-    if (!inputsConsistent(evidence.inputs)) {
-      return { ok: false, reason: 'Inputs do not account for every eligible pair exactly once' };
-    }
-    const result = selectCandidates(evidence.inputs);
-    if (stableSerialize(result) !== stableSerialize(evidence.result)) {
-      return { ok: false, reason: 'Members do not re-derive from the stored inputs' };
-    }
-  } catch {
-    return { ok: false, reason: 'Unreadable evidence' };
+  if (stableSerialize(slotForDate(record.slot_date)) !== stableSerialize(evidence.slot)) {
+    return { ok: false, reason: 'The slot in the evidence is not the batch date’s slot' };
+  }
+  const problem = collectionProblem(evidence) ?? inputsProblem(evidence);
+  if (problem !== null) return { ok: false, reason: `Stored evidence is invalid: ${problem}` };
+  if (!inputsConsistent(evidence.inputs)) {
+    return { ok: false, reason: 'Inputs do not account for every eligible pair exactly once' };
+  }
+  if (stableSerialize(selectCandidates(evidence.inputs)) !== stableSerialize(evidence.result)) {
+    return { ok: false, reason: 'Members do not re-derive from the stored inputs' };
   }
   if (
     record.status !== evidence.result.status.toLowerCase() ||
     record.member_count !== evidence.result.members.length ||
-    record.collected_at === '' ||
     Date.parse(record.collected_at) !== Date.parse(evidence.collection.ticker.receivedAt)
   ) {
     return { ok: false, reason: 'Batch columns disagree with its evidence' };
   }
   return { ok: true, evidence };
+}
+
+/**
+ * A batch is shown only when its bytes match the recorded hash, it was recorded under this
+ * policy's identity for its own slot, its stored collection metadata and inputs pass the
+ * collector's own rules, and its members, order and exclusions re-derive exactly from those
+ * inputs. Anything else is refused with the reason, never repaired, and nothing it holds is
+ * dropped to make it pass. Unreadable evidence is a refusal, never an exception.
+ */
+export async function verifyDiscoveryBatch(
+  record: DiscoveryBatchRecord,
+): Promise<DiscoveryVerification> {
+  try {
+    return await verifyRecord(record);
+  } catch {
+    return { ok: false, reason: 'Unreadable evidence' };
+  }
 }
 
 // ── Attempts and freshness ───────────────────────────────────────────────────

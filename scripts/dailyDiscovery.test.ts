@@ -31,6 +31,8 @@ import {
   SUCCESSFUL_RUNS,
 } from './dailyDiscovery';
 
+const SYNTHETIC_BATCH_SHA256 = '229586a388419e5bcbbe6f5a0a9827d11bc11577c6fe6e4b42b3633a99bf2c0b';
+
 function setup(
   start = at(0, 33, 5),
   script: Parameters<typeof binanceFake>[2] = {},
@@ -80,6 +82,8 @@ describe('a scheduled run', () => {
       status: 'complete',
       member_count: 50,
     });
+    // Pinned at 48aaff1: stricter verification must not change what a valid run stores.
+    expect(batch!.evidence_sha256).toBe(SYNTHETIC_BATCH_SHA256);
     const verified = await verifyDiscoveryBatch(batch!);
     expect(verified.ok).toBe(true);
     if (!verified.ok) return;

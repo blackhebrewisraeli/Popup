@@ -433,6 +433,8 @@ describe('verification', () => {
       ),
     ).toMatch(/exactly once/);
     expect(await refusal({ slot_date: '2026-11-19' })).toMatch(/slot/);
+    // A column no evidence check reaches still ends in a refusal, never an exception.
+    expect(await refusal({ slot_date: 'not-a-date' })).toBe('Unreadable evidence');
     expect(await refusal({ member_count: 49 })).toMatch(/columns/);
     expect(
       await refusal({ status: 'complete' === record.status ? 'partial' : 'complete' }),
@@ -442,6 +444,137 @@ describe('verification', () => {
       await refusal({ evidence: garbage, evidence_sha256: await evidenceSha256(garbage) }),
     ).toMatch(/policy identity|Unreadable/);
     expect(await refusal({ evidence: 'text' })).toMatch(/format/);
+  });
+
+  /**
+   * As a forger who knows the format would: change stored inputs or metadata, re-derive the
+   * result from them and recompute the hash, so only validating the stored values can refuse it.
+   */
+  async function forged(change: (e: DiscoveryEvidence) => void) {
+    const { evidence } = await batch();
+    const copy = structuredClone(evidence);
+    change(copy);
+    copy.result = selectCandidates(copy.inputs);
+    return {
+      policy_id: DISCOVERY_POLICY_ID,
+      slot_date: copy.slot.date,
+      // The column follows a changed receipt time, so only the evidence check can refuse it.
+      collected_at: copy.collection?.ticker.receivedAt ?? evidence.collection.ticker.receivedAt,
+      status: copy.result.status.toLowerCase(),
+      member_count: copy.result.members.length,
+      evidence: JSON.parse(JSON.stringify(copy)) as unknown,
+      evidence_sha256: await evidenceSha256(copy),
+    };
+  }
+
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const ms = (text: string) => Date.parse(text);
+  const top = (e: DiscoveryEvidence) => e.inputs.tickers.find((t) => t.symbol === 'ZCT001USDT')!;
+  const retime = (e: DiscoveryEvidence, closeTime: number) => {
+    top(e).closeTime = closeTime;
+    top(e).openTime = closeTime - DAY_MS;
+  };
+  const unsafe = (value: unknown) => value as never;
+
+  it.each<[string, (e: DiscoveryEvidence) => void, RegExp]>([
+    [
+      'a quote volume BigInt cannot render',
+      (e) => void (top(e).quoteVolume = '99999999x'),
+      /quote volume/,
+    ],
+    ['a quote volume in exponent form', (e) => void (top(e).quoteVolume = '6e7'), /quote volume/],
+    ['a window that is not 24 hours', (e) => void (top(e).openTime += 1), /window/],
+    [
+      'a window ending over an hour before the cutoff',
+      (e) => retime(e, ms(e.collection.ticker.requestedAt) - 3_600_001),
+      /window/,
+    ],
+    [
+      'a window ending over a minute after the response',
+      (e) => retime(e, ms(e.collection.ticker.receivedAt) + 60_001),
+      /window/,
+    ],
+    [
+      'a ticker received before it was requested',
+      (e) => void (e.collection.ticker.receivedAt = iso(ms(e.collection.ticker.requestedAt) - 1)),
+      /order/,
+    ],
+    [
+      'exchangeInfo requested before the slot',
+      (e) => void (e.collection.exchangeInfo.requestedAt = iso(ms(e.slot.scheduledFor) - 1)),
+      /order/,
+    ],
+    [
+      'a ticker requested before exchangeInfo arrived',
+      (e) =>
+        void (e.collection.exchangeInfo.receivedAt = iso(ms(e.collection.ticker.requestedAt) + 1)),
+      /order/,
+    ],
+    [
+      'a response received at the retry deadline',
+      (e) => void (e.collection.ticker.receivedAt = e.slot.retryDeadline),
+      /order/,
+    ],
+    [
+      'a cutoff other than the ticker request',
+      (e) => void (e.collection.cutoff = iso(ms(e.collection.ticker.requestedAt) + 1)),
+      /cutoff/,
+    ],
+    [
+      'another source endpoint',
+      (e) => void (e.collection.exchangeInfo.endpoint = 'https://example.invalid/exchangeInfo'),
+      /source/,
+    ],
+    ['a time that is not ISO', (e) => void (e.collection.exchangeInfo.receivedAt = 'soon'), /time/],
+    [
+      'a serverTime that is not an integer',
+      (e) => void (e.collection.exchangeInfo.serverTime = unsafe('1')),
+      /serverTime/,
+    ],
+    [
+      'an instrument with a non-boolean spot flag',
+      (e) => void (e.inputs.usdtInstruments[0]!.spotTradingAllowed = unsafe('yes')),
+      /instrument/,
+    ],
+    [
+      'an instrument whose base asset is not text',
+      (e) => void (e.inputs.usdtInstruments[0]!.baseAsset = unsafe(5)),
+      /instrument/,
+    ],
+    [
+      'a duplicated instrument',
+      (e) => {
+        const halted = e.inputs.usdtInstruments.find((i) => i.symbol === 'ZCTHALTUSDT')!;
+        e.inputs.usdtInstruments.push({ ...halted });
+      },
+      /instrument/,
+    ],
+    [
+      'an issue that is not a known one',
+      (e) => {
+        e.inputs.tickers = e.inputs.tickers.filter((t) => t.symbol !== 'ZCT060USDT');
+        e.inputs.invalidTickers.push({ symbol: 'ZCT060USDT', issue: unsafe('BOGUS') });
+      },
+      /issue/,
+    ],
+    [
+      'a ticker entry with a field the format does not have',
+      (e) => void Object.assign(top(e), { lastPrice: '1.10' }),
+      /ticker/,
+    ],
+    ['tickers out of exact-symbol order', (e) => void e.inputs.tickers.reverse(), /ticker/],
+    ['a negative symbol count', (e) => void (e.inputs.listedSymbols = -1), /count/],
+    ['a fractional malformed count', (e) => void (e.inputs.malformedInstruments = 1.5), /count/],
+    ['fewer symbols listed than stored', (e) => void (e.inputs.listedSymbols = 3), /count/],
+  ])('refuses %s, even with a consistent result and hash', async (_, change, reason) => {
+    const verified = await verifyDiscoveryBatch(await forged(change));
+    expect(verified.ok).toBe(false);
+    expect(verified.ok ? null : verified.reason).toMatch(reason);
+  });
+
+  it('refuses unreadable metadata instead of throwing', async () => {
+    const record = await forged((e) => void (e.collection = unsafe(null)));
+    await expect(verifyDiscoveryBatch(record)).resolves.toMatchObject({ ok: false });
   });
 });
 

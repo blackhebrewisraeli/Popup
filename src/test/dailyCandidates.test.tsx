@@ -48,7 +48,7 @@ vi.mock('@/lib/authStore', async (importOriginal) => ({
 import { DailyCandidates } from '@/components/DailyCandidates';
 import { ResearchZone } from '@/components/Workspace';
 import type { Asset } from '@/lib/assets';
-import { evidenceSha256 } from '@/lib/dailyDiscovery';
+import { evidenceSha256, selectCandidates, type DiscoveryEvidence } from '@/lib/dailyDiscovery';
 import { runDailyDiscovery } from '../../scripts/dailyDiscovery';
 import {
   at,
@@ -249,6 +249,31 @@ describe('Daily candidates', () => {
     row!.evidence_sha256 = await evidenceSha256(row!.evidence);
     show(at(9));
     expect(within(await board()).getByRole('alert').textContent).toMatch(/do not re-derive/);
+  });
+
+  it('refuses a forged batch whose stored volume cannot render, and shows no older batch', async () => {
+    await collect([at(0, 33, 5), at(24, 33, 5)]);
+    const [latest] = db.rows.discovery_batches as {
+      evidence: DiscoveryEvidence;
+      evidence_sha256: string;
+      member_count: number;
+      status: string;
+    }[];
+    // A consistent forgery: result re-derived from the changed input, hash recomputed.
+    const { evidence } = latest!;
+    evidence.inputs.tickers.find((t) => t.symbol === 'ZCT001USDT')!.quoteVolume = '99999999x';
+    evidence.result = selectCandidates(evidence.inputs);
+    latest!.member_count = evidence.result.members.length;
+    latest!.status = evidence.result.status.toLowerCase();
+    latest!.evidence_sha256 = await evidenceSha256(evidence);
+    show(at(24, 40));
+    const section = await board();
+    expect(within(section).getByRole('alert').textContent).toMatch(
+      /The 2026-11-21 batch failed verification: .*quote volume/,
+    );
+    expect(within(section).queryByRole('table')).toBeNull();
+    expect(within(section).queryByText(/Batch 2026-11-20/)).toBeNull();
+    expect(within(section).getByText('No batch to show')).toBeTruthy();
   });
 
   it('labels a partial batch and an empty one', async () => {

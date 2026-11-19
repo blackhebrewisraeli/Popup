@@ -357,8 +357,18 @@ day.
 ### Board and freshness
 
 The board shows the newest batch only after verifying it: the stored evidence matches its recorded
-SHA-256, the policy identity and slot match, and members, order and exclusions re-derive from the
-stored inputs. A refused batch is reported as refused, and no older batch or sample takes its place.
+SHA-256, the policy identity and slot match, and the stored collection metadata and inputs pass the
+collector's own rules again. Endpoints must be the policy's. Times must be exact UTC times in
+collection order before the deadline, and the cutoff must be the ticker request. Counts must be
+whole numbers, and entries must have exactly the recorded fields, in exact-symbol order, with known
+issues only. Volumes must be plain decimals, with windows valid against the recorded request and
+receipt times. Members, order and exclusions must then re-derive from those inputs. A refused batch
+is reported with its reason, never repaired, and no older batch or sample takes its place.
+
+The database separately refuses a batch whose evidence lacks a field its columns repeat, holds JSON
+null or the wrong type there, disagrees with the columns, or has collection times out of order
+(`discovery_evidence_consistent`). That is structural consistency only: it does not authenticate
+what Binance sent.
 
 **Freshness** applies to the daily feed only, separately from candle freshness. A batch is
 **Current** from its slot until the next slot starts, 24 hours later. Until the next slot's 06:00 UTC

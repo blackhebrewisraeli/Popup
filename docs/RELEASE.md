@@ -227,6 +227,9 @@ migration only expands:
 - It adds two tables (`discovery_batches`, `discovery_attempts`), one index, their policies and
   grants, one trigger function (`refuse_discovery_change()`) and four triggers that refuse
   `UPDATE`, `DELETE` and `TRUNCATE` on them.
+- It adds one check function, `discovery_evidence_consistent()`, executable by `authenticated`
+  only, because the batch check runs with the inserting role's privileges. Missing fields, JSON
+  null, wrong types and unreadable times make it false, so the check fails closed.
 - Reads go through the existing `is_binance_spot_owner()`; writes need `app_metadata.role` =
   `discovery_automation`. It changes no existing table, policy, grant, function or row, and
   backfills nothing.

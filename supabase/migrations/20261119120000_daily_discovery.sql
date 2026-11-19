@@ -6,6 +6,113 @@
 -- when. The migration only adds: it changes no existing table, policy, grant or function,
 -- and nothing here reads or writes assets_status, campaigns, signals or experiments.
 
+-- Whether a batch's evidence has every field its columns repeat, each of the right JSON type and
+-- agreeing with them, with every collection time in the collector's exact form and in order.
+-- A missing key, a JSON null, a wrong type or an unreadable time is false, never null, so the
+-- check fails closed. This is structural consistency only: it does not authenticate what
+-- Binance sent. The board re-derives membership from the stored inputs before showing any.
+create function public.discovery_evidence_consistent(
+  evidence jsonb,
+  policy_id text,
+  slot_date date,
+  scheduled_for timestamptz,
+  collected_at timestamptz,
+  status text,
+  member_count integer
+)
+returns boolean
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  iso constant text := '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$';
+  path text;
+  info_requested timestamptz;
+  info_received timestamptz;
+  ticker_requested timestamptz;
+  ticker_received timestamptz;
+begin
+  if not coalesce(
+    jsonb_typeof(evidence) = 'object'
+    and evidence -> 'schemaVersion' = '1'::jsonb
+    and jsonb_typeof(evidence -> 'policy') = 'object'
+    and jsonb_typeof(evidence #> '{policy,id}') = 'string'
+    and evidence #>> '{policy,id}' = policy_id
+    and jsonb_typeof(evidence #> '{policy,sha256}') = 'string'
+    and evidence #>> '{policy,sha256}' ~ '^[0-9a-f]{64}$'
+    and jsonb_typeof(evidence -> 'slot') = 'object'
+    and jsonb_typeof(evidence #> '{slot,date}') = 'string'
+    and evidence #>> '{slot,date}' = to_char(slot_date, 'YYYY-MM-DD')
+    and jsonb_typeof(evidence -> 'collection') = 'object'
+    and jsonb_typeof(evidence #> '{collection,exchangeInfo}') = 'object'
+    and jsonb_typeof(evidence #> '{collection,exchangeInfo,endpoint}') = 'string'
+    and jsonb_typeof(evidence #> '{collection,exchangeInfo,serverTime}') = 'number'
+    and jsonb_typeof(evidence #> '{collection,ticker}') = 'object'
+    and jsonb_typeof(evidence #> '{collection,ticker,endpoint}') = 'string'
+    and jsonb_typeof(evidence -> 'inputs') = 'object'
+    and jsonb_typeof(evidence #> '{inputs,listedSymbols}') = 'number'
+    and jsonb_typeof(evidence #> '{inputs,malformedInstruments}') = 'number'
+    and jsonb_typeof(evidence #> '{inputs,usdtInstruments}') = 'array'
+    and jsonb_typeof(evidence #> '{inputs,tickers}') = 'array'
+    and jsonb_typeof(evidence #> '{inputs,invalidTickers}') = 'array'
+    and jsonb_typeof(evidence -> 'result') = 'object'
+    and jsonb_typeof(evidence #> '{result,status}') = 'string'
+    and evidence #>> '{result,status}' = upper(status)
+    and jsonb_typeof(evidence #> '{result,coverage}') = 'object'
+    and jsonb_typeof(evidence #> '{result,members}') = 'array'
+    and jsonb_typeof(evidence #> '{result,exclusions}') = 'array',
+    false
+  ) then
+    return false;
+  end if;
+  -- Only an array reaches here, so its length can be taken.
+  if jsonb_array_length(evidence #> '{result,members}') <> member_count then
+    return false;
+  end if;
+  -- Every time is text in the collector's exact form before any is parsed.
+  foreach path in array array[
+    '{slot,scheduledFor}', '{slot,retryDeadline}', '{collection,cutoff}',
+    '{collection,exchangeInfo,requestedAt}', '{collection,exchangeInfo,receivedAt}',
+    '{collection,ticker,requestedAt}', '{collection,ticker,receivedAt}'
+  ] loop
+    if jsonb_typeof(evidence #> path::text[]) is distinct from 'string'
+      or (evidence #>> path::text[]) !~ iso then
+      return false;
+    end if;
+  end loop;
+  info_requested := (evidence #>> '{collection,exchangeInfo,requestedAt}')::timestamptz;
+  info_received := (evidence #>> '{collection,exchangeInfo,receivedAt}')::timestamptz;
+  ticker_requested := (evidence #>> '{collection,ticker,requestedAt}')::timestamptz;
+  ticker_received := (evidence #>> '{collection,ticker,receivedAt}')::timestamptz;
+  return coalesce(
+    (evidence #>> '{slot,scheduledFor}')::timestamptz = scheduled_for
+    and (scheduled_for at time zone 'UTC')::date = slot_date
+    and ticker_received = collected_at
+    and evidence #>> '{collection,cutoff}' = evidence #>> '{collection,ticker,requestedAt}'
+    -- The slot, then exchangeInfo, then the ticker, all before the retry deadline.
+    and scheduled_for <= info_requested
+    and info_requested <= info_received
+    and info_received <= ticker_requested
+    and ticker_requested <= ticker_received
+    and ticker_received < (evidence #>> '{slot,retryDeadline}')::timestamptz,
+    false
+  );
+exception
+  -- A time in the right form but impossible ('25:61') is refused like any other, never an error.
+  when others then
+    return false;
+end;
+$$;
+
+-- The check runs with the inserting role's privileges, so the automation's role needs it.
+revoke all on function public.discovery_evidence_consistent(
+  jsonb, text, date, timestamptz, timestamptz, text, integer
+) from public, anon;
+grant execute on function public.discovery_evidence_consistent(
+  jsonb, text, date, timestamptz, timestamptz, text, integer
+) to authenticated;
+
 create table public.discovery_batches (
   policy_id text not null check (policy_id ~ '^[a-z0-9][a-z0-9.-]{0,63}$'),
   slot_date date not null,
@@ -25,15 +132,10 @@ create table public.discovery_batches (
   -- One batch per policy and slot: a retry or a concurrent run can't add a second one.
   primary key (policy_id, slot_date),
   -- The columns repeat the evidence, so a reader is never shown one thing and stored another.
-  check (evidence ->> 'schemaVersion' = '1'),
-  check (evidence -> 'policy' ->> 'id' = policy_id),
-  check ((evidence -> 'slot' ->> 'date')::date = slot_date),
-  check ((evidence -> 'slot' ->> 'scheduledFor')::timestamptz = scheduled_for),
-  check ((evidence -> 'collection' -> 'ticker' ->> 'receivedAt')::timestamptz = collected_at),
-  check (evidence -> 'result' ->> 'status' = upper(status)),
-  check (
-    jsonb_typeof(evidence -> 'result' -> 'members') = 'array'
-    and jsonb_array_length(evidence -> 'result' -> 'members') = member_count
+  constraint discovery_batches_evidence_consistent check (
+    public.discovery_evidence_consistent(
+      evidence, policy_id, slot_date, scheduled_for, collected_at, status, member_count
+    )
   ),
   check (collected_at >= scheduled_for)
 );

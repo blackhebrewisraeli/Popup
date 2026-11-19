@@ -203,11 +203,20 @@ SQL
 discovery_batch() {
   local members=$1 sha=$2
   echo "insert into public.discovery_batches (policy_id, slot_date, scheduled_for, collected_at, status, member_count, evidence, evidence_sha256)
-    values ('binance-spot-usdt-liquidity-v1', '$SLOT', '${SLOT}T00:30:00Z', '${SLOT}T00:33:00Z', 'complete', $members,
-      jsonb_build_object('schemaVersion', 1, 'policy', jsonb_build_object('id', 'binance-spot-usdt-liquidity-v1'),
-        'slot', jsonb_build_object('date', '$SLOT', 'scheduledFor', '${SLOT}T00:30:00.000Z'),
-        'collection', jsonb_build_object('ticker', jsonb_build_object('receivedAt', '${SLOT}T00:33:00.000Z')),
-        'result', jsonb_build_object('status', 'COMPLETE', 'members', (select jsonb_agg(n) from generate_series(1, $members) n))),
+    values ('binance-spot-usdt-liquidity-v1', '$SLOT', '${SLOT}T00:30:00Z', '${SLOT}T00:33:03Z', 'complete', $members,
+      jsonb_build_object('schemaVersion', 1,
+        'policy', jsonb_build_object('id', 'binance-spot-usdt-liquidity-v1', 'sha256', repeat('b', 64)),
+        'slot', jsonb_build_object('date', '$SLOT', 'scheduledFor', '${SLOT}T00:30:00.000Z', 'retryDeadline', '${SLOT}T06:00:00.000Z'),
+        'collection', jsonb_build_object(
+          'exchangeInfo', jsonb_build_object('endpoint', 'https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT',
+            'requestedAt', '${SLOT}T00:33:00.000Z', 'receivedAt', '${SLOT}T00:33:01.000Z', 'serverTime', 1),
+          'ticker', jsonb_build_object('endpoint', 'https://api.binance.com/api/v3/ticker/24hr?type=MINI',
+            'requestedAt', '${SLOT}T00:33:02.000Z', 'receivedAt', '${SLOT}T00:33:03.000Z'),
+          'cutoff', '${SLOT}T00:33:02.000Z'),
+        'inputs', jsonb_build_object('listedSymbols', $members, 'malformedInstruments', 0,
+          'usdtInstruments', '[]'::jsonb, 'tickers', '[]'::jsonb, 'invalidTickers', '[]'::jsonb),
+        'result', jsonb_build_object('status', 'COMPLETE', 'coverage', '{}'::jsonb, 'exclusions', '[]'::jsonb,
+          'members', (select jsonb_agg(n) from generate_series(1, $members) n))),
       repeat('$sha', 64));"
 }
 discovery_cleanup() {
