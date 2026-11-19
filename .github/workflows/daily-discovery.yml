@@ -1,0 +1,120 @@
+name: Daily Discovery
+
+on:
+  schedule:
+    # Slot binance-spot-usdt-liquidity-v1@<date> 00:30 UTC. A primary run and two bounded
+    # retries start inside its 00:30–06:00 UTC window; a run GitHub starts at or after 06:00
+    # records the slot as missed and stores no batch. Scheduled time is not completion time:
+    # every run records when it actually started and finished.
+    - cron: '33 0 * * *'
+    - cron: '3 2 * * *'
+    - cron: '33 4 * * *'
+  workflow_dispatch:
+    inputs:
+      check:
+        description: While disabled, the check to run on this runner
+        type: choice
+        options:
+          - synthetic-acceptance
+          - binance-preflight
+        default: synthetic-acceptance
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancels a writer; the database's primary key decides a race anyway.
+  group: daily-discovery
+  cancel-in-progress: false
+
+jobs:
+  activation:
+    name: Activation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Report activation state
+        env:
+          ENABLED: ${{ vars.DAILY_DISCOVERY_ENABLED }}
+        run: |
+          if [ "$ENABLED" = "true" ]; then
+            echo "Daily discovery is enabled."
+          else
+            echo "Daily discovery is disabled. Enable it only after the migration, the automation user, synthetic acceptance and the Binance preflight (docs/MARKET_SCANNER.md#activation)."
+          fi
+
+  synthetic-acceptance:
+    name: Synthetic acceptance (no Binance, no storage)
+    needs: activation
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      vars.DAILY_DISCOVERY_ENABLED != 'true' &&
+      inputs.check == 'synthetic-acceptance'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run the synthetic collector and board suites
+        # Synthetic Binance responses and in-process storage only.
+        run: npm test -- scripts/dailyDiscovery.test.ts src/test/dailyDiscovery.test.ts src/test/dailyCandidates.test.tsx
+
+  binance-preflight:
+    name: Binance reachability from this runner (read-only)
+    needs: activation
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      vars.DAILY_DISCOVERY_ENABLED != 'true' &&
+      inputs.check == 'binance-preflight'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Request one public 24-hour ticker
+        # HTTP 451 means this runner's region is blocked: keep discovery disabled.
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 \
+            'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT&type=MINI')
+          echo "Binance Spot 24hr ticker answered HTTP $status"
+          [ "$status" = "200" ]
+
+  collect:
+    name: Collect, verify and record the due slot
+    needs: activation
+    if: vars.DAILY_DISCOVERY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # The only step that sees the discovery sign-in. It prints counts, times and status:
+      # never pairs, volumes or evidence, which stay in the private tables.
+      - name: Run the daily discovery collector
+        env:
+          SUPABASE_DISCOVERY_EMAIL: ${{ secrets.SUPABASE_DISCOVERY_EMAIL }}
+          SUPABASE_DISCOVERY_PASSWORD: ${{ secrets.SUPABASE_DISCOVERY_PASSWORD }}
+        run: ./node_modules/.bin/tsx scripts/dailyDiscovery.ts

@@ -289,6 +289,126 @@ to count incomplete scans. The snapshots keep that whole population.
 - App scores use 199 closed candles. Pine `1.0.0-pw200` sees 200 at a bar close, so the windows
   differ by one candle (see `docs/PINE_PARITY_ASSESSMENT.md`).
 
+## Daily discovery (Binance Spot, unattended)
+
+Research › **Daily candidates** shows a dated shortlist collected once a day with no browser,
+agent session or owner token. It is discovery, not scoring: pairs to investigate later, never a
+BUY/SELL signal, a model score or evidence of profitability. Three sources stay apart:
+
+|          | Daily discovery                                                     | Market scan (legacy model scoring)  | Saved TradingView review                      |
+| -------- | ------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------- |
+| Runs     | GitHub Actions, one 00:30 UTC slot a day                            | In the browser, while Research open | The owner's agent session, by hand            |
+| Universe | Top 50 Binance Spot USDT pairs by 24h quote volume, chosen each day | `assets_status` rows                | Frozen `crypto-usdt-v1` and equity lists      |
+| Output   | Liquidity rank and inclusion reason; no score                       | Canonical score and setups          | Canonical score and setups, reproducible      |
+| Data     | Binance public REST (`exchangeInfo`, 24hr ticker)                   | Binance klines (crypto)             | TradingView bars via MCP; not collected daily |
+| Stored   | `discovery_batches`, `discovery_attempts` (owner-only)              | Not stored                          | Local files, or a file the owner opens        |
+
+Code: `src/lib/dailyDiscovery.ts` (policy, verification, freshness), `scripts/dailyDiscovery.ts`
+(collector), `src/components/DailyCandidates.tsx` (board),
+`.github/workflows/daily-discovery.yml` and migration `20261119120000_daily_discovery.sql`. Nothing
+here writes `assets_status`, scores, thresholds, research universes or campaigns.
+
+### Policy `binance-spot-usdt-liquidity-v1`
+
+Its identity is the SHA-256 of `DISCOVERY_POLICY`, pinned by a test. Any change to these rules needs
+a new policy ID; a batch recorded under another identity is refused.
+
+1. **Inputs.** `GET /api/v3/exchangeInfo?permissions=SPOT` and `GET /api/v3/ticker/24hr?type=MINI`,
+   public, no key. The ticker request time is the cutoff. Both are validated before anything is
+   selected.
+2. **USDT pairs.** `quoteAsset` exactly `USDT`: the field, never the symbol's suffix.
+3. **Eligible.** `status` `TRADING`, `isSpotTradingAllowed` true, and `baseAsset` not one of the 13
+   codes `crypto-usdt-v1` recorded as stablecoins on 2026-11-11
+   ([TRADINGVIEW_CRYPTO_SCAN.md](TRADINGVIEW_CRYPTO_SCAN.md#membership-rule)), compared by exact
+   code. That record lists no leveraged token, so none is excluded on that basis. Its wrapped or
+   staked receipts and XAUT are labelled, not excluded. Every other pair is **Not classified**: a
+   stablecoin or tokenized asset missing from the record stays in the shortlist.
+4. **Figures.** `quoteVolume` must be a plain decimal string and is compared exactly, never as a
+   float. The window must be exactly 24 hours, end at most 1 minute after the response arrived and at
+   most 1 hour before the cutoff. A pair without a valid figure is listed with its reason, never
+   ranked or filled in.
+5. **Order.** Quote volume descending, ties by exact symbol in code-unit order; the first 50.
+6. **Status.** `PARTIAL` when an eligible pair has no valid figure or an `exchangeInfo` entry was
+   unreadable. `EMPTY` when nothing was eligible: a recorded result, not a failure. Otherwise
+   `COMPLETE`.
+
+The 24-hour figure is Binance's rolling window ending at each pair's close time, not a UTC calendar
+day.
+
+### Collection, retries and storage
+
+- **Slot.** `binance-spot-usdt-liquidity-v1@<date>`, scheduled 00:30 UTC, retry deadline 06:00 UTC.
+  Cron starts at 00:33, 02:03 and 04:33 UTC; GitHub may start them late.
+- **Requests.** 30 s timeout, at most 3 tries each. Timeouts, network errors and 5xx wait 2 s, then
+  8 s. A 429 is retried only after a Retry-After of 60 s or less; 418, 451 and other 4xx are never
+  retried. Any failure stores no batch and substitutes nothing: no earlier batch, sample asset or
+  `assets_status` row.
+- **One batch per slot**, enforced by the primary key. A stored slot is never fetched again
+  (`already_collected`). A run that starts at or after 06:00 is `missed` and fetches nothing; one
+  that finishes after it is `failed` (`DEADLINE_PASSED`) and stores nothing. A run that loses a race
+  for the key records `unchanged` (same SHA-256) or `conflict` (different; the first stays).
+- **Attempts.** Every run adds one row: slot, actual start and finish, status and failure code.
+- **Immutable.** Clients can only insert. A trigger refuses `UPDATE`, `DELETE` and `TRUNCATE` for
+  every role, administrators included.
+- **Access.** A dedicated Auth user whose `app_metadata.role` is `discovery_automation` inserts and
+  reads; the configured owner (`is_binance_spot_owner()`) reads; nobody else, and the service role
+  has no grant. The run log and summary carry counts, times and status only.
+
+### Board and freshness
+
+The board shows the newest batch only after verifying it: the stored evidence matches its recorded
+SHA-256, the policy identity and slot match, and the stored collection metadata and inputs pass the
+collector's own rules again. Endpoints must be the policy's. Times must be exact UTC times in
+collection order before the deadline, and the cutoff must be the ticker request. Counts must be
+whole numbers, and entries must have exactly the recorded fields, in exact-symbol order, with known
+issues only. Volumes must be plain decimals, with windows valid against the recorded request and
+receipt times. Members, order and exclusions must then re-derive from those inputs. A refused batch
+is reported with its reason, never repaired, and no older batch or sample takes its place.
+
+The database separately refuses a batch whose evidence lacks a field its columns repeat, holds JSON
+null or the wrong type there, disagrees with the columns, or has collection times out of order
+(`discovery_evidence_consistent`). That is structural consistency only: it does not authenticate
+what Binance sent.
+
+**Freshness** applies to the daily feed only, separately from candle freshness. A batch is
+**Current** from its slot until the next slot starts, 24 hours later. Until the next slot's 06:00 UTC
+deadline it then reads **Today's batch not in yet**, or **Today's attempt failed** when the latest
+attempt for that slot failed, was missed or conflicted. From that deadline, 29 h 30 min after its
+own slot, it is **Stale**. Both boundaries are tested to the millisecond. Batch age (since the ticker
+response) and the latest attempt are shown beside it.
+
+**Asset detail** opens only where a live `assets_status` row's Binance symbol is exactly the pair
+(`toBinanceSymbol`), never for a sample row. The board shows no prices and does not refresh between
+batches.
+
+### Activation
+
+Nothing collects until the owner turns it on. Each step needs the previous one.
+
+1. Apply the migration ([RELEASE.md](RELEASE.md#daily-discovery-20261119120000)).
+2. Create a dedicated Auth user in the Dashboard (Authentication → Add user, auto-confirmed), then
+   give it the role in the SQL editor. Keep its address and password out of the repository.
+
+   ```sql
+   update auth.users
+   set raw_app_meta_data = raw_app_meta_data || '{"role": "discovery_automation"}'
+   where email = '<discovery automation email>';
+   ```
+
+3. Add Actions secrets `SUPABASE_DISCOVERY_EMAIL` and `SUPABASE_DISCOVERY_PASSWORD`. The
+   `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` variables already exist. Never add a service-role
+   key.
+4. While disabled, dispatch **Daily Discovery** with `check: synthetic-acceptance`, then with
+   `check: binance-preflight`. The preflight needs HTTP 200. HTTP 451 means the runner's region is
+   blocked: keep discovery disabled and move the `collect` job to a self-hosted runner in a
+   supported region. Switching to another host or provider is a new policy version.
+5. Set the repository variable `DAILY_DISCOVERY_ENABLED` to `true`. The next scheduled run
+   collects. A dispatch outside 00:30–06:00 UTC records the slot as missed and fetches nothing.
+6. After the first run, check its summary (status `complete`, `partial` or `empty`) and open
+   Research › Daily candidates as the owner.
+
+To pause, unset the variable; history stays as recorded.
+
 ## TradingView development scan (local, owner-initiated)
 
 A local demonstration: US equities and ETFs scored by this scanner on daily bars that the owner's

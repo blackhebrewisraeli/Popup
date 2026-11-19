@@ -36,6 +36,7 @@ import { SetAlertButton } from '@/components/SetAlertModal';
 import { FreshnessBadge } from '@/components/FreshnessBadge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { DailyCandidates } from '@/components/DailyCandidates';
 import { OpenSavedScanFile, SavedScanFileView } from '@/components/SavedScanFile';
 import {
   MarketsSourcePicker,
@@ -441,13 +442,15 @@ export function MarketsSection({
   );
 }
 
-export type ResearchPlace = 'scan' | 'directory';
+export type ResearchPlace = 'scan' | 'directory' | 'daily';
 
 /**
- * Research has two places: the ranked scan with its evidence, and the Markets
+ * Research has three places: the ranked scan with its evidence; the Markets
  * directory (prices, alerts, broker links and the portfolio builder), so the
- * directory never reads as a second scanner. Both stay mounted, so switching keeps
- * the scan's filters, selection and comparison. Under `vite dev` the scan's source
+ * directory never reads as a second scanner; and Daily candidates, the
+ * unattended collector's latest batch. Scan and directory stay mounted, so switching keeps
+ * the scan's filters, selection and comparison. Daily candidates mounts only while shown and
+ * never waits on the market-data query: it reads its own batches. Under `vite dev` the scan's source
  * is picked above the live-data gate: the local TradingView import never waits on,
  * or disappears with, the market-data query, and the two never render together.
  * A saved crypto scan file the owner opens takes the scan's place, in every build, until it
@@ -461,6 +464,7 @@ export function ResearchZone({
   scan,
   markets,
   alerts,
+  daily,
   source,
   onSource,
   place,
@@ -475,6 +479,7 @@ export function ResearchZone({
   scan: ReactNode;
   markets: ReactNode;
   alerts: ReactNode;
+  daily?: ReactNode;
   source: MarketsSource;
   onSource: (source: MarketsSource) => void;
   place: ResearchPlace;
@@ -506,6 +511,7 @@ export function ResearchZone({
           options={[
             { value: 'scan', label: 'Scan' },
             { value: 'directory', label: 'Markets directory' },
+            { value: 'daily', label: 'Daily candidates' },
           ]}
         />
         {import.meta.env.DEV && place === 'scan' && file === null && (
@@ -530,6 +536,7 @@ export function ResearchZone({
           </>,
         )}
       </div>
+      {place === 'daily' && daily}
     </div>
   );
 }
@@ -779,6 +786,8 @@ function Terminal() {
                 <PriceAlerts assets={baseAssets} user={user} />
               </section>
             }
+            // Live assets_status rows only: a candidate never opens a sample asset.
+            daily={<DailyCandidates assets={liveAssets ?? []} onOpenAsset={setSelectedAsset} />}
             source={marketsSource}
             onSource={setMarketsSource}
             place={researchPlace}

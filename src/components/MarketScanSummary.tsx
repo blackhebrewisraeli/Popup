@@ -91,7 +91,7 @@ const CLASS_NOUN: Record<ScanCohort['assetClass'], string> = {
 };
 
 /** One fact in the scan header: a label, its value, and an optional quieter line under it. */
-function Fact({
+export function Fact({
   label,
   value,
   detail,

@@ -81,6 +81,90 @@ export type Database = {
         };
         Relationships: [];
       };
+      discovery_attempts: {
+        Row: {
+          attempt_id: string;
+          detail: string | null;
+          evidence_sha256: string | null;
+          failure_code: string | null;
+          finished_at: string;
+          policy_id: string;
+          recorded_at: string;
+          recorded_by: string;
+          scheduled_for: string;
+          slot_date: string;
+          started_at: string;
+          status: string;
+        };
+        Insert: {
+          attempt_id: string;
+          detail?: string | null;
+          evidence_sha256?: string | null;
+          failure_code?: string | null;
+          finished_at: string;
+          policy_id: string;
+          recorded_at?: string;
+          recorded_by?: string;
+          scheduled_for: string;
+          slot_date: string;
+          started_at: string;
+          status: string;
+        };
+        Update: {
+          attempt_id?: string;
+          detail?: string | null;
+          evidence_sha256?: string | null;
+          failure_code?: string | null;
+          finished_at?: string;
+          policy_id?: string;
+          recorded_at?: string;
+          recorded_by?: string;
+          scheduled_for?: string;
+          slot_date?: string;
+          started_at?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
+      discovery_batches: {
+        Row: {
+          collected_at: string;
+          evidence: Json;
+          evidence_sha256: string;
+          member_count: number;
+          policy_id: string;
+          recorded_at: string;
+          recorded_by: string;
+          scheduled_for: string;
+          slot_date: string;
+          status: string;
+        };
+        Insert: {
+          collected_at: string;
+          evidence: Json;
+          evidence_sha256: string;
+          member_count: number;
+          policy_id: string;
+          recorded_at?: string;
+          recorded_by?: string;
+          scheduled_for: string;
+          slot_date: string;
+          status: string;
+        };
+        Update: {
+          collected_at?: string;
+          evidence?: Json;
+          evidence_sha256?: string;
+          member_count?: number;
+          policy_id?: string;
+          recorded_at?: string;
+          recorded_by?: string;
+          scheduled_for?: string;
+          slot_date?: string;
+          status?: string;
+        };
+        Relationships: [];
+      };
       paper_order_batches: {
         Row: {
           budget: number;
