@@ -146,8 +146,7 @@ const UTC_SECONDS = new Intl.DateTimeFormat('en-GB', {
 
 /** "1,234,567,890" from Binance's exact decimal string: grouped, the fraction dropped, no float. */
 function wholeUnits(decimal: string): string {
-  const whole = (decimal.split('.')[0] ?? '0').replace(/^0+(?=\d)/, '');
-  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return BigInt(decimal.split('.')[0] ?? '0').toLocaleString('en-US');
 }
 
 function attemptLabel(status: string): string {
@@ -244,10 +243,10 @@ function BatchNotes({ evidence }: Readonly<{ evidence: DiscoveryEvidence }>) {
   const { status, coverage } = evidence.result;
   if (status === 'EMPTY') {
     return (
-      <p className="market-scan-empty" role="status">
+      <output className="market-scan-empty block">
         Collection succeeded and no USDT pair was eligible, so this date has no candidates. This is
         a recorded result, not a failed collection.
-      </p>
+      </output>
     );
   }
   if (status === 'PARTIAL') {
@@ -277,12 +276,10 @@ function CandidatesTable({
   const { members, coverage } = evidence.result;
   if (members.length === 0) return null;
   return (
-    <div
+    <section
       className="scan-compare-scroll"
-      role="region"
       aria-label="Candidates, scrollable"
-      // Keyboard users can scroll the table sideways on a phone.
-      tabIndex={0}
+      tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
     >
       <table className="discovery-table">
         <caption className="sr-only">
@@ -310,7 +307,7 @@ function CandidatesTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
   );
 }
 

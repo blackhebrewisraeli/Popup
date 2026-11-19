@@ -160,10 +160,27 @@ export interface DiscoveryInputs {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// eslint-disable-next-line no-control-regex
-const SYMBOL_TEXT = /^[^\u0000-\u001f\u007f\s]{1,40}$/u;
+/** 1–40 characters, none a control, format or separator character (any space included). */
+const SYMBOL_TEXT = /^[^\p{Cc}\p{Cf}\p{Z}]{1,40}$/u;
 const isSymbolText = (value: unknown): value is string =>
   typeof value === 'string' && SYMBOL_TEXT.test(value);
+
+/** One exchangeInfo entry: a USDT-quoted instrument, null for another quote, or unusable. */
+function readInstrument(entry: unknown): DiscoveryInstrument | null | 'malformed' {
+  if (!isRecord(entry)) return 'malformed';
+  const { symbol, quoteAsset, baseAsset, status, isSpotTradingAllowed } = entry;
+  if (!isSymbolText(symbol) || typeof quoteAsset !== 'string') return 'malformed';
+  if (quoteAsset !== DISCOVERY_POLICY.eligibility.quoteAsset) return null;
+  if (
+    !isSymbolText(baseAsset) ||
+    typeof status !== 'string' ||
+    status === '' ||
+    typeof isSpotTradingAllowed !== 'boolean'
+  ) {
+    return 'malformed';
+  }
+  return { symbol, baseAsset, status, spotTradingAllowed: isSpotTradingAllowed };
+}
 
 /** exchangeInfo reduced to its USDT-quoted instruments; null when the response is not one. */
 export function parseExchangeInfo(body: unknown): {
@@ -180,25 +197,11 @@ export function parseExchangeInfo(body: unknown): {
   let malformed = 0;
   const bySymbol = new Map<string, DiscoveryInstrument[]>();
   for (const entry of body['symbols']) {
-    const quote = isRecord(entry) ? entry['quoteAsset'] : undefined;
-    const symbol = isRecord(entry) ? entry['symbol'] : undefined;
-    if (!isRecord(entry) || !isSymbolText(symbol) || typeof quote !== 'string') {
-      malformed += 1;
-      continue;
+    const instrument = readInstrument(entry);
+    if (instrument === 'malformed') malformed += 1;
+    else if (instrument) {
+      bySymbol.set(instrument.symbol, [...(bySymbol.get(instrument.symbol) ?? []), instrument]);
     }
-    if (quote !== DISCOVERY_POLICY.eligibility.quoteAsset) continue;
-    const { baseAsset, status, isSpotTradingAllowed } = entry;
-    if (!isSymbolText(baseAsset) || typeof status !== 'string' || status === '') {
-      malformed += 1;
-      continue;
-    }
-    if (typeof isSpotTradingAllowed !== 'boolean') {
-      malformed += 1;
-      continue;
-    }
-    const list = bySymbol.get(symbol) ?? [];
-    list.push({ symbol, baseAsset, status, spotTradingAllowed: isSpotTradingAllowed });
-    bySymbol.set(symbol, list);
   }
   const usdtInstruments: DiscoveryInstrument[] = [];
   for (const list of bySymbol.values()) {

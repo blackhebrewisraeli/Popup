@@ -68,61 +68,80 @@ export interface CollectorDeps {
 const isTimeout = (error: unknown) =>
   error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
 
+/**
+ * Whether to try again after this response, and after how long; null when it carries a body
+ * to read. Throws when Binance must not be asked again this run.
+ */
+function retryWait(
+  response: Response,
+  label: string,
+  bounds: RequestBounds,
+  retry: boolean,
+  pause: number,
+): number | null {
+  const { status } = response;
+  // 418 means Binance banned the IP for ignoring 429s: never send another request.
+  if (status === 418) throw new CollectionFailure('IP_BANNED', `${label}: HTTP 418`);
+  if (status === 451) {
+    throw new CollectionFailure('REGION_BLOCKED', `${label}: HTTP 451 from this runner's region`);
+  }
+  if (status === 429) {
+    const seconds = Number(response.headers.get('Retry-After'));
+    const wait = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+    if (retry && wait !== null && wait <= bounds.maxRetryAfterMs) return wait;
+    const named = wait === null ? '' : ` (Retry-After ${wait / 1000}s)`;
+    throw new CollectionFailure('RATE_LIMITED', `${label}: HTTP 429${named}`);
+  }
+  if (status >= 500 && retry) return pause;
+  if (!response.ok) throw new CollectionFailure('HTTP_ERROR', `${label}: HTTP ${status}`);
+  return null;
+}
+
+async function readJson(response: Response, label: string): Promise<unknown> {
+  try {
+    return (await response.json()) as unknown;
+  } catch (error) {
+    if (isTimeout(error)) throw new CollectionFailure('TIMEOUT', `${label} body timed out`);
+    throw new CollectionFailure('RESPONSE_INVALID', `${label}: not JSON`);
+  }
+}
+
+/** One try: the body, or how long to wait before the next try. */
+async function tryRequest(
+  url: string,
+  deps: CollectorDeps,
+  bounds: RequestBounds,
+  attempt: number,
+): Promise<{ body: unknown } | { waitMs: number }> {
+  const label = new URL(url).pathname;
+  const retry = attempt < bounds.attempts;
+  const pause = bounds.backoffMs[attempt - 1] ?? bounds.backoffMs.at(-1) ?? 0;
+  let response: Response;
+  try {
+    response = await deps.fetch(url, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(bounds.timeoutMs),
+    });
+  } catch (error) {
+    if (retry) return { waitMs: pause };
+    throw isTimeout(error)
+      ? new CollectionFailure('TIMEOUT', `${label} timed out ${attempt} times`)
+      : new CollectionFailure('NETWORK_ERROR', `${label} unreachable after ${attempt} tries`);
+  }
+  const waitMs = retryWait(response, label, bounds, retry, pause);
+  return waitMs === null ? { body: await readJson(response, label) } : { waitMs };
+}
+
 async function requestJson(
   url: string,
   deps: CollectorDeps,
 ): Promise<{ body: unknown; requestedAt: number; receivedAt: number }> {
   const bounds = deps.bounds ?? REQUEST_BOUNDS;
-  const label = new URL(url).pathname;
   for (let attempt = 1; ; attempt += 1) {
-    const retry = attempt < bounds.attempts;
-    const pause = bounds.backoffMs[attempt - 1] ?? bounds.backoffMs.at(-1) ?? 0;
     const requestedAt = deps.now();
-    let response: Response;
-    try {
-      response = await deps.fetch(url, {
-        headers: { accept: 'application/json' },
-        signal: AbortSignal.timeout(bounds.timeoutMs),
-      });
-    } catch (error) {
-      if (retry) {
-        await deps.sleep(pause);
-        continue;
-      }
-      throw isTimeout(error)
-        ? new CollectionFailure('TIMEOUT', `${label} timed out ${attempt} times`)
-        : new CollectionFailure('NETWORK_ERROR', `${label} unreachable after ${attempt} tries`);
-    }
-    // 418 means Binance banned the IP for ignoring 429s: never send another request.
-    if (response.status === 418) throw new CollectionFailure('IP_BANNED', `${label}: HTTP 418`);
-    if (response.status === 451) {
-      throw new CollectionFailure('REGION_BLOCKED', `${label}: HTTP 451 from this runner's region`);
-    }
-    if (response.status === 429) {
-      const seconds = Number(response.headers.get('Retry-After'));
-      const wait = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
-      if (retry && wait !== null && wait <= bounds.maxRetryAfterMs) {
-        await deps.sleep(wait);
-        continue;
-      }
-      throw new CollectionFailure(
-        'RATE_LIMITED',
-        `${label}: HTTP 429${wait === null ? '' : ` (Retry-After ${wait / 1000}s)`}`,
-      );
-    }
-    if (response.status >= 500 && retry) {
-      await deps.sleep(pause);
-      continue;
-    }
-    if (!response.ok)
-      throw new CollectionFailure('HTTP_ERROR', `${label}: HTTP ${response.status}`);
-    try {
-      const body: unknown = await response.json();
-      return { body, requestedAt, receivedAt: deps.now() };
-    } catch (error) {
-      if (isTimeout(error)) throw new CollectionFailure('TIMEOUT', `${label} body timed out`);
-      throw new CollectionFailure('RESPONSE_INVALID', `${label}: not JSON`);
-    }
+    const outcome = await tryRequest(url, deps, bounds, attempt);
+    if ('body' in outcome) return { body: outcome.body, requestedAt, receivedAt: deps.now() };
+    await deps.sleep(outcome.waitMs);
   }
 }
 
@@ -246,6 +265,74 @@ export const SUCCESSFUL_RUNS: ReadonlySet<DiscoveryAttemptStatus> = new Set([
   'unchanged',
 ]);
 
+interface SlotOutcome {
+  status: DiscoveryAttemptStatus;
+  failureCode: DiscoveryFailureCode | null;
+  detail: string | null;
+  sha: string | null;
+  coverage: DiscoveryResult['coverage'] | null;
+}
+
+const outcome = (status: DiscoveryAttemptStatus, details: Partial<SlotOutcome> = {}) => ({
+  status,
+  failureCode: null,
+  detail: null,
+  sha: null,
+  coverage: null,
+  ...details,
+});
+
+/** A store or collection failure's code; anything else is a bug and propagates. */
+function failureCodeOf(error: unknown): DiscoveryFailureCode {
+  if (error instanceof CollectionFailure) return error.code;
+  if (error instanceof DiscoveryStoreError) return 'STORE_ERROR';
+  throw error;
+}
+
+/** Collects the slot and stores it once; a lost race compares hashes, never overwrites. */
+async function collectAndStore(
+  slot: DiscoverySlot,
+  store: DiscoveryStore,
+  deps: CollectorDeps,
+): Promise<SlotOutcome> {
+  let sha: string | null = null;
+  let coverage: DiscoveryResult['coverage'] | null = null;
+  try {
+    const evidence = await collectDiscoveryEvidence(slot, deps);
+    sha = await evidenceSha256(evidence);
+    coverage = evidence.result.coverage;
+    if (deps.now() >= Date.parse(slot.retryDeadline)) {
+      throw new CollectionFailure(
+        'DEADLINE_PASSED',
+        `Collection finished after the ${slot.retryDeadline} retry deadline.`,
+      );
+    }
+    const status = evidence.result.status.toLowerCase() as 'complete' | 'partial' | 'empty';
+    const inserted = await store.insertBatch({
+      policy_id: DISCOVERY_POLICY_ID,
+      slot_date: slot.date,
+      scheduled_for: slot.scheduledFor,
+      collected_at: evidence.collection.ticker.receivedAt,
+      status,
+      member_count: evidence.result.members.length,
+      evidence: evidence as unknown as Json,
+      evidence_sha256: sha,
+    });
+    if (inserted === 'created') return outcome(status, { sha, coverage });
+    const stored = await store.findBatch(DISCOVERY_POLICY_ID, slot.date);
+    return stored?.evidence_sha256 === sha
+      ? outcome('unchanged', { sha, coverage })
+      : outcome('conflict', {
+          sha,
+          coverage,
+          detail: 'Another run stored different evidence for this slot.',
+        });
+  } catch (error) {
+    const failureCode = failureCodeOf(error);
+    return outcome('failed', { failureCode, detail: (error as Error).message, sha, coverage });
+  }
+}
+
 /**
  * Collects the due slot at most once. A slot with a stored batch is never fetched again; a
  * run that starts at or after the slot's 06:00 UTC deadline, or finishes after it, stores no
@@ -261,59 +348,15 @@ export async function runDailyDiscovery(options: {
   const { store, deps } = options;
   const startedAt = deps.now();
   const slot = dueSlot(startedAt);
-  const deadline = Date.parse(slot.retryDeadline);
-  let status: DiscoveryAttemptStatus;
-  let failureCode: DiscoveryFailureCode | null = null;
-  let detail: string | null = null;
-  let sha: string | null = null;
-  let coverage: DiscoveryResult['coverage'] | null = null;
-
   const existing = await store.findBatch(DISCOVERY_POLICY_ID, slot.date);
-  if (existing) {
-    status = 'already_collected';
-    sha = existing.evidence_sha256;
-  } else if (startedAt >= deadline) {
-    status = 'missed';
-    detail = `Started ${iso(startedAt)}, at or after the ${slot.retryDeadline} retry deadline.`;
-  } else {
-    try {
-      const evidence = await collectDiscoveryEvidence(slot, deps);
-      sha = await evidenceSha256(evidence);
-      coverage = evidence.result.coverage;
-      if (deps.now() >= deadline) {
-        throw new CollectionFailure(
-          'DEADLINE_PASSED',
-          `Collection finished after the ${slot.retryDeadline} retry deadline.`,
-        );
-      }
-      const outcome = await store.insertBatch({
-        policy_id: DISCOVERY_POLICY_ID,
-        slot_date: slot.date,
-        scheduled_for: slot.scheduledFor,
-        collected_at: evidence.collection.ticker.receivedAt,
-        status: evidence.result.status.toLowerCase(),
-        member_count: evidence.result.members.length,
-        evidence: evidence as unknown as Json,
-        evidence_sha256: sha,
-      });
-      if (outcome === 'created') status = evidence.result.status.toLowerCase() as typeof status;
-      else {
-        const stored = await store.findBatch(DISCOVERY_POLICY_ID, slot.date);
-        status = stored?.evidence_sha256 === sha ? 'unchanged' : 'conflict';
-        if (status === 'conflict') detail = 'Another run stored different evidence for this slot.';
-      }
-    } catch (error) {
-      if (error instanceof CollectionFailure) {
-        status = 'failed';
-        failureCode = error.code;
-        detail = error.message;
-      } else if (error instanceof DiscoveryStoreError) {
-        status = 'failed';
-        failureCode = 'STORE_ERROR';
-        detail = error.message;
-      } else throw error;
-    }
-  }
+  let result: SlotOutcome;
+  if (existing) result = outcome('already_collected', { sha: existing.evidence_sha256 });
+  else if (startedAt >= Date.parse(slot.retryDeadline)) {
+    result = outcome('missed', {
+      detail: `Started ${iso(startedAt)}, at or after the ${slot.retryDeadline} retry deadline.`,
+    });
+  } else result = await collectAndStore(slot, store, deps);
+  const { status, failureCode, detail, sha, coverage } = result;
   const finishedAt = deps.now();
   await store.insertAttempt({
     attempt_id: options.attemptId,
@@ -346,12 +389,13 @@ const minutes = (ms: number) => `${Math.round(ms / 60_000)} min`;
 export function summaryLines(summary: DiscoveryRunSummary): string[] {
   const late = summary.startedAt - Date.parse(summary.slot.scheduledFor);
   const { coverage } = summary;
+  const code = summary.failureCode ? ` (${summary.failureCode})` : '';
   return [
     '## Daily discovery',
     '',
     `- Policy: ${DISCOVERY_POLICY_ID}`,
     `- Slot: ${summary.slot.date} 00:30 UTC (retry deadline 06:00 UTC)`,
-    `- Status: ${summary.status}${summary.failureCode ? ` (${summary.failureCode})` : ''}`,
+    `- Status: ${summary.status}${code}`,
     `- Started: ${iso(summary.startedAt)}, ${minutes(late)} after the scheduled slot`,
     `- Finished: ${iso(summary.finishedAt)}`,
     coverage
