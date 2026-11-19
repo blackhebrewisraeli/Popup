@@ -218,3 +218,41 @@ needs a flag.
 - Database: forward-only. Never drop the column or clear snapshots to undo this. To stop new
   snapshots, revoke the column's `INSERT` grant in a new migration, after rolling the frontend
   back, since a frontend that sends one would then be refused.
+
+## Daily discovery (20261119120000)
+
+Storage for [daily discovery](./MARKET_SCANNER.md#daily-discovery-binance-spot-unattended). The
+migration only expands:
+
+- It adds two tables (`discovery_batches`, `discovery_attempts`), one index, their policies and
+  grants, one trigger function (`refuse_discovery_change()`) and four triggers that refuse
+  `UPDATE`, `DELETE` and `TRUNCATE` on them.
+- Reads go through the existing `is_binance_spot_owner()`; writes need `app_metadata.role` =
+  `discovery_automation`. It changes no existing table, policy, grant, function or row, and
+  backfills nothing.
+
+The frontend reads both tables under Research › Daily candidates, so it can't run against a database
+without them. `DB_CONTRACT` is unchanged (no new RPC); the gate's migration check blocks the
+frontend until the migration is applied.
+
+**Order: database, then merge, then (separately) activation.**
+
+1. From a checkout of the PR's final head, run `supabase db push --dry-run`. It should list only
+   `20261119120000`. Then run `supabase db push`.
+2. From the same checkout, run the contract check above. It must report all 33 migrations applied.
+3. Merge. The production build passes the gate. Until a batch exists, the owner's board reads
+   **No batch to show**; everyone else reads that it is owner-only.
+4. Activation is a separate owner decision, after the merge:
+   [MARKET_SCANNER.md › Activation](./MARKET_SCANNER.md#activation). The workflow collects nothing
+   while `DAILY_DISCOVERY_ENABLED` is unset.
+
+**Between steps 1 and 3**, production runs the older frontend, which never reads these tables.
+
+**Rollback.**
+
+- Frontend: Instant Rollback to a deployment from before this change is safe. It never reads the
+  tables, and stored batches stay.
+- Collection: unset `DAILY_DISCOVERY_ENABLED`. Nothing else changes.
+- Database: forward-only. Never drop the tables or delete their rows to undo this (the triggers
+  refuse it). To withdraw access, revoke the `authenticated` grants in a new migration, after
+  rolling the frontend back.

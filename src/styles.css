@@ -1227,6 +1227,7 @@ body {
 .scan-link-button:focus-visible,
 .scan-compare-remove:focus-visible,
 .scan-guide-details > summary:focus-visible,
+.discovery-exclusions > summary:focus-visible,
 .scan-review .portfolio-cash-btn:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -1514,6 +1515,58 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted-foreground);
+}
+/* Daily candidates: one row per pair, figures in tabular mono, sideways scroll on a phone. */
+.discovery-table {
+  /* Contains the cells' visually hidden text, which would otherwise widen the page. */
+  position: relative;
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.discovery-table th,
+.discovery-table td {
+  padding: 8px 14px 8px 0;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.discovery-table thead th {
+  border-top: none;
+  font:
+    600 10px 'JetBrains Mono',
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.discovery-table th:nth-child(3),
+.discovery-number {
+  text-align: right;
+}
+.discovery-rank,
+.discovery-symbol,
+.discovery-number,
+.discovery-symbol-list {
+  font-family: 'JetBrains Mono', monospace;
+}
+.discovery-rank {
+  width: 3rem;
+  color: var(--muted-foreground);
+}
+.discovery-symbol {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.discovery-symbol-list {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.discovery-exclusions > summary {
+  cursor: pointer;
 }
 .scan-compare-remove {
   display: inline-flex;

@@ -185,4 +185,46 @@ check "the first reason is the recorded one" \
 check "no dismissed signal carries a booked fill" \
   "$(sql "select count(*) from public.trading_signal_dismissals d join public.paper_transactions p using (signal_id)")" 0
 
+# 6. Two discovery runs racing for one slot: the second waits for the first's commit, then
+# gets a duplicate key. The first batch stands, whatever the second carried.
+AUTOMATION_ID=00000000-0000-4000-8000-0000000000c9
+SLOT=2099-01-01
+as_automation() {
+  local statements=$1 hold_seconds=${2:-0}
+  psql "$DB" -X -q -At 2>&1 <<SQL
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"$AUTOMATION_ID","role":"authenticated","app_metadata":{"role":"discovery_automation"}}', true);
+$statements
+select pg_sleep($hold_seconds);
+commit;
+SQL
+}
+discovery_batch() {
+  local members=$1 sha=$2
+  echo "insert into public.discovery_batches (policy_id, slot_date, scheduled_for, collected_at, status, member_count, evidence, evidence_sha256)
+    values ('binance-spot-usdt-liquidity-v1', '$SLOT', '${SLOT}T00:30:00Z', '${SLOT}T00:33:00Z', 'complete', $members,
+      jsonb_build_object('schemaVersion', 1, 'policy', jsonb_build_object('id', 'binance-spot-usdt-liquidity-v1'),
+        'slot', jsonb_build_object('date', '$SLOT', 'scheduledFor', '${SLOT}T00:30:00.000Z'),
+        'collection', jsonb_build_object('ticker', jsonb_build_object('receivedAt', '${SLOT}T00:33:00.000Z')),
+        'result', jsonb_build_object('status', 'COMPLETE', 'members', (select jsonb_agg(n) from generate_series(1, $members) n))),
+      repeat('$sha', 64));"
+}
+discovery_cleanup() {
+  sql "alter table public.discovery_batches disable trigger user;
+    delete from public.discovery_batches where slot_date = '$SLOT';
+    alter table public.discovery_batches enable trigger user;" >/dev/null
+}
+discovery_cleanup
+as_automation "$(discovery_batch 2 a)" 2 >/dev/null &
+first=$!
+sleep 0.5
+second=$(as_automation "$(discovery_batch 3 b)")
+wait "$first"
+check "a racing second batch for the slot is a duplicate" \
+  "$(grep -c 'discovery_batches_pkey' <<<"$second")" 1
+check "the first run's batch is the one stored" \
+  "$(sql "select member_count || '/' || left(evidence_sha256, 1) from public.discovery_batches where slot_date = '$SLOT'")" '2/a'
+discovery_cleanup
+
 exit "$failures"
