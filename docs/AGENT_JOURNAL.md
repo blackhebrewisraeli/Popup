@@ -21,6 +21,22 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-19 · Supabase reachability diagnostic for Daily Discovery · Draft PR.**
+  - **Changed:** added an intentionally undeployed, project-secret-protected Edge diagnostic for
+    the two exact Binance public endpoints in the frozen discovery policy. Its origin and paths are
+    fixed, it reports only region, status, timings and aggregate response-shape counts, and it has
+    no Supabase client or storage path.
+  - **Evidence:** production logs showed `crypto-price-feed` v13 served in `eu-west-1` with 95 HTTP
+    200 invocations in the preceding day and 96 summaries updating all five requested prices. This
+    proves the existing runtime and its smaller ticker request, not the two discovery endpoints.
+    Synthetic tests cover authorization, fixed endpoints, success, 451, malformed responses,
+    timeouts and network failures.
+  - **Not done:** the diagnostic was not deployed or invoked. Daily Discovery remains disabled; no
+    user, secret, batch, attempt, migration, cron, price row or other production setting changed.
+  - **Next:** after owner approval, deploy only the diagnostic, invoke it once with
+    `x-region: eu-west-1`, verify both exact endpoints return 200 with the expected structures, and
+    inspect the served-region header. Only then design a minimal collector move.
+
 - **2026-11-19 · Daily discovery batch and Research › Daily candidates · Draft PR [#200](https://github.com/blackhebrewisraeli/Popup/pull/200), branch `feat/daily-discovery-candidates`, from `8b030ef`.**
   - **Changed:** policy `binance-spot-usdt-liquidity-v1` (`src/lib/dailyDiscovery.ts`) is a liquidity shortlist, not a score: TRADING, spot-enabled USDT pairs minus `crypto-usdt-v1`'s recorded stablecoin bases, the top 50 by rolling 24h quote volume, compared as exact decimals. Collector `scripts/dailyDiscovery.ts` runs from the separate `daily-discovery.yml` workflow, disabled until `DAILY_DISCOVERY_ENABLED`. Migration `20261119120000` adds insert-only, immutable `discovery_batches` and `discovery_attempts`: the `discovery_automation` role writes them, `is_binance_spot_owner()` reads them. The board verifies the hash and re-derives the members before showing a batch.
   - **Evidence:** 102 vitest tests (collector in Node, end-to-end collector → board), 73 pgTAP assertions, a concurrency race, `upgrade.sh origin/main`, a local real-stack run (GoTrue role claim, real RLS, synthetic Binance) and 28 caught mutations. Review fix on 2026-11-19: the database's evidence check now fails closed (`discovery_evidence_consistent`), and the board re-validates stored inputs and collection times before re-deriving. Both sets of regressions failed at `48aaff1`, and the valid synthetic batch's hash is pinned unchanged. Browser checks covered desktop, 375 px, light, dark and keyboard. Full local runs hit 5 s timeouts in unrelated suites under heavy machine load (also on clean `main`); CI decides.

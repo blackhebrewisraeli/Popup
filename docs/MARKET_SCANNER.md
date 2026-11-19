@@ -409,6 +409,20 @@ Nothing collects until the owner turns it on. Each step needs the previous one.
 
 To pause, unset the variable; history stays as recorded.
 
+### Supabase reachability diagnostic
+
+`binance-discovery-diagnostic` is a deployment-ready but intentionally undeployed Edge Function for
+checking the two Daily Discovery public inputs from a named Supabase execution region. It accepts
+only `POST` with a project secret key, calls only the policy's fixed `exchangeInfo?permissions=SPOT`
+and `ticker/24hr?type=MINI` URLs, and returns status, elapsed time, `SB_REGION` and aggregate shape
+counts. It has no Supabase client and cannot read or write discovery tables, `assets_status` or any
+other storage. A request body cannot select another URL.
+
+Deploying or invoking it against production is a separate owner-approved step. Pin that invocation
+with `x-region: eu-west-1`, require HTTP 200 and `ok: true`, and confirm the response header
+`x-sb-edge-region` and body `region` both name `eu-west-1`. Delete or leave the function undeployed
+after the reachability decision; it is not part of collection or the schedule.
+
 ## TradingView development scan (local, owner-initiated)
 
 A local demonstration: US equities and ETFs scored by this scanner on daily bars that the owner's

@@ -5,6 +5,10 @@ verify_jwt = false
 [functions.crypto-price-feed]
 verify_jwt = false
 
+# Project-secret protected, fixed-origin and read-only; it never touches storage.
+[functions.binance-discovery-diagnostic]
+verify_jwt = false
+
 [functions.equity-forex-price-feed]
 verify_jwt = false
 
