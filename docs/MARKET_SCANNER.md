@@ -381,6 +381,51 @@ response) and the latest attempt are shown beside it.
 (`toBinanceSymbol`), never for a sample row. The board shows no prices and does not refresh between
 batches.
 
+### Supabase Edge preflight (not deployed)
+
+GitHub-hosted runners get HTTP 451 from Binance. The scheduled price feeds already run elsewhere:
+pg_cron calls them with `x-region: eu-west-1`, next to the database. On 2026-11-19 their edge logs
+showed every `crypto-price-feed` run of the previous 24 hours served from `eu-west-1`, each
+answering 200 and updating all five tickers from `/api/v3/ticker/24hr?type=MINI&symbols=…`. That is
+a filtered ticker, not the two discovery requests. Owner-invoked functions land elsewhere: the
+owner's `binance-spot-account` calls were served from `eu-central-2`. So region depends on the
+caller and has to be pinned.
+
+`supabase/functions/discovery-preflight` asks exactly the policy's two endpoints once each, from
+that runtime, and answers with region, HTTP status, duration and counts only. It holds no database
+client and writes nothing. It refuses a caller without a project secret key (401) and any region
+but `eu-west-1` (421), before asking Binance. It requests only its two fixed URLs. It returns 200
+only when both answer HTTP 200 with the collector's structure: an `exchangeInfo` with TRADING spot
+USDT pairs, and at least one of those pairs with a decimal quote volume over a current 24-hour
+window. Otherwise it returns 502 and names the failing endpoint's outcome.
+
+Deploying and invoking it are owner decisions. To check, after the merge:
+
+1. `supabase functions deploy discovery-preflight --project-ref <project-ref>` from the merged
+   commit.
+2. Invoke it once from the SQL editor the way the feeds' cron does, so the secret key stays in
+   Vault and the call pins the region:
+
+   ```sql
+   select net.http_post(
+     url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+       || '/functions/v1/discovery-preflight',
+     headers := jsonb_build_object(
+       'Content-Type', 'application/json',
+       'x-region', 'eu-west-1',
+       'apikey', (select decrypted_secret from vault.decrypted_secrets where name = 'secret_key')
+     ),
+     timeout_milliseconds := 90000
+   );
+   ```
+
+3. Read the answer from `net._http_response` (`status_code`, `content`) by the returned request
+   ID. pg_net keeps it for about six hours. `reachable: true` with 200 establishes both endpoints
+   from `eu-west-1`. Record status, timing and counts only.
+
+A pass shows Binance reachability from the Edge runtime only. It does not move the collector, and
+discovery stays disabled.
+
 ### Activation
 
 Nothing collects until the owner turns it on. Each step needs the previous one.
