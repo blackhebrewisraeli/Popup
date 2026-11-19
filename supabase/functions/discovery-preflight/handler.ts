@@ -225,7 +225,52 @@ export function summarizeTickers(
   return { entries: body.length, validFigures, invalidFigures: wanted.size - validFigures };
 }
 
-const notRequested = { status: null, durationMs: null, outcome: 'not_requested' } as const;
+/** exchangeInfo's result, and its TRADING spot USDT pairs when it passed. */
+async function checkExchangeInfo(
+  deps: PreflightDeps,
+): Promise<{ result: ExchangeInfoResult; tradable: string[] | null }> {
+  const info = await request(PREFLIGHT_ENDPOINTS.exchangeInfo, deps);
+  const parsed = info.result.outcome === 'ok' ? summarizeExchangeInfo(info.body) : null;
+  // No TRADING spot USDT pair at all would leave nothing for the ticker check to judge.
+  const passed = parsed !== null && parsed.tradingSpotUsdt > 0;
+  return {
+    result: {
+      ...info.result,
+      outcome: info.result.outcome === 'ok' && !passed ? 'invalid_structure' : info.result.outcome,
+      listedSymbols: parsed?.listedSymbols ?? null,
+      usdtInstruments: parsed?.usdtInstruments ?? null,
+      tradingSpotUsdt: parsed?.tradingSpotUsdt ?? null,
+      malformedInstruments: parsed?.malformedInstruments ?? null,
+    },
+    tradable: passed ? parsed.tradable : null,
+  };
+}
+
+/** The ticker's result, judged against exchangeInfo's pairs; not requested without them. */
+async function checkTicker(deps: PreflightDeps, tradable: string[] | null): Promise<TickerResult> {
+  if (!tradable) {
+    return {
+      status: null,
+      durationMs: null,
+      outcome: 'not_requested',
+      entries: null,
+      validFigures: null,
+      invalidFigures: null,
+    };
+  }
+  const fetched = await request(PREFLIGHT_ENDPOINTS.ticker, deps);
+  const summary =
+    fetched.result.outcome === 'ok' ? summarizeTickers(fetched.body, tradable, fetched) : null;
+  const valid = summary !== null && summary.validFigures > 0;
+  return {
+    ...fetched.result,
+    outcome:
+      fetched.result.outcome === 'ok' && !valid ? 'invalid_structure' : fetched.result.outcome,
+    entries: summary?.entries ?? null,
+    validFigures: summary?.validFigures ?? null,
+    invalidFigures: summary?.invalidFigures ?? null,
+  };
+}
 
 /**
  * POST with a project secret key, in eu-west-1: requests both endpoints, exchangeInfo first like
@@ -247,44 +292,8 @@ export async function handleDiscoveryPreflight(
   }
 
   const checkedAt = new Date(deps.now()).toISOString();
-  const info = await request(PREFLIGHT_ENDPOINTS.exchangeInfo, deps);
-  const parsed = info.result.outcome === 'ok' ? summarizeExchangeInfo(info.body) : null;
-  // No TRADING spot USDT pair at all would leave nothing for the ticker check to judge.
-  const infoSummary = parsed && parsed.tradingSpotUsdt > 0 ? parsed : null;
-  const exchangeInfo: ExchangeInfoResult = {
-    ...info.result,
-    outcome:
-      info.result.outcome === 'ok' && !infoSummary ? 'invalid_structure' : info.result.outcome,
-    listedSymbols: parsed?.listedSymbols ?? null,
-    usdtInstruments: parsed?.usdtInstruments ?? null,
-    tradingSpotUsdt: parsed?.tradingSpotUsdt ?? null,
-    malformedInstruments: parsed?.malformedInstruments ?? null,
-  };
-
-  // The ticker can only be judged against exchangeInfo's pairs; without them it is not requested.
-  let ticker: TickerResult = {
-    ...notRequested,
-    entries: null,
-    validFigures: null,
-    invalidFigures: null,
-  };
-  if (infoSummary) {
-    const fetched = await request(PREFLIGHT_ENDPOINTS.ticker, deps);
-    const summary =
-      fetched.result.outcome === 'ok'
-        ? summarizeTickers(fetched.body, infoSummary.tradable, fetched)
-        : null;
-    const valid = summary !== null && summary.validFigures > 0;
-    ticker = {
-      ...fetched.result,
-      outcome:
-        fetched.result.outcome === 'ok' && !valid ? 'invalid_structure' : fetched.result.outcome,
-      entries: summary?.entries ?? null,
-      validFigures: summary?.validFigures ?? null,
-      invalidFigures: summary?.invalidFigures ?? null,
-    };
-  }
-
+  const { result: exchangeInfo, tradable } = await checkExchangeInfo(deps);
+  const ticker = await checkTicker(deps, tradable);
   const reachable = exchangeInfo.outcome === 'ok' && ticker.outcome === 'ok';
   const report: PreflightReport = { region, checkedAt, reachable, exchangeInfo, ticker };
   deps.log(JSON.stringify({ fn: 'discovery-preflight', event: 'preflight', ...report }));
