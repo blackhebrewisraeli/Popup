@@ -21,6 +21,12 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-20 · Daily discovery Edge collector (not deployed) · Draft PR, branch `feat/daily-discovery-edge`, from `41d9331`.**
+  - **Changed:** the policy module moved unchanged to `supabase/functions/_shared/dailyDiscovery.ts`, and the collection lifecycle to `_shared/dailyDiscoveryRun.ts`. `src/lib/dailyDiscovery.ts`, `src/lib/stableSerialize.ts` and `scripts/dailyDiscovery.ts` re-export them. New `supabase/functions/daily-discovery`: secret key, `eu-west-1`, flag `DISCOVERY_EDGE_ENABLED`, then sign-in as `discovery_automation` through the publishable key. A 140 s invocation budget is new; Node is unchanged. No migration, grant, table or dependency.
+  - **Evidence:** a golden capture before and after the move is byte-identical (policy `b28becf5…`, synthetic batches `229586a3…` and `f06f998f…`), and the local Edge runtime recomputes the same hashes. 27 Edge tests, 13 caught mutations, full suite 140 files and 2,355 tests. Deno 2.1.4 type-check passes. The bundle builds without `src/` and boots in local Edge Runtime v1.76.2 with synthetic settings: 401, 405, 421, 503 and 500 refuse; an enabled run with no reachable database stops at sign-in (502).
+  - **Not done:** no deploy, user, secret, cron, collection or flag. `DAILY_DISCOVERY_ENABLED` stays unset.
+  - **Next:** owner review, then the release sequence in [docs/MARKET_SCANNER.md › Edge collector](MARKET_SCANNER.md#edge-collector-not-deployed).
+
 - **2026-11-19 · Supabase Edge preflight for daily discovery (not deployed) · Branch `feat/discovery-preflight-function`, from `9c00896`.**
   - **Observed (read-only):** the deployed `crypto-price-feed` v13 matches the repository. Its pg_cron job pins `x-region: eu-west-1`. Over 24 hours, 95 edge invocations were served from `eu-west-1`, all HTTP 200, and 96 run summaries each updated 5/5 tickers, with no upstream errors. That covers the filtered ticker only, not the discovery endpoints. Owner-invoked `binance-spot-account` calls were served from `eu-central-2`.
   - **Changed:** `supabase/functions/discovery-preflight` (secret key, `eu-west-1` only, the two policy URLs once each, aggregate answer, no database client) and `[functions.discovery-preflight] verify_jwt = false`. 18 synthetic tests cover refusals, upstream failures, malformed bodies, timeouts, no-proxy and no-storage, with counts cross-checked against the collector's parsers; 10 mutations are caught.

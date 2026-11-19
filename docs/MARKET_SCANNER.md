@@ -303,10 +303,13 @@ BUY/SELL signal, a model score or evidence of profitability. Three sources stay 
 | Data     | Binance public REST (`exchangeInfo`, 24hr ticker)                   | Binance klines (crypto)             | TradingView bars via MCP; not collected daily |
 | Stored   | `discovery_batches`, `discovery_attempts` (owner-only)              | Not stored                          | Local files, or a file the owner opens        |
 
-Code: `src/lib/dailyDiscovery.ts` (policy, verification, freshness), `scripts/dailyDiscovery.ts`
-(collector), `src/components/DailyCandidates.tsx` (board),
-`.github/workflows/daily-discovery.yml` and migration `20261119120000_daily_discovery.sql`. Nothing
-here writes `assets_status`, scores, thresholds, research universes or campaigns.
+Code: `supabase/functions/_shared/dailyDiscovery.ts` (policy, verification, freshness; the board
+loads it through `src/lib/dailyDiscovery.ts`), `supabase/functions/_shared/dailyDiscoveryRun.ts`
+(collection lifecycle and storage), `scripts/dailyDiscovery.ts` (the GitHub Actions entry point),
+`supabase/functions/daily-discovery` (the [Edge collector](#edge-collector-not-deployed)),
+`src/components/DailyCandidates.tsx` (board), `.github/workflows/daily-discovery.yml` and migration
+`20261119120000_daily_discovery.sql`. Nothing here writes `assets_status`, scores, thresholds,
+research universes or campaigns.
 
 ### Policy `binance-spot-usdt-liquidity-v1`
 
@@ -353,6 +356,95 @@ day.
 - **Access.** A dedicated Auth user whose `app_metadata.role` is `discovery_automation` inserts and
   reads; the configured owner (`is_binance_spot_owner()`) reads; nobody else, and the service role
   has no grant. The run log and summary carry counts, times and status only.
+
+### Edge collector (not deployed)
+
+GitHub-hosted runners get HTTP 451 from Binance. On 2026-11-19 the Supabase Edge runtime in
+`eu-west-1` reached both discovery endpoints (Supabase Edge preflight, below). The
+`daily-discovery` Edge Function runs the collector's own lifecycle there. Both entry points load
+the same `_shared/dailyDiscovery.ts` and `_shared/dailyDiscoveryRun.ts`, so the policy identity,
+endpoints, evidence bytes, slot rules and storage contract are one implementation. The synthetic
+batches hash identically in Node and in the local Edge runtime.
+
+**Refusals touch nothing.** Each comes before any Binance request, sign-in or storage access:
+
+- not a POST: 405
+- no project secret key on `apikey`: 401
+- `SB_REGION` other than `eu-west-1`: 421
+- the function secret `DISCOVERY_EDGE_ENABLED` not exactly `true`: 503
+- a missing setting: 500, naming the setting, never its value
+
+The caller can't choose the slot, clock, endpoint or policy.
+
+**Storage.** The function signs in as the `discovery_automation` user with the publishable key,
+keeping no session and refreshing nothing. The credentials are the function secrets
+`DISCOVERY_AUTOMATION_EMAIL` and `DISCOVERY_AUTOMATION_PASSWORD`: `SUPABASE_` is reserved. RLS and
+the insert-only grants decide what it may write. No secret or service-role key reaches storage,
+and no grant changes.
+
+**Time budget: the one operational difference from Node.** Hosted Edge Functions stop at 150 s
+of wall-clock time, so one invocation gets 140 s:
+
+- Each Supabase request (sign-in, read, insert, sign-out) ends after 10 s, or at 140 s if that
+  comes first.
+- Binance tries and waits must end by 105 s. That keeps 35 s to record the batch and the attempt.
+- Per-request rules stay Node's: 30 s per try, 3 tries, 2 s and 8 s backoff, and a Retry-After of
+  up to 60 s honoured in full.
+- A try starts only if its full 30 s fits. A wait starts only if the wait and the next full try
+  fit.
+- Otherwise the run records `failed` with `BUDGET_EXHAUSTED` and stores no batch. It never
+  shortens a timeout, cuts a Retry-After or retries early. For example, a 60 s Retry-After that
+  arrives at 50 s makes it stop where Node would wait. The slot's next scheduled run tries again.
+- Node is unchanged: the GitHub job's 15-minute timeout stays its bound.
+
+Not yet measured on the hosted runtime: CPU time (2 s limit) and memory (256 MB) for a full
+collection. The preflight read the same `exchangeInfo` there in 725 ms.
+
+**Scheduling (prepared, not registered).** Use the GitHub schedule's slot times, the pinned region
+and Vault's secret key:
+
+```sql
+select cron.schedule(name, spec, $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+      || '/functions/v1/daily-discovery',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-region', 'eu-west-1',
+      'apikey', (select decrypted_secret from vault.decrypted_secrets where name = 'secret_key')
+    ),
+    timeout_milliseconds := 150000
+  );
+$$)
+from (values ('daily-discovery-0033', '33 0 * * *'), ('daily-discovery-0203', '3 2 * * *'),
+             ('daily-discovery-0433', '33 4 * * *')) as slot(name, spec);
+```
+
+**One scheduler at a time.** The GitHub workflow collects only while the repository variable
+`DAILY_DISCOVERY_ENABLED` is `true`. Keep it unset on the Edge path: the `collect` job is then
+skipped, and its dispatch checks stay available. The Edge path collects only while
+`DISCOVERY_EDGE_ENABLED` is `true` and the cron jobs exist. If both ever ran, the primary key would
+still keep one batch per slot, with `unchanged` or `conflict` attempts from the loser. Don't rely on
+it.
+
+**Release sequence.** Each step is a separate owner authorization:
+
+1. Merge. Deploy only `daily-discovery` from the merge commit
+   (`supabase functions deploy daily-discovery --project-ref <ref>`), and confirm the downloaded
+   source matches the commit. With the flag unset, an invocation answers 503.
+2. Create the automation user and give it the role ([Activation](#activation), step 2). The owner
+   sets its password. Set the function secrets `DISCOVERY_AUTOMATION_EMAIL` and
+   `DISCOVERY_AUTOMATION_PASSWORD`. Keep `DAILY_DISCOVERY_ENABLED` unset.
+3. Invoke it once through pg_net with the flag still unset. Expect 503 and no rows.
+4. Set `DISCOVERY_EDGE_ENABLED=true` and register the three cron jobs. Inside 00:30–06:00 UTC, one
+   manual pg_net invocation may collect the due slot. Outside it, wait for 00:33.
+5. Accept the first batch:
+   - its attempt row reads `complete`, `partial` or `empty`;
+   - the stored batch passes `verifyDiscoveryBatch`;
+   - Research › Daily candidates shows that slot's batch to the owner;
+   - the 02:03 run records `already_collected` and adds no batch.
+6. To pause, unset `DISCOVERY_EDGE_ENABLED`, and invocations answer 503. To stop the schedule,
+   `cron.unschedule` the three jobs. Stored rows stay as they are.
 
 ### Board and freshness
 
@@ -428,7 +520,9 @@ discovery stays disabled.
 
 ### Activation
 
-Nothing collects until the owner turns it on. Each step needs the previous one.
+Nothing collects until the owner turns it on. Each step needs the previous one. These steps are the
+GitHub Actions path. For the Supabase Edge path, use steps 1 and 2 here, then the
+[Edge collector](#edge-collector-not-deployed) release sequence.
 
 1. Apply the migration ([RELEASE.md](RELEASE.md#daily-discovery-20261119120000)).
 2. Create a dedicated Auth user in the Dashboard (Authentication → Add user, auto-confirmed), then

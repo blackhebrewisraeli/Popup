@@ -15,6 +15,12 @@ verify_jwt = false
 [functions.discovery-preflight]
 verify_jwt = false
 
+# Daily discovery collector: the handler requires a project secret key, eu-west-1 and its own
+# enable flag, then signs in as the discovery_automation user (never a secret key for storage).
+# Its own deno.json maps @supabase/supabase-js for Deno.
+[functions.daily-discovery]
+verify_jwt = false
+
 # Signed-in callers only; the handler then serves the configured owner alone.
 [functions.binance-spot-account]
 verify_jwt = true
