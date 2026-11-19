@@ -360,7 +360,7 @@ day.
 ### Edge collector (not deployed)
 
 GitHub-hosted runners get HTTP 451 from Binance. On 2026-11-19 the Supabase Edge runtime in
-`eu-west-1` reached both discovery endpoints (Supabase Edge preflight, below). The
+`eu-west-1` reached both discovery endpoints ([Supabase Edge preflight](#supabase-edge-preflight)). The
 `daily-discovery` Edge Function runs the collector's own lifecycle there. Both entry points load
 the same `_shared/dailyDiscovery.ts` and `_shared/dailyDiscoveryRun.ts`, so the policy identity,
 endpoints, evidence bytes, slot rules and storage contract are one implementation. The synthetic
@@ -473,7 +473,7 @@ response) and the latest attempt are shown beside it.
 (`toBinanceSymbol`), never for a sample row. The board shows no prices and does not refresh between
 batches.
 
-### Supabase Edge preflight (not deployed)
+### Supabase Edge preflight
 
 GitHub-hosted runners get HTTP 451 from Binance. The scheduled price feeds already run elsewhere:
 pg_cron calls them with `x-region: eu-west-1`, next to the database. On 2026-11-19 their edge logs
@@ -518,6 +518,20 @@ Deploying and invoking it are owner decisions. To check, after the merge:
 A pass shows Binance reachability from the Edge runtime only. It does not move the collector, and
 discovery stays disabled.
 
+**Result on 2026-11-19 (UTC): reachable.** Version 1 was deployed from `41d9331`, the merge of
+#203, with source identical to its files. It was invoked once through the steps above as pg_net
+request 5849 at 22:46:10Z. The platform served it in `eu-west-1` (requested and served region,
+`x-sb-edge-region`): HTTP 200 in 1.4 s, `reachable: true`.
+
+| Endpoint                | HTTP | Outcome | Duration | Counts                                                                  |
+| ----------------------- | ---- | ------- | -------- | ----------------------------------------------------------------------- |
+| `exchangeInfo`          | 200  | ok      | 725 ms   | 3,711 listed, 743 readable USDT, 526 TRADING spot USDT, 0 malformed     |
+| `ticker/24hr?type=MINI` | 200  | ok      | 257 ms   | 3,754 entries; 526 of the 526 pairs with a valid current 24-hour figure |
+
+That settles reachability from this runtime for one moment, and nothing else. No batch or attempt
+was collected or stored (pg_net keeps only its own response row), and discovery stays disabled. The collector still runs only on GitHub-hosted runners;
+moving it is a separate change.
+
 ### Activation
 
 Nothing collects until the owner turns it on. Each step needs the previous one. These steps are the
@@ -558,6 +572,9 @@ stays disabled: no automation user, secrets or variable were created, and no bat
 exists. Resuming needs a runner in a region Binance serves, for `binance-preflight` as well as
 `collect`, since a preflight on another runner proves nothing about the collector's. That is an
 owner decision; no proxy or other provider is used.
+Later that day the Supabase Edge runtime in `eu-west-1` reached both endpoints
+([Supabase Edge preflight](#supabase-edge-preflight)). The workflow is unchanged, so activation is
+still blocked.
 
 ## TradingView development scan (local, owner-initiated)
 

@@ -27,11 +27,17 @@ whether to act, and where; Popup places no orders.
   - **Not done:** no deploy, user, secret, cron, collection or flag. `DAILY_DISCOVERY_ENABLED` stays unset.
   - **Next:** owner review, then the release sequence in [docs/MARKET_SCANNER.md › Edge collector](MARKET_SCANNER.md#edge-collector-not-deployed).
 
+- **2026-11-19 · Discovery preflight deployed and invoked once: Binance reachable from `eu-west-1` · Docs-only PR, branch `docs/discovery-preflight-result`, from `41d9331`.**
+  - **Deployed:** `discovery-preflight` version 1 from a clean checkout of `41d9331` (#203's merge; function files identical to the reviewed `f223698`) to `tldvgvlswananoxafocw`. The downloaded source is byte-identical to the checkout. `verify_jwt` is false; secret-key and region guards are unchanged. No other function was deployed and no migration ran.
+  - **Observed:** one pg_net invocation (request 5849, 22:46:10Z) with `x-region: eu-west-1` through Vault. Served in `eu-west-1`: HTTP 200, `reachable: true`. exchangeInfo 200 ok 725 ms (3,711 listed, 743 USDT, 526 TRADING spot USDT, 0 malformed). Ticker 200 ok 257 ms (3,754 entries, 526/526 valid). Edge and function logs show exactly one invocation.
+  - **Preserved:** experiment, entry, fill, paper, signal, trade and campaign-storage hashes; cron jobs; the other five functions' versions; Actions variables and secrets. 0 discovery batches, attempts and automation users.
+  - **Next:** a collector move to this runtime is a separate, owner-approved change. Discovery stays disabled.
+
 - **2026-11-19 · Supabase Edge preflight for daily discovery (not deployed) · Branch `feat/discovery-preflight-function`, from `9c00896`.**
   - **Observed (read-only):** the deployed `crypto-price-feed` v13 matches the repository. Its pg_cron job pins `x-region: eu-west-1`. Over 24 hours, 95 edge invocations were served from `eu-west-1`, all HTTP 200, and 96 run summaries each updated 5/5 tickers, with no upstream errors. That covers the filtered ticker only, not the discovery endpoints. Owner-invoked `binance-spot-account` calls were served from `eu-central-2`.
   - **Changed:** `supabase/functions/discovery-preflight` (secret key, `eu-west-1` only, the two policy URLs once each, aggregate answer, no database client) and `[functions.discovery-preflight] verify_jwt = false`. 18 synthetic tests cover refusals, upstream failures, malformed bodies, timeouts, no-proxy and no-storage, with counts cross-checked against the collector's parsers; 10 mutations are caught.
   - **Not done:** not deployed, not invoked; deployed reachability of the two endpoints is NOT established. Discovery stays disabled; no user, secret, cron, migration or row.
-  - **Next:** owner merges, deploys and invokes once ([docs/MARKET_SCANNER.md › Supabase Edge preflight](MARKET_SCANNER.md#supabase-edge-preflight-not-deployed)).
+  - **Next:** owner merges, deploys and invokes once ([docs/MARKET_SCANNER.md › Supabase Edge preflight](MARKET_SCANNER.md#supabase-edge-preflight)).
 
 - **2026-11-19 · Daily discovery released; activation blocked by HTTP 451 · Docs-only PR, branch `docs/daily-discovery-release-record`, from `9c00896`.**
   - **Result:** #200 merged as `9c00896`; its production deployment is `READY` and the contract check reports 33/33 migrations. Synthetic acceptance passed on the GitHub-hosted runner; both Binance preflights answered HTTP 451 ([docs/MARKET_SCANNER.md › Activation](MARKET_SCANNER.md#activation)).
