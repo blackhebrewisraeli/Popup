@@ -249,6 +249,14 @@ frontend until the migration is applied.
    [MARKET_SCANNER.md › Activation](./MARKET_SCANNER.md#activation). The workflow collects nothing
    while `DAILY_DISCOVERY_ENABLED` is unset.
 
+**What happened (2026-11-19, UTC).** As the session that ran it reported, `supabase db push` from
+the PR's final head `ff7a55d` applied `20261119120000` alone at 19:54Z, and the contract check then
+reported all 33 migrations. #200 was merged as `9c00896` at 20:08:17Z. Checked afterwards,
+read-only: Vercel's production deployment of `9c00896` (created 20:08:19Z) is `READY` on the
+production alias, so it passed the gate; the contract check from a clean checkout of `9c00896`
+reports all 33 migrations and every RPC; both discovery tables are empty. Activation stopped at the
+Binance preflight ([MARKET_SCANNER.md › Activation](./MARKET_SCANNER.md#activation)).
+
 **Between steps 1 and 3**, production runs the older frontend, which never reads these tables.
 
 **Rollback.**

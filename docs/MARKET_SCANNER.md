@@ -454,6 +454,17 @@ Nothing collects until the owner turns it on. Each step needs the previous one.
 
 To pause, unset the variable; history stays as recorded.
 
+**Attempt on 2026-11-19 (UTC): blocked at step 4.** At `9c00896`, with the variable unset,
+synthetic acceptance passed on the runner
+([run 44610389782](https://github.com/blackhebrewisraeli/Popup/actions/runs/44610389782), 102
+tests). Two Binance preflights from GitHub-hosted `ubuntu-latest` answered **HTTP 451**
+([44610653688](https://github.com/blackhebrewisraeli/Popup/actions/runs/44610653688),
+[44610763116](https://github.com/blackhebrewisraeli/Popup/actions/runs/44610763116)). Discovery
+stays disabled: no automation user, secrets or variable were created, and no batch or attempt
+exists. Resuming needs a runner in a region Binance serves, for `binance-preflight` as well as
+`collect`, since a preflight on another runner proves nothing about the collector's. That is an
+owner decision; no proxy or other provider is used.
+
 ## TradingView development scan (local, owner-initiated)
 
 A local demonstration: US equities and ETFs scored by this scanner on daily bars that the owner's
