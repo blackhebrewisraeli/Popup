@@ -135,14 +135,14 @@ async function tryRequest(
 async function requestJson(
   url: string,
   deps: CollectorDeps,
+  attempt = 1,
 ): Promise<{ body: unknown; requestedAt: number; receivedAt: number }> {
-  const bounds = deps.bounds ?? REQUEST_BOUNDS;
-  for (let attempt = 1; ; attempt += 1) {
-    const requestedAt = deps.now();
-    const outcome = await tryRequest(url, deps, bounds, attempt);
-    if ('body' in outcome) return { body: outcome.body, requestedAt, receivedAt: deps.now() };
-    await deps.sleep(outcome.waitMs);
-  }
+  const requestedAt = deps.now();
+  const outcome = await tryRequest(url, deps, deps.bounds ?? REQUEST_BOUNDS, attempt);
+  if ('body' in outcome) return { body: outcome.body, requestedAt, receivedAt: deps.now() };
+  // Tries run one after another; tryRequest throws on the last, so this ends.
+  await deps.sleep(outcome.waitMs);
+  return requestJson(url, deps, attempt + 1);
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
