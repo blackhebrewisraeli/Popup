@@ -21,6 +21,11 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-20 · Pages artifact named per run attempt · Draft PR, branch `fix/pages-unique-artifact-name`, from `a8d6826`. Workflow only.**
+  - **Changed:** `pages.yml` names the artifact `github-pages-<run id>-<attempt>` and passes that name to both `upload-pages-artifact` (`name`) and `deploy-pages` (`artifact_name`). Permissions, environment, path and the `main`-only condition are unchanged.
+  - **Why:** #210's Pages run 44680426126 failed on attempt 1 (deploy-pages listed 0 artifacts under a second after upload). Attempts 2 and 3 then failed because the run held 2, then 3, artifacts named `github-pages`. Dispatched run 44684272084 deployed `a8d6826`, and the public page matched `docs/site` byte for byte. The failed run and its artifacts stay as they are.
+  - **Next:** owner review. Acceptance after merge: the Pages run for the new `main` commit is green and the public page still serves the expected content.
+
 - **2026-11-20 · Popup branding and public descriptions match the prototype · Draft PR, branch `docs/popup-branding-alignment`, from `5fd71f7`. Copy and images only.**
   - **Changed:** README, the product page (`docs/site`), the README banner and the Social Preview now describe Research (Daily candidates, Model scan (1D), Markets directory), Account with Manual Spot experiments, and the paused Simulation history. The daily rank is described as liquidity, never a score. **Open the app ↗** (popup-signals.vercel.app) is labeled apart from the overview-only product page. The Paper Desk screenshot left the README; its file stays. Root and `/` meta descriptions, the `Popup CI` workflow title, and directly affected passages in the workspace guide, TradingView setup, market scanner, strategy validation, connection and product status docs were updated.
   - **Kept:** every identifier with a compatibility or provenance reason (listed in the PR): `.zerochart-*` stores, `zerochart:*` browser keys, `/__zerochart/*` dev routes, `pine/zerochart_*.pine` files and the pinned diagnostics' titles, `ZEROCHART_TELEGRAM_*` secrets, the SonarQube key, frozen spec IDs and fixture text, and dated reports. Required check contexts are job names, so the workflow title change does not affect the ruleset.
