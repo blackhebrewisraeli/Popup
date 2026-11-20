@@ -297,7 +297,7 @@ BUY/SELL signal, a model score or evidence of profitability. Three sources stay 
 
 |          | Daily discovery                                                     | Market scan (legacy model scoring)  | Saved TradingView review                      |
 | -------- | ------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------- |
-| Runs     | GitHub Actions, one 00:30 UTC slot a day                            | In the browser, while Research open | The owner's agent session, by hand            |
+| Runs     | Supabase Edge on pg_cron (`eu-west-1`), one 00:30 UTC slot a day    | In the browser, while Research open | The owner's agent session, by hand            |
 | Universe | Top 50 Binance Spot USDT pairs by 24h quote volume, chosen each day | `assets_status` rows                | Frozen `crypto-usdt-v1` and equity lists      |
 | Output   | Liquidity rank and inclusion reason; no score                       | Canonical score and setups          | Canonical score and setups, reproducible      |
 | Data     | Binance public REST (`exchangeInfo`, 24hr ticker)                   | Binance klines (crypto)             | TradingView bars via MCP; not collected daily |
@@ -305,8 +305,9 @@ BUY/SELL signal, a model score or evidence of profitability. Three sources stay 
 
 Code: `supabase/functions/_shared/dailyDiscovery.ts` (policy, verification, freshness; the board
 loads it through `src/lib/dailyDiscovery.ts`), `supabase/functions/_shared/dailyDiscoveryRun.ts`
-(collection lifecycle and storage), `scripts/dailyDiscovery.ts` (the GitHub Actions entry point),
-`supabase/functions/daily-discovery` (the [Edge collector](#edge-collector-not-deployed)),
+(collection lifecycle and storage), `supabase/functions/daily-discovery` (the
+[Edge collector](#edge-collector), which collects), `scripts/dailyDiscovery.ts` (the GitHub Actions
+entry point, kept disabled),
 `src/components/DailyCandidates.tsx` (board), `.github/workflows/daily-discovery.yml` and migration
 `20261119120000_daily_discovery.sql`. Nothing here writes `assets_status`, scores, thresholds,
 research universes or campaigns.
@@ -341,7 +342,7 @@ day.
 ### Collection, retries and storage
 
 - **Slot.** `binance-spot-usdt-liquidity-v1@<date>`, scheduled 00:30 UTC, retry deadline 06:00 UTC.
-  Cron starts at 00:33, 02:03 and 04:33 UTC; GitHub may start them late.
+  pg_cron starts the [Edge collector](#edge-collector) at 00:33, 02:03 and 04:33 UTC.
 - **Requests.** 30 s timeout, at most 3 tries each. Timeouts, network errors and 5xx wait 2 s, then
   8 s. A 429 is retried only after a Retry-After of 60 s or less; 418, 451 and other 4xx are never
   retried. Any failure stores no batch and substitutes nothing: no earlier batch, sample asset or
@@ -357,11 +358,14 @@ day.
   reads; the configured owner (`is_binance_spot_owner()`) reads; nobody else, and the service role
   has no grant. The run log and summary carry counts, times and status only.
 
-### Edge collector (not deployed)
+<a id="edge-collector-not-deployed"></a>
+
+### Edge collector
 
 GitHub-hosted runners get HTTP 451 from Binance. On 2026-11-19 the Supabase Edge runtime in
 `eu-west-1` reached both discovery endpoints ([Supabase Edge preflight](#supabase-edge-preflight)). The
-`daily-discovery` Edge Function runs the collector's own lifecycle there. Both entry points load
+`daily-discovery` Edge Function runs the collector's own lifecycle there, and has been the
+collector since 2026-11-20 ([release record](#edge-release-record-2026-11-20)). Both entry points load
 the same `_shared/dailyDiscovery.ts` and `_shared/dailyDiscoveryRun.ts`, so the policy identity,
 endpoints, evidence bytes, slot rules and storage contract are one implementation. The synthetic
 batches hash identically in Node and in the local Edge runtime.
@@ -397,11 +401,11 @@ of wall-clock time, so one invocation gets 140 s:
   arrives at 50 s makes it stop where Node would wait. The slot's next scheduled run tries again.
 - Node is unchanged: the GitHub job's 15-minute timeout stays its bound.
 
-Not yet measured on the hosted runtime: CPU time (2 s limit) and memory (256 MB) for a full
-collection. The preflight read the same `exchangeInfo` there in 725 ms.
+The first hosted collection took 1.9 s from start to its recorded attempt. CPU time (2 s limit)
+and memory (256 MB) are still not measured there.
 
-**Scheduling (prepared, not registered).** Use the GitHub schedule's slot times, the pinned region
-and Vault's secret key:
+**Scheduling.** Registered on 2026-11-20 as pg_cron jobs 6–8 with the GitHub schedule's slot
+times, the pinned region and Vault's secret key:
 
 ```sql
 select cron.schedule(name, spec, $$
@@ -445,6 +449,33 @@ it.
    - the 02:03 run records `already_collected` and adds no batch.
 6. To pause, unset `DISCOVERY_EDGE_ENABLED`, and invocations answer 503. To stop the schedule,
    `cron.unschedule` the three jobs. Stored rows stay as they are.
+
+#### Edge release record (2026-11-20)
+
+Owner-authorized, from `2957b2c`, the merge of #205. Its tree is identical to the reviewed
+`657fada`, and the PR's required checks and `main` CI passed. Times are UTC.
+
+| Step            | Result                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Deploy          | `daily-discovery` version 1 at 00:15:16Z from a clean checkout of `2957b2c`, `verify_jwt` false. The downloaded source (7 files) is byte-identical to the commit. No other function was deployed.                                                                                                                                          |
+| Flag unset      | pg_net request 5862 at 00:15:39Z, pinned to `eu-west-1`: HTTP 503 naming the flag. 0 batches, 0 attempts.                                                                                                                                                                                                                                  |
+| Automation      | The owner created the Auth user in the Dashboard (email identity, confirmed on creation at 00:40:05Z) and set `DISCOVERY_AUTOMATION_EMAIL` and `DISCOVERY_AUTOMATION_PASSWORD`. The [Activation](#activation) step 2 SQL gave the role to the one user whose address matches the email secret's SHA-256 digest. No other user changed.     |
+| GitHub          | `DAILY_DISCOVERY_ENABLED` unset; no `SUPABASE_DISCOVERY_*` secrets.                                                                                                                                                                                                                                                                        |
+| Enabled         | `DISCOVERY_EDGE_ENABLED=true` at 01:15Z, checked by digest; the three cron jobs above registered as jobs 6–8.                                                                                                                                                                                                                              |
+| First batch     | pg_net request 5871 at 01:15:59Z: HTTP 200 `complete` for slot `2026-11-20`, run 01:16:00.761–01:16:02.634Z, served in `eu-west-1`. 3,711 listed, 743 USDT, 218 not trading, 6 stablecoin, 519 eligible, 0 invalid, 50 selected. Evidence SHA-256 `550e114b…`. One batch and one `complete` attempt, both recorded by the automation user. |
+| Verification    | `verifyDiscoveryBatch` on the stored row: ok. Policy, slot and hash match; result `COMPLETE` with 50 members.                                                                                                                                                                                                                              |
+| Same-slot retry | pg_net request 5872 at 01:18:15Z: HTTP 200 `already_collected` in 212 ms with the same SHA-256. Still one batch; the stored slot is found before any Binance request, and the run reports no coverage.                                                                                                                                     |
+| Board           | 01:28Z, signed in as the owner on the production deployment of `2957b2c`: Research › Daily candidates shows batch 2026-11-20 as **Current**, collected 01:16 UTC, 50 of 519 eligible, ranks 1–50, and the latest attempt as already collected, nothing fetched.                                                                            |
+| Unchanged       | Experiment, entry, fill, paper, virtual-trade, signal, dismissal, token, portfolio, subscription and Spot-owner rows (counts and hashes), storage objects, Vault secret names, cron jobs 1–3 and the other four users. The price feeds kept running.                                                                                       |
+
+Every function's version number rose by 3 between the deploy and the first batch, in step with the
+three project secret writes (two by the owner, then the flag). Every bundle hash and update time
+stayed the same.
+
+**Awaiting:**
+
+- the scheduled 02:03 and 04:33 runs recording `already_collected`;
+- the first scheduled collection, 2026-11-21 00:33.
 
 ### Board and freshness
 
@@ -536,7 +567,7 @@ moving it is a separate change.
 
 Nothing collects until the owner turns it on. Each step needs the previous one. These steps are the
 GitHub Actions path. For the Supabase Edge path, use steps 1 and 2 here, then the
-[Edge collector](#edge-collector-not-deployed) release sequence.
+[Edge collector](#edge-collector) release sequence.
 
 1. Apply the migration ([RELEASE.md](RELEASE.md#daily-discovery-20261119120000)).
 2. Create a dedicated Auth user in the Dashboard (Authentication → Add user, auto-confirmed), then
