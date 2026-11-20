@@ -481,6 +481,18 @@ function BatchDetails({
   );
 }
 
+/**
+ * What the board is, said once in its header (and to sign-ins without access): its rank is
+ * liquidity, never a model score or a signal.
+ */
+const LEDE = (
+  <p className="daily-lede">
+    Binance Spot USDT pairs ranked by Binance&rsquo;s rolling 24-hour quote volume when the batch
+    was collected: <strong>a liquidity-based shortlist to investigate later</strong>, not a BUY/SELL
+    signal, a model score or evidence of profitability.
+  </p>
+);
+
 function Board({
   feed,
   assets,
@@ -512,11 +524,7 @@ function Board({
             )}
           </p>
         </div>
-        <p className="daily-lede">
-          Binance Spot USDT pairs ranked by Binance&rsquo;s rolling 24-hour quote volume when the
-          batch was collected: <strong>a liquidity-based shortlist to investigate later</strong>,
-          not a BUY/SELL signal, a model score or evidence of profitability.
-        </p>
+        {LEDE}
       </header>
       {refused && (
         <Notice tone="fail" role="alert">
@@ -617,6 +625,7 @@ export function DailyCandidates({
       <section className="market-scan daily-candidates" aria-label="Daily candidates">
         <header className="daily-head">
           <h2 className="market-scan-title">Daily candidates</h2>
+          {LEDE}
           <p className="daily-lede">
             During the private beta, daily candidates are visible only to the configured owner.
           </p>
