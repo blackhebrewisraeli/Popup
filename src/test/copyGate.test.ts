@@ -15,6 +15,7 @@ const SURFACES = [
   'src/routes/_workspace.index.tsx',
   'src/components/Workspace.tsx',
   'src/components/PaperTradingTerminal.tsx',
+  'src/components/SimulationHistory.tsx',
   'src/lib/tourSteps.ts',
   'README.md',
 ];

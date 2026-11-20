@@ -151,7 +151,7 @@ function EntryItem({ entry }: Readonly<{ entry: JournalEntry }>) {
               )}
               {state === 'awaiting' && (
                 <Fact label="Current eligibility">
-                  Checked when you review it in the Action Center
+                  Not checked: the Action Center that reviewed signals is paused
                 </Fact>
               )}
             </dl>
@@ -313,8 +313,8 @@ function JournalBody({ query, filtered }: Readonly<{ query: JournalQuery; filter
 
 /**
  * Signal Journal: every TradingView signal with what was recorded about it and
- * the paper fill linked to it. Read-only: there is no action here, and trades
- * still go through the Action Center's review.
+ * the paper fill linked to it. Read-only: there is no action here. The Action
+ * Center that executed or dismissed signals is paused with the Paper Desk.
  */
 export function DecisionJournal() {
   const { scopeUserId: userId } = usePortfolio();
@@ -349,7 +349,7 @@ export function DecisionJournal() {
       <div className="journal-head">
         <p className="journal-sub">
           What was recorded for each TradingView signal and the paper fill linked to it. Read-only:
-          execute or dismiss signals in the Action Center.
+          the Action Center that executed or dismissed signals is paused.
         </p>
         <div className="journal-filters">
           <input

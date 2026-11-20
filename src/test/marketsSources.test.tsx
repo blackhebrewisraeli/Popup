@@ -24,11 +24,6 @@ import { bars, EQUITY_NOW, falling, rising, split, wave } from './usEquityFixtur
 
 const DAY = 86_400_000;
 
-// The allocation advisor belongs to the market-data view; a stand-in shows whether it renders.
-vi.mock('@/components/RoboAdvisor', () => ({
-  RoboAdvisor: () => <button type="button">Build Portfolio</button>,
-}));
-
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(EQUITY_NOW);
@@ -373,13 +368,11 @@ describe('Research zone', () => {
       <MarketsSection
         rows={[]}
         scores={new Map()}
-        assets={[]}
         marketView="signals"
         onMarketView={() => {}}
         assetClass="Crypto"
         onAssetClass={() => {}}
         onSelect={() => {}}
-        onInvest={() => {}}
       />
     ),
     alerts: <section aria-label="Price alerts" />,
@@ -411,7 +404,7 @@ describe('Research zone', () => {
     );
   }
 
-  it('opens on the scan and keeps the Markets directory, advisor and alerts in a place of their own', async () => {
+  it('opens on the scan and keeps the Markets directory and alerts in a place of their own', async () => {
     stubLocalRoutes(vi.fn(json(IMPORT)));
     renderResearch();
     expect(screen.getByRole('tab', { name: 'Scan' })).toHaveAttribute('aria-selected', 'true');
@@ -424,7 +417,8 @@ describe('Research zone', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Markets directory' }));
     const markets = screen.getByRole('region', { name: 'Markets directory' });
     expect(within(markets).getByText('0 ASSETS')).toBeInTheDocument();
-    expect(await within(markets).findByRole('button', { name: 'Build Portfolio' })).toBeVisible();
+    // Build Portfolio is paused: the directory offers no simulated portfolio builder.
+    expect(within(markets).queryByRole('button', { name: /Build Portfolio/ })).toBeNull();
     expect(within(markets).getByRole('group', { name: 'Market view' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Price alerts' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();

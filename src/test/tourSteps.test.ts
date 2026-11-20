@@ -8,7 +8,7 @@ import {
 } from '@/lib/tourSteps';
 
 /** Targets the workspace header shows on every page, for every sign-in. */
-const HEADER = new Set(['workspace-nav', 'nav-research', 'nav-paper', 'nav-account']);
+const HEADER = new Set(['workspace-nav', 'nav-research', 'nav-account']);
 
 const copy = (id: string) => {
   const step = TOUR_STEPS.find((candidate) => candidate.id === id);
@@ -31,15 +31,15 @@ describe('the tour steps', () => {
     }
   });
 
-  it('start in Research › Scan and end on the real-versus-simulated split', () => {
+  it('start in Research › Scan and end on real trades, with no paused simulator step', () => {
     expect(TOUR_STEPS.map((step) => step.id)).toEqual([
       'workspace',
       'research-scan',
       'scan-facts',
       'saved-scan',
       'manual-spot',
-      'simulated',
     ]);
+    expect(TOUR_STEPS.flatMap((step) => step.targets)).not.toContain('nav-paper');
     expect(TOUR_STEPS.filter((step) => step.opensResearchScan).map((step) => step.id)).toEqual([
       'research-scan',
       'scan-facts',
@@ -47,7 +47,7 @@ describe('the tour steps', () => {
     ]);
   });
 
-  it('say what each fact is not, and keep real and simulated trades apart', () => {
+  it('say what each fact is not, and that real records are not verified holdings', () => {
     expect(copy('research-scan')).toMatch(/closed/);
     expect(copy('research-scan')).toMatch(/not intraday signals/);
     expect(copy('research-scan')).toMatch(/Only crypto pairs are scanned/);
@@ -56,7 +56,9 @@ describe('the tour steps', () => {
     expect(copy('saved-scan')).toMatch(/does not run a new scan, fetch prices or refresh itself/);
     expect(copy('manual-spot')).toMatch(/never places orders/);
     expect(copy('manual-spot')).toMatch(/owner account only/);
-    expect(copy('simulated')).toMatch(/simulated cash and simulated fills/);
+    expect(copy('manual-spot')).toMatch(/not a verified current holding/);
+    expect(copy('workspace')).toMatch(/Paper Desk and Build Portfolio are paused/);
+    expect(copy('workspace')).toMatch(/Daily candidates/);
   });
 
   it('make no protection, performance or implementation claims', () => {

@@ -254,8 +254,7 @@ export function LandingPage({
         </dl>
 
         <p className="landing-secondary">
-          Want to test an idea afterwards? Paper Desk tracks simulated trades with simulated money.
-          Popup places no real orders.
+          Popup places no orders: you decide whether to act, and where.
         </p>
       </main>
 

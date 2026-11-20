@@ -52,7 +52,7 @@ function CopyField({ label, value }: Readonly<{ label: string; value: string }>)
   );
 }
 
-/** Webhook URL and token for TradingView → Action Center; the token goes into the script above. */
+/** Webhook URL and token for TradingView → Signal Journal; the token goes into the script above. */
 function ConnectTradingView({
   token,
   onToken,
@@ -80,9 +80,10 @@ function ConnectTradingView({
         and leave Webhook URL off.
       </p>
       <p className="pine-connect-note">
-        Set the chart to the daily (1D) timeframe first. Signals from other timeframes reach your
-        Action Center but can’t be executed. One TradingView alert uses one generated message for
-        every enabled action, so never enable phone notifications on the machine alert.
+        Set the chart to the daily (1D) timeframe first. Signals are recorded in the Signal Journal
+        under Account › Simulation history; the Paper Desk that executed them is paused. One
+        TradingView alert uses one generated message for every enabled action, so never enable phone
+        notifications on the machine alert.
       </p>
       <CopyField label="Webhook URL" value={`${resolveSupabaseUrl()}${TV_WEBHOOK_PATH}`} />
       {token !== null && (
