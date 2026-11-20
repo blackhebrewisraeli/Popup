@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useCallback, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TourGuide } from '@/components/TourGuide';
-import { TARGET_WAIT_MS } from '@/lib/tourSteps';
+import { findTarget, TARGET_WAIT_MS, TOUR_STEPS, type TourResearchPlace } from '@/lib/tourSteps';
 
 const record = vi.fn();
 const book = vi.fn();
@@ -10,18 +10,22 @@ const link = vi.fn();
 const pickFile = vi.fn();
 
 /**
- * A synthetic workspace: the header tabs every sign-in sees, and Research › Scan, which mounts
- * a little after the tour asks for it (a route change and lazy chunk) and only then. It holds
- * the controls the tour points at next to ones it must never press. No owner-only section exists.
+ * A synthetic workspace: the header tabs every sign-in sees, and Research, which mounts a little
+ * after the tour asks for it (a route change and lazy chunk) and only then. Research opens on
+ * Daily candidates, as the app does; Model scan's controls exist only while it is the open place.
+ * It holds the controls the tour points at next to ones it must never press. No owner-only
+ * section exists.
  */
 function Workspace({
   startOn,
   scanKey = true,
 }: Readonly<{ startOn: 'research' | 'history' | 'account'; scanKey?: boolean }>) {
   const [page, setPage] = useState(startOn);
+  const [place, setPlace] = useState<TourResearchPlace>('daily');
   const [openCalls, setOpenCalls] = useState(0);
-  const openResearchScan = useCallback(() => {
+  const openResearch = useCallback((next: TourResearchPlace) => {
     setOpenCalls((count) => count + 1);
+    setPlace(next);
     setTimeout(() => setPage('research'), 200);
   }, []);
   return (
@@ -35,25 +39,35 @@ function Workspace({
             Account
           </button>
         </div>
-        <TourGuide openResearchScan={openResearchScan} />
+        <TourGuide openResearch={openResearch} />
       </header>
       <output data-testid="open-calls">{openCalls}</output>
       <output data-testid="page">{page}</output>
+      <output data-testid="place">{place}</output>
       {page === 'research' && (
         <main>
-          <div data-tour="research-places">Scan | Markets directory</div>
-          <div data-tour="open-saved-scan">
-            <button type="button" onClick={pickFile}>
-              Open saved crypto scan
+          <div data-tour="research-places">
+            <span data-tour="place-daily">Daily candidates</span>
+            <span data-tour="place-scan">Model scan (1D)</span>
+            <span>Markets directory</span>
+          </div>
+          <div hidden={place !== 'daily'}>
+            <section aria-label="Daily candidates">Access notice or the latest batch</section>
+          </div>
+          <div hidden={place !== 'scan'}>
+            <div data-tour="open-saved-scan">
+              <button type="button" onClick={pickFile}>
+                Open saved crypto scan
+              </button>
+            </div>
+            {scanKey && <dl data-tour="scan-key">Rank, Score, Long, Model Risk</dl>}
+            <button type="button" onClick={record}>
+              Record experiment
+            </button>
+            <button type="button" onClick={link}>
+              Link execution
             </button>
           </div>
-          {scanKey && <dl data-tour="scan-key">Rank, Score, Long, Model Risk</dl>}
-          <button type="button" onClick={record}>
-            Record experiment
-          </button>
-          <button type="button" onClick={link}>
-            Link execution
-          </button>
         </main>
       )}
       {page === 'history' && (
@@ -70,7 +84,8 @@ function Workspace({
 
 const STEP_TITLES = [
   'Your workspace',
-  'Research › Scan',
+  'Research › Daily candidates',
+  'Research › Model scan (1D)',
   'Score, Long and Model Risk',
   'Open a saved crypto scan',
   'Real trades: Manual Spot experiments',
@@ -78,9 +93,13 @@ const STEP_TITLES = [
 
 const tourButton = () => screen.getByRole('button', { name: 'Start product tour' });
 
-/** The open tooltip, once it shows step `n` with its title. */
-async function expectStep(n: number, timeout = 2000) {
+/**
+ * The open tooltip, once it shows step `n` with its title, and the step's preferred target is
+ * shown on the page in the Research place the step opened (unless `fallback`).
+ */
+async function expectStep(n: number, timeout = 2000, fallback = false) {
   const title = STEP_TITLES[n - 1]!;
+  const spec = TOUR_STEPS[n - 1]!;
   const dialog = await screen.findByRole('alertdialog', {}, { timeout });
   await waitFor(
     () => {
@@ -90,6 +109,15 @@ async function expectStep(n: number, timeout = 2000) {
     { timeout },
   );
   expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+  if (spec.opensResearch) {
+    expect(screen.getByTestId('page')).toHaveTextContent('research');
+    expect(screen.getByTestId('place')).toHaveTextContent(spec.opensResearch);
+  }
+  if (!fallback) {
+    expect(findTarget([spec.targets[0]])).toBe(
+      document.querySelector(`[data-tour="${spec.targets[0]}"]`),
+    );
+  }
 }
 
 const press = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
@@ -123,9 +151,9 @@ describe('the product tour', () => {
     expect(screen.getByTestId('page')).toHaveTextContent('history');
 
     press('Next');
+    // Daily candidates first, then Model scan for the scan's own controls.
     await expectStep(2);
-    expect(screen.getByTestId('page')).toHaveTextContent('research');
-    for (const n of [3, 4, 5]) {
+    for (const n of [3, 4, 5, 6]) {
       press('Next');
       await expectStep(n);
     }
@@ -134,13 +162,14 @@ describe('the product tour', () => {
 
     await waitFor(() => expectClosed(bodyStyle));
     await waitFor(() => expect(tourButton()).toHaveFocus());
-    // Research › Scan is the only place it moved to; it pressed nothing and requested nothing.
+    // Research places are the only places it moved to; it pressed nothing and requested nothing.
     expect(screen.getByTestId('page')).toHaveTextContent('research');
+    expect(screen.getByTestId('place')).toHaveTextContent('scan');
     for (const action of [record, book, link, pickFile]) expect(action).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('goes Back across the route change and into Research steps again', async () => {
+  it('goes Back across the route change and between Research places', async () => {
     render(<Workspace startOn="account" />);
     fireEvent.click(tourButton());
     await expectStep(1);
@@ -152,13 +181,16 @@ describe('the product tour', () => {
     await expectStep(2);
     press('Next');
     await expectStep(3);
-    press('Next');
-    await expectStep(4);
-    press('Next');
-    await expectStep(5);
+    // Back from Model scan reopens Daily candidates before pointing at it.
     press('Back');
-    await expectStep(4);
-    expect(Number(screen.getByTestId('open-calls').textContent)).toBeGreaterThanOrEqual(4);
+    await expectStep(2);
+    for (const n of [3, 4, 5, 6]) {
+      press('Next');
+      await expectStep(n);
+    }
+    press('Back');
+    await expectStep(5);
+    expect(Number(screen.getByTestId('open-calls').textContent)).toBeGreaterThanOrEqual(7);
   });
 
   it(
@@ -170,10 +202,12 @@ describe('the product tour', () => {
       press('Next');
       await expectStep(2);
       press('Next');
-      // Waits for the scan's key, then shows the step anyway instead of skipping it.
-      await expectStep(3, TARGET_WAIT_MS + 2000);
+      await expectStep(3);
       press('Next');
-      await expectStep(4);
+      // Waits for the scan's key, then shows the step anyway instead of skipping it.
+      await expectStep(4, TARGET_WAIT_MS + 2000, true);
+      press('Next');
+      await expectStep(5);
     },
     TARGET_WAIT_MS + 8000,
   );

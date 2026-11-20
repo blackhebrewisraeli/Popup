@@ -363,7 +363,7 @@ export function MarketsSection({
           <p className="markets-score-help">
             Every asset in the universe with its price, 24h move, alerts and broker links. Signal
             repeats the scan&rsquo;s 0–100 model score, not a probability or a performance forecast;
-            its evidence is under Scan.
+            its evidence is under Model scan (1D).
           </p>
         </div>
         <div className="markets-head-actions">
@@ -429,13 +429,20 @@ export function MarketsSection({
   );
 }
 
-export type ResearchPlace = 'scan' | 'directory' | 'daily';
+export type ResearchPlace = 'daily' | 'scan' | 'directory';
+
+/** What the open place is, so discovery's liquidity rank never reads as the model's score. */
+const PLACE_NOTE: Partial<Record<ResearchPlace, string>> = {
+  daily:
+    'Dated Binance Spot liquidity discovery: USDT pairs ranked by 24-hour quote volume in each stored batch. That rank is not a model score or a prediction.',
+  scan: 'The existing model evaluated on closed daily (1D) candles. The scan header gives the actual coverage and candle timestamps of the run shown.',
+};
 
 /**
- * Research has three places: the ranked scan with its evidence; the Markets
- * directory (prices, alerts and broker links), so the directory never reads as a second
- * scanner; and Daily candidates, the
- * unattended collector's latest batch. Scan and directory stay mounted, so switching keeps
+ * Research has three places, in this order: Daily candidates, the unattended collector's
+ * latest batch and the place Research opens on; Model scan (1D), the ranked scan with its
+ * evidence; and the Markets directory (prices, alerts and broker links), so the directory never
+ * reads as a second scanner. Scan and directory stay mounted, so switching keeps
  * the scan's filters, selection and comparison. Daily candidates mounts only while shown and
  * never waits on the market-data query: it reads its own batches. Under `vite dev` the scan's source
  * is picked above the live-data gate: the local TradingView import never waits on,
@@ -496,9 +503,9 @@ export function ResearchZone({
           tour="research-places"
           onChange={onPlace}
           options={[
-            { value: 'scan', label: 'Scan' },
+            { value: 'daily', label: 'Daily candidates', tour: 'place-daily' },
+            { value: 'scan', label: 'Model scan (1D)', tour: 'place-scan' },
             { value: 'directory', label: 'Markets directory' },
-            { value: 'daily', label: 'Daily candidates' },
           ]}
         />
         {import.meta.env.DEV && place === 'scan' && file === null && (
@@ -508,6 +515,9 @@ export function ResearchZone({
           </div>
         )}
         {place === 'scan' && <OpenSavedScanFile onOpen={open} buttonRef={openButton} tour />}
+        {PLACE_NOTE[place] && (
+          <p className="markets-score-help research-place-note">{PLACE_NOTE[place]}</p>
+        )}
       </div>
       <div hidden={place !== 'scan'}>
         {file && <SavedScanFileView file={file} onClose={closeFile} />}
@@ -556,13 +566,27 @@ export function AccountZone({ assets }: Readonly<{ assets: Asset[] }>) {
   );
 }
 
+/**
+ * Daily candidates' detail routes: live assets_status rows only, so a candidate never opens a
+ * sample asset; [] when the live universe is truly empty; null while the rows are loading,
+ * failed or set aside for sample data, so no row claims its pair has no Popup asset.
+ */
+function dailyAssets(
+  live: Asset[] | null,
+  query: Readonly<{ isSuccess: boolean; data: Asset[] | undefined }>,
+): Asset[] | null {
+  if (live) return live;
+  return query.isSuccess && query.data?.length === 0 ? [] : null;
+}
+
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
   const [assetClass, setAssetClass] = useState<AssetClassFilter>('Crypto');
   // Restored after a full page reload under `vite dev`; market data on a tab's first visit.
   const [marketsSource, setMarketsSource] = useResearchSource();
-  const [researchPlace, setResearchPlace] = useState<ResearchPlace>('scan');
+  // Research opens on Daily candidates; Model scan (1D) and the directory are a tab away.
+  const [researchPlace, setResearchPlace] = useState<ResearchPlace>('daily');
   // The URL is the source of truth: / (Research), /account, and /paper-trading, the retired
   // Paper Desk's address, which now shows the read-only Simulation history.
   const navigate = useNavigate();
@@ -573,14 +597,17 @@ function Terminal() {
   if (onHistory) view = 'history';
   else if (onAccount) view = 'account';
   const setView = (next: WorkspaceTab) => void navigate({ to: VIEW_PATHS[next] });
-  // The tour's only move: Research › Scan. Navigating to the current URL would reload the route.
+  // The tour's only moves: a Research place. Navigating to the current URL would reload the route.
   const router = useRouter();
-  const openResearchScan = useCallback(() => {
-    setResearchPlace('scan');
-    if (router.state.location.pathname !== VIEW_PATHS.research) {
-      void router.navigate({ to: VIEW_PATHS.research });
-    }
-  }, [router]);
+  const openResearch = useCallback(
+    (place: ResearchPlace) => {
+      setResearchPlace(place);
+      if (router.state.location.pathname !== VIEW_PATHS.research) {
+        void router.navigate({ to: VIEW_PATHS.research });
+      }
+    },
+    [router],
+  );
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const { user, signOut } = useAuth();
   const { portfolios, activePortfolioType } = usePortfolio();
@@ -628,6 +655,8 @@ function Terminal() {
     view === 'research' &&
     researchPlace === 'scan' &&
     marketsSource === 'tradingview';
+  // Daily candidates reads its own batches: the market-data notes would read as the board's.
+  const marketNotes = !(view === 'research' && researchPlace === 'daily');
 
   const page = (
     <div className="min-h-screen text-foreground">
@@ -692,12 +721,12 @@ function Terminal() {
               <ThemeToggle />
             </div>
             {user && <HeaderProfile user={user} onSignOut={() => void signOut()} />}
-            <TourGuide openResearchScan={openResearchScan} />
+            <TourGuide openResearch={openResearch} />
           </div>
         </div>
       </header>
       <main className="page-width w-full mx-auto pb-16 pt-8">
-        {preview && (
+        {marketNotes && preview && (
           <div className="preview-note">
             <span className="flex items-center gap-2">
               <Radio size={13} />
@@ -713,7 +742,7 @@ function Terminal() {
             </Button>
           </div>
         )}
-        {query.isError && !preview && (
+        {marketNotes && query.isError && !preview && (
           <div role="alert" className="error-banner">
             <span>
               {query.data
@@ -761,8 +790,12 @@ function Terminal() {
                 <PriceAlerts assets={baseAssets} user={user} />
               </section>
             }
-            // Live assets_status rows only: a candidate never opens a sample asset.
-            daily={<DailyCandidates assets={liveAssets ?? []} onOpenAsset={setSelectedAsset} />}
+            daily={
+              <DailyCandidates
+                assets={dailyAssets(liveAssets, query)}
+                onOpenAsset={setSelectedAsset}
+              />
+            }
             source={marketsSource}
             onSource={setMarketsSource}
             place={researchPlace}

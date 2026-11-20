@@ -346,9 +346,12 @@ describe('Research › Daily candidates', () => {
     );
     expect(screen.getByRole('tab', { name: 'Daily candidates', selected: true })).toBeTruthy();
     expect(screen.getByText('daily body')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Scan' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Markets directory' })).toBeTruthy();
-    // Opening a saved TradingView scan stays under Scan.
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Daily candidates',
+      'Model scan (1D)',
+      'Markets directory',
+    ]);
+    // Opening a saved TradingView scan stays under Model scan (1D).
     expect(screen.queryByRole('button', { name: /saved crypto scan/i })).toBeNull();
   });
 });

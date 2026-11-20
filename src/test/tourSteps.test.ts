@@ -31,23 +31,46 @@ describe('the tour steps', () => {
     }
   });
 
-  it('start in Research › Scan and end on real trades, with no paused simulator step', () => {
+  it('introduce Daily candidates first, then Model scan, and end on real trades', () => {
     expect(TOUR_STEPS.map((step) => step.id)).toEqual([
       'workspace',
+      'daily-candidates',
       'research-scan',
       'scan-facts',
       'saved-scan',
       'manual-spot',
     ]);
     expect(TOUR_STEPS.flatMap((step) => step.targets)).not.toContain('nav-paper');
-    expect(TOUR_STEPS.filter((step) => step.opensResearchScan).map((step) => step.id)).toEqual([
-      'research-scan',
-      'scan-facts',
-      'saved-scan',
+    expect(TOUR_STEPS.map((step) => [step.id, step.opensResearch])).toEqual([
+      ['workspace', undefined],
+      ['daily-candidates', 'daily'],
+      ['research-scan', 'scan'],
+      ['scan-facts', 'scan'],
+      ['saved-scan', 'scan'],
+      ['manual-spot', undefined],
     ]);
   });
 
+  it('open the Research place that holds a step’s own target before pointing at it', () => {
+    const home: Record<string, string> = {
+      'place-daily': 'daily',
+      'place-scan': 'scan',
+      'scan-key': 'scan',
+      'open-saved-scan': 'scan',
+    };
+    for (const step of TOUR_STEPS) {
+      const place = home[step.targets[0]];
+      if (place) expect([step.id, step.opensResearch]).toEqual([step.id, place]);
+      else expect(HEADER.has(step.targets[0])).toBe(true);
+    }
+  });
+
   it('say what each fact is not, and that real records are not verified holdings', () => {
+    expect(copy('workspace')).toMatch(/Research opens on Daily candidates, then Model scan \(1D\)/);
+    expect(copy('daily-candidates')).toMatch(/Binance Spot/);
+    expect(copy('daily-candidates')).toMatch(/not a model score or a prediction/);
+    expect(copy('daily-candidates')).toMatch(/other sign-ins see an access notice/);
+    expect(copy('research-scan')).toMatch(/coverage and candle timestamps/);
     expect(copy('research-scan')).toMatch(/closed/);
     expect(copy('research-scan')).toMatch(/not intraday signals/);
     expect(copy('research-scan')).toMatch(/Only crypto pairs are scanned/);
@@ -122,37 +145,43 @@ describe('waitForTarget', () => {
 });
 
 describe('buildTourSteps', () => {
-  it('opens Research › Scan before a Research step and waits for its preferred target', async () => {
-    vi.useFakeTimers();
-    const openResearchScan = vi.fn(() => {
-      setTimeout(() => {
-        document.body.innerHTML = '<div data-tour="research-places"></div>';
-      }, 300);
-    });
-    const steps = buildTourSteps(TOUR_STEPS, openResearchScan);
-    const research = steps[1]!;
+  it.each([
+    [1, 'daily', 'place-daily'],
+    [2, 'scan', 'place-scan'],
+  ])(
+    'opens its Research place before step %i and waits for its preferred target',
+    async (index, place, target) => {
+      vi.useFakeTimers();
+      const openResearch = vi.fn(() => {
+        setTimeout(() => {
+          document.body.innerHTML = `<div data-tour="research-places"><span data-tour="${target}"></span></div>`;
+        }, 300);
+      });
+      const steps = buildTourSteps(TOUR_STEPS, openResearch);
+      const research = steps[index]!;
 
-    let shown = false;
-    void research.before?.({} as never).then(() => {
-      shown = true;
-    });
-    expect(openResearchScan).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(250);
-    expect(shown).toBe(false);
-    await vi.advanceTimersByTimeAsync(100);
-    expect(shown).toBe(true);
-    expect(typeof research.target === 'function' && research.target()).toBe(
-      document.querySelector('[data-tour="research-places"]'),
-    );
-  });
+      let shown = false;
+      void research.before?.({} as never).then(() => {
+        shown = true;
+      });
+      expect(openResearch).toHaveBeenCalledExactlyOnceWith(place);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(shown).toBe(false);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(shown).toBe(true);
+      expect(typeof research.target === 'function' && research.target()).toBe(
+        document.querySelector(`[data-tour="${target}"]`),
+      );
+    },
+  );
 
   it('anchors header steps without navigating or scrolling', () => {
-    const openResearchScan = vi.fn();
-    const steps = buildTourSteps(TOUR_STEPS, openResearchScan);
+    const openResearch = vi.fn();
+    const steps = buildTourSteps(TOUR_STEPS, openResearch);
     for (const [index, spec] of TOUR_STEPS.entries()) {
-      expect(steps[index]?.before === undefined).toBe(!spec.opensResearchScan);
-      expect(steps[index]?.isFixed).toBe(!spec.opensResearchScan);
+      expect(steps[index]?.before === undefined).toBe(!spec.opensResearch);
+      expect(steps[index]?.isFixed).toBe(!spec.opensResearch);
     }
-    expect(openResearchScan).not.toHaveBeenCalled();
+    expect(openResearch).not.toHaveBeenCalled();
   });
 });
