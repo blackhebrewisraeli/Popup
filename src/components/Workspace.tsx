@@ -566,6 +566,19 @@ export function AccountZone({ assets }: Readonly<{ assets: Asset[] }>) {
   );
 }
 
+/**
+ * Daily candidates' detail routes: live assets_status rows only, so a candidate never opens a
+ * sample asset; [] when the live universe is truly empty; null while the rows are loading,
+ * failed or set aside for sample data, so no row claims its pair has no Popup asset.
+ */
+function dailyAssets(
+  live: Asset[] | null,
+  query: Readonly<{ isSuccess: boolean; data: Asset[] | undefined }>,
+): Asset[] | null {
+  if (live) return live;
+  return query.isSuccess && query.data?.length === 0 ? [] : null;
+}
+
 function Terminal() {
   const [source, setSource] = useState<'auto' | 'live' | 'sample'>('auto');
   const [marketView, setMarketView] = useState<MarketView>('signals');
@@ -777,11 +790,9 @@ function Terminal() {
                 <PriceAlerts assets={baseAssets} user={user} />
               </section>
             }
-            // Live assets_status rows only: a candidate never opens a sample asset. Null while they
-            // are loading, failed or set aside for sample data, so no row claims its pair has none.
             daily={
               <DailyCandidates
-                assets={liveAssets ?? (query.isSuccess && query.data.length === 0 ? [] : null)}
+                assets={dailyAssets(liveAssets, query)}
                 onOpenAsset={setSelectedAsset}
               />
             }
