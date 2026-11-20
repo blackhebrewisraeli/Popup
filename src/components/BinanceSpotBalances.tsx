@@ -102,7 +102,7 @@ export function BinanceSpotBalances({
     };
   }, [refresh]);
 
-  // The notice sits below the Account cards, off screen on a phone; bring it to the reader.
+  // The link may land with the page scrolled elsewhere; bring the notice to the reader.
   useEffect(() => {
     const notice = noticeRef.current;
     if (!requested || !gated || !notice) return;

@@ -304,7 +304,8 @@ export function PerpetualFilterComparison({
 
 /**
  * The offline simulation, the public TRXUSDT perpetual facts and the comparison between them.
- * Keyed by account in AccountPanel, so nothing typed or read crosses accounts.
+ * Not mounted since 20 November 2026 (removed from Account). Wherever it is mounted again, key it
+ * by account so nothing typed or read crosses accounts.
  */
 export function PerpetualWorkspace() {
   const [inputs, setInputs] = useState<PerpetualInputs>(EMPTY_PERPETUAL);

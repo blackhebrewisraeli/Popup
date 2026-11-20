@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LeverageSimulation } from '@/components/LeverageSimulation';
 import {
@@ -467,80 +466,5 @@ describe('LeverageSimulation: validation and reset', () => {
     expect(within(section()).getByRole('radio', { name: 'Target notional (USDT)' })).toBeChecked();
     expect(within(section()).queryByRole('heading', { name: 'Hypothetical result' })).toBeNull();
     expect(status()).toHaveTextContent(/^Enter starting collateral/);
-  });
-});
-
-vi.mock('@/lib/authStore', () => ({
-  useAuth: () => ({
-    user: { id: 'synthetic-user', email: 'synthetic@example.test' },
-    isPro: false,
-  }),
-}));
-vi.mock('@/lib/portfolioStore', () => ({
-  usePortfolio: () => ({
-    portfolios: {
-      paper_trading: { transactions: [] },
-      long_term_sim: { transactions: [] },
-      real_tracking: { transactions: [] },
-    },
-  }),
-}));
-vi.mock('@/components/BinanceSpotBalances', () => ({
-  BinanceSpotBalances: ({ children }: { children?: ReactNode }) => (
-    <section aria-label="Binance Spot card">{children}</section>
-  ),
-}));
-vi.mock('@/components/SpotExperiments', () => ({
-  SpotExperiments: () => <section aria-label="Manual Spot experiments" />,
-}));
-vi.mock('@/components/PortfolioDashboard', () => ({ PortfolioDashboard: () => null }));
-vi.mock('@/components/PricingModal', () => ({ PricingModal: () => null }));
-vi.mock('@/components/PineScriptModal', () => ({ PineScriptModal: () => null }));
-// Account renders outside a router here; its one in-app link only needs to be an anchor.
-vi.mock('@tanstack/react-router', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  Link: ({ to, children, className }: { to: string; children?: ReactNode; className?: string }) => (
-    <a href={to} className={className}>
-      {children}
-    </a>
-  ),
-}));
-
-describe('Account placement', () => {
-  it('puts the leverage simulation outside the Binance Spot card and Manual Spot experiments', async () => {
-    const { AccountPanel } = await import('@/components/AccountPanel');
-    render(<AccountPanel assets={[]} />);
-    const card = screen.getByRole('region', { name: 'Binance Spot card' });
-    expect(
-      within(card).getByRole('region', { name: 'Manual Spot experiments' }),
-    ).toBeInTheDocument();
-    expect(card).not.toContainElement(section());
-    for (const box of within(section()).getAllByRole('textbox')) expect(box).toHaveValue('');
-  });
-
-  it('puts the public perpetual facts and then the filter comparison after the simulation, idle until asked', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    try {
-      const { AccountPanel } = await import('@/components/AccountPanel');
-      render(<AccountPanel assets={[]} />);
-      const facts = screen.getByRole('region', {
-        name: /^TRXUSDT perpetual: public contract data/,
-      });
-      const card = screen.getByRole('region', { name: 'Binance Spot card' });
-      expect(card).not.toContainElement(facts);
-      expect(section()).not.toContainElement(facts);
-      expect(section().nextElementSibling).toBe(facts);
-      // The filter comparison follows the facts, outside the Binance card, compared on no load.
-      const comparison = screen.getByRole('region', {
-        name: /^Scenario against TRXUSDT perpetual filters/,
-      });
-      expect(facts.nextElementSibling).toBe(comparison);
-      expect(card).not.toContainElement(comparison);
-      expect(within(comparison).queryAllByRole('heading', { level: 5 })).toHaveLength(0);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 });

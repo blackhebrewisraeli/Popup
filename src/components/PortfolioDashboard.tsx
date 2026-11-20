@@ -99,7 +99,8 @@ const LEDGER_COPY = {
     eyebrowClass: 'paper-eyebrow real-eyebrow',
     eyebrow: 'Real holdings · Tracking only',
     title: 'Tracked Holdings',
-    subtitle: 'Positions you hold at your broker, logged by hand. Popup places no orders.',
+    subtitle:
+      'Positions you hold at your broker, logged here by hand. Separate from Binance Spot balances and from fills linked to Manual Spot experiments; Popup places no orders.',
     emptyTitle: 'No tracked holdings yet',
     emptySub: 'Add a position you hold at your broker to track it here.',
     csvSlug: 'live',

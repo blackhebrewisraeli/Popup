@@ -6,7 +6,8 @@ export const Route = createFileRoute('/_workspace/account')({
       { title: 'Account — Popup' },
       {
         name: 'description',
-        content: 'Subscription, TradingView webhook keys, data export and tracked holdings.',
+        content:
+          'Manual Spot experiments, tracked holdings, data export and TradingView webhook keys.',
       },
     ],
   }),
