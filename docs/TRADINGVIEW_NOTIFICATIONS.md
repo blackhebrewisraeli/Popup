@@ -4,8 +4,9 @@ Status: production attribution support is deployed. Owner credential rotation an
 alert recreation remain pending; no active alert or credential is changed by this runbook.
 
 Popup treats TradingView alerts as technical market events. They are information for the user,
-not trade instructions. Receiving an event never places an order. The existing Action Center can
-book a separate, explicit paper-trading simulation only after the user reviews and confirms it.
+not trade instructions. Receiving an event never places an order. The Action Center, which could
+book a separate paper-trading simulation after the user confirmed it, is paused with the Paper
+Desk; alerts are now only recorded.
 
 ## Sanitized diagnosis of the score-69 SELL
 

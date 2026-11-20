@@ -3,16 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Popup — Explainable market research and paper trading</title>
+    <title>Popup — Daily candidates, model evidence and manual Spot records</title>
     <meta
       name="description"
-      content="Review market scans, inspect the evidence behind each signal, and test hypothetical decisions with Popup. An open-source research and paper-trading workspace in private testing."
+      content="Popup is an open-source research prototype in private testing: a dated daily shortlist of liquid Binance Spot pairs, explainable daily-candle model scans, and records of trades placed by hand. Popup places no orders."
     />
     <meta name="theme-color" content="#101114" />
     <meta property="og:title" content="Popup — Understand the signal" />
     <meta
       property="og:description"
-      content="Explainable market research, reproducible scans, and paper trading. Currently in private testing."
+      content="Dated daily candidates, explainable model scans, and manual Spot records. Currently in private testing."
     />
     <meta property="og:type" content="website" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
@@ -36,19 +36,21 @@
             <span class="dot" aria-hidden="true"></span> OPEN SOURCE · PRIVATE TESTING
           </p>
           <h1 id="hero-title">Understand<br />the signal<span class="coral">.</span></h1>
-          <p class="lede">Inspect the evidence. Test the decision.</p>
+          <p class="lede">Inspect the evidence. Record the decision.</p>
           <p class="muted">
-            A focused workspace for market research, scan comparison, backtesting, and paper
-            trading. From a ranked result to the reasons behind it.
+            A focused workspace for a dated daily shortlist of liquid Binance Spot pairs,
+            explainable daily-candle model scans, and records of trades placed by hand.
           </p>
           <div class="actions">
-            <a class="button primary" href="https://popup-signals.vercel.app"
-              >Explore the workspace ↗</a
+            <a class="button primary" href="https://popup-signals.vercel.app">Open the app ↗</a
             ><a class="button" href="https://github.com/blackhebrewisraeli/Popup#readme"
               >Read the documentation</a
             >
           </div>
-          <p class="small muted">Pre-beta. Simulated trading. No real order execution.</p>
+          <p class="small muted">
+            Pre-beta. The app runs at popup-signals.vercel.app and places no orders. This page is an
+            overview only.
+          </p>
         </div>
         <aside class="evidence" aria-label="Illustrative workflow, no market data">
           <div class="panel-top">
@@ -75,8 +77,8 @@
           <div class="evidence-row">
             <span class="step">03</span>
             <div>
-              <h3>Compare &amp; simulate</h3>
-              <p>Review changes and explore a hypothetical plan.</p>
+              <h3>Compare &amp; record</h3>
+              <p>Review what changed, then record your own decision.</p>
             </div>
             <span aria-hidden="true">↗</span>
           </div>
@@ -87,8 +89,8 @@
       </section>
       <div class="strip">
         <div class="shell">
-          RESEARCH WITH CONTEXT <span aria-hidden="true">/</span> REPRODUCIBLE INPUTS
-          <span aria-hidden="true">/</span> SEPARATE PAPER LEDGERS
+          DATED DAILY CANDIDATES <span aria-hidden="true">/</span> REPRODUCIBLE INPUTS
+          <span aria-hidden="true">/</span> READ-ONLY ACCOUNT ACCESS
         </div>
       </div>
       <section class="shell section" id="workflow" aria-labelledby="workflow-title">
@@ -97,32 +99,34 @@
         <div class="cards">
           <article>
             <span class="index">01 / RESEARCH</span>
-            <h3>See what changed.</h3>
+            <h3>Start with dated candidates.</h3>
             <p>
-              Review bounded stock, ETF, and crypto universes. Compare compatible snapshots and
-              inspect factors, Risk clauses, session, and coverage.
+              Research opens on a daily shortlist of Binance Spot pairs ranked by 24-hour quote
+              volume: a liquidity ranking, not a score. Model scan (1D) then shows factors, Risk
+              clauses, and coverage.
             </p>
             <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/MARKET_SCANNER.md"
-              >Scanner workflow →</a
+              >Research workflow →</a
             >
           </article>
           <article>
-            <span class="index">02 / PAPER DESK</span>
-            <h3>Test a hypothesis.</h3>
+            <span class="index">02 / MANUAL SPOT</span>
+            <h3>Record what you did.</h3>
             <p>
-              Explore allocations and backtests, then record simulated trades with cash, positions,
-              fees, and transaction history kept together.
+              Trades are placed by hand on Binance, then recorded as experiments: source scan,
+              rules, linked fills, observations, and close. Popup evaluates no rule.
             </p>
-            <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/WORKSPACE_GUIDE.md"
-              >Technical guide →</a
+            <a
+              href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/MANUAL_SPOT_EXPERIMENTS.md"
+              >Manual Spot records →</a
             >
           </article>
           <article>
             <span class="index">03 / ACCOUNT</span>
             <h3>Keep the boundary clear.</h3>
             <p>
-              Separate real holdings from simulated money. The owner-only Binance Spot connection
-              reads balances and finite execution history without placing orders.
+              The owner-only Binance Spot connection reads balances and finite execution history
+              without placing orders. Paper Desk simulations are paused and stay read-only.
             </p>
             <a
               href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/BINANCE_SPOT_ACCOUNT.md"
@@ -131,9 +135,10 @@
           </article>
         </div>
         <p class="scope">
-          TradingView development scans run locally through an authenticated agent at the owner's
-          request. They are not an unattended hosted scanner. The hosted app, market-data streams,
-          alerts, and account reads have separate capabilities.
+          The daily batch is collected once a day by a scheduled Edge Function. TradingView
+          development scans run locally through an authenticated agent at the owner's request. They
+          are not an unattended hosted scanner. The hosted app, market-data streams, alerts, and
+          account reads have separate capabilities.
         </p>
       </section>
       <section
@@ -179,7 +184,7 @@
         <p>
           Popup is in pre-beta development. Current work prioritizes the owner's workflow, reliable
           evidence, and clear limits. Investment performance has not been established; model scores
-          are not probabilities of profit.
+          are not probabilities of profit, and the daily rank is not a score.
         </p>
         <a
           class="button"
@@ -196,7 +201,7 @@
         <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/LICENSE">MIT License</a>
       </p>
       <p class="small muted">
-        Research software. Paper trades are simulated. Informational use, not financial advice.
+        Research software. Places no orders. Informational use, not financial advice.
       </p>
     </footer>
   </body>

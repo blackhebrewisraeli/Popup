@@ -4,9 +4,9 @@ Read this before starting a task. Use the linked PRs and technical docs for deta
 
 ## Current direction
 
-Popup helps the owner scan bounded universes of stocks and ETFs and of crypto pairs, see which
-technical conditions changed, and understand the evidence behind each result. The user decides
-whether to act, and where; Popup places no orders.
+Popup helps the owner review a dated daily shortlist of liquid Binance Spot pairs, inspect the
+model evidence on daily candles, and record trades placed by hand as Manual Spot experiments. The
+user decides whether to act, and where; Popup places no orders.
 
 - TradingView is the selected source for the equity scanner and for the crypto scan of Binance
   Spot USDT pairs (`crypto-usdt-v1`). Binance is the crypto venue, never the data source of that
@@ -21,11 +21,17 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-20 · Research opens on Daily candidates · Draft PR, branch `feat/research-daily-candidates-first`, from `a2aafe6`. UI only.**
+- **2026-11-20 · Popup branding and public descriptions match the prototype · Draft PR, branch `docs/popup-branding-alignment`, from `5fd71f7`. Copy and images only.**
+  - **Changed:** README, the product page (`docs/site`), the README banner and the Social Preview now describe Research (Daily candidates, Model scan (1D), Markets directory), Account with Manual Spot experiments, and the paused Simulation history. The daily rank is described as liquidity, never a score. **Open the app ↗** (popup-signals.vercel.app) is labeled apart from the overview-only product page. The Paper Desk screenshot left the README; its file stays. Root and `/` meta descriptions, the `Popup CI` workflow title, and directly affected passages in the workspace guide, TradingView setup, market scanner, strategy validation, connection and product status docs were updated.
+  - **Kept:** every identifier with a compatibility or provenance reason (listed in the PR): `.zerochart-*` stores, `zerochart:*` browser keys, `/__zerochart/*` dev routes, `pine/zerochart_*.pine` files and the pinned diagnostics' titles, `ZEROCHART_TELEGRAM_*` secrets, the SonarQube key, frozen spec IDs and fixture text, and dated reports. Required check contexts are job names, so the workflow title change does not affect the ruleset.
+  - **Evidence:** product page checked at 1280 and 375 px in light and dark (no overflow); link targets checked. See the PR for checks.
+  - **Next:** owner review. If the Social Preview was uploaded before, re-upload `docs/branding/popup-social-preview.png`.
+
+- **2026-11-20 · Research opens on Daily candidates · Merged [#209](https://github.com/blackhebrewisraeli/Popup/pull/209) as `5fd71f7`, branch `feat/research-daily-candidates-first`, from `a2aafe6`. UI only.**
   - **Changed:** Research's places are now Daily candidates (where it opens), Model scan (1D) (formerly Scan) and Markets directory. A line under them says what the open place is: discovery's 24-hour quote-volume rank is not a model score or a prediction; the model scan is the existing model on closed daily candles, with its coverage and candle timestamps in its header. On Daily candidates, the market-data error and sample-data banners are no longer drawn over the board. While live market data is not loaded, each row says so instead of "No Popup asset maps". The tour (6 steps) opens Daily candidates, then Model scan, before pointing at either place's controls, Back included.
   - **Kept:** model, scoring, policy, universe, collector, schedule, owner check, schema and stored data. Scan, filters, evidence, saved-scan import and the dev TradingView tools are unchanged under Model scan (1D). Beta Audit logging is unchanged.
   - **Evidence:** see the PR for tests and the synthetic browser check.
-  - **Next:** owner review.
+  - **Status:** merged as `5fd71f7`.
 
 - **2026-11-20 · Account starts with Binance Spot and Manual Spot experiments · Merged [#208](https://github.com/blackhebrewisraeli/Popup/pull/208) as `a2aafe6`, branch `feat/account-manual-spot-first`, from `10a584e`. UI only.**
   - **Changed:** Account now shows the owner's Binance Spot card, with Manual Spot experiments inside it, right after the heading. Tracked Holdings follows as its own section, and its subtitle says it is separate from Binance balances and experiment-linked fills. Data Export (all ledger CSVs, the Beta Audit CSV, the Simulation history link) and TradingView webhook keys moved into one closed disclosure at the end. Its contents and the Pine dialog mount only when opened. The Subscription card, its Pricing modal and `PerpetualWorkspace` are gone from Account. The tour's first step, the route description and the docs describe the new order.

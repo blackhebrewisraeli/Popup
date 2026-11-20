@@ -1,71 +1,74 @@
 <div align="center">
 
-<img src="docs/branding/popup-banner.svg" alt="Popup — explainable market research and paper trading" width="100%" />
+<img src="docs/branding/popup-banner.svg" alt="Popup — daily candidates, model evidence and manual Spot records" width="100%" />
 
 # Popup
 
-**Understand the signal. Inspect the evidence. Test the decision.**
+**Understand the signal. Inspect the evidence. Record the decision.**
 
-A market research workspace for reviewing stocks, ETFs, and crypto, comparing scan snapshots,
-and exploring decisions through backtesting and paper trading.
+A research prototype for reviewing a dated daily shortlist of liquid Binance Spot pairs,
+inspecting daily-candle model scans, and recording trades placed by hand.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/blackhebrewisraeli/Popup/ci.yml?branch=main&label=CI)](https://github.com/blackhebrewisraeli/Popup/actions/workflows/ci.yml)
 [![Stage: private testing](https://img.shields.io/badge/stage-private_testing-ff7a5c)](docs/PRODUCT_STATUS.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[**Product overview**](https://blackhebrewisraeli.github.io/Popup/) · [**Hosted app**](https://popup-signals.vercel.app) · [Screenshots](#screenshots) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
+[**Open the app ↗**](https://popup-signals.vercel.app) (popup-signals.vercel.app) · [Product page](https://blackhebrewisraeli.github.io/Popup/) (overview only) · [Screenshots](#screenshots) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
 
 </div>
 
 > [!NOTE]
-> **Private testing / pre-beta.** Popup does not place real orders. Paper trades are simulated,
-> and the owner-only Binance connection is read-only. Scores and backtests are research tools;
-> investment performance has not been established.
+> **Private testing / pre-beta.** Popup places no orders. The owner trades on Binance by hand,
+> and Popup's owner-only Binance Spot connection is read-only. Paper Desk and Build Portfolio are
+> paused; their simulated records stay readable. The daily candidate rank is a liquidity ranking,
+> not a model score or a prediction. Investment performance has not been established.
 
-## Why Popup
+## What Popup does today
 
-A ranked list alone does not explain a decision. Popup connects each result to its factors,
-market regime, data coverage, and recorded source, then lets you compare what changed and test
-hypothetical actions in a separate paper ledger.
+The workspace has two tabs, **Research** and **Account**, plus a read-only Simulation history.
 
-| Research                                                                                                     | Paper Desk                                                                                             | Account                                                                                                |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Review bounded universes, compare compatible scans, and inspect the evidence behind scores and Risk warnings | Explore allocations, backtest, and book simulated trades with cash, positions, and transaction history | Keep manual holdings separate; inspect owner-only Binance Spot balances and bounded execution evidence |
+| Research                                                                                                                                                                                                                              | Account                                                                                                                                                                                   | Simulation history (paused)                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opens on **Daily candidates**: a dated, owner-only shortlist of Binance Spot USDT pairs ranked by 24-hour quote volume. Then **Model scan (1D)**, with the evidence behind each score and Risk warning, and the **Markets directory** | Read-only Binance Spot balances, executions and reconciliation, with **Manual Spot experiments**: owner records of real trades placed by hand. Holdings tracked by hand follow separately | Paper Desk and Build Portfolio are paused. Read and export the earlier simulated ledgers and the Decision Journal; nothing new can be booked |
 
 ### A typical workflow
 
-1. **Review a scan.** Check its source, session, coverage, and missing-data states.
-2. **Understand the result.** Inspect RSI, MACD, ATR, market regime, and the specific Risk clauses.
+1. **Check the daily candidates.** Read the batch date, coverage, and exclusions. The rank orders
+   pairs by 24-hour quote volume only: it is a place to start looking, not a score or a BUY signal.
+2. **Inspect the model evidence.** In Model scan (1D), check a scan's source and closed-candle
+   coverage, then its RSI, MACD, and ATR factors, market regime, and the specific Risk clauses.
 3. **Compare the evidence.** Use a compatible earlier snapshot to distinguish observed changes.
-4. **Test a decision.** Explore a hypothetical scenario or paper trade; inspect the ledger afterward.
+4. **Record your own decision.** A trade you place on Binance yourself can be recorded as a Manual
+   Spot experiment: its source scan, rules, linked fills, observations, and close. Popup verifies
+   no holding and evaluates no rule.
 
-**Availability matters:** TradingView development scans are local and owner-initiated through an
-authenticated agent. They are not an unattended scanner in the hosted app. Binance live market
-data, TradingView alerts, and the read-only account connection are separate flows.
+**Availability matters:** the daily batch is collected once a day by a scheduled Supabase Edge
+Function, with no browser or agent session. TradingView development scans are local and
+owner-initiated through an authenticated agent; they are not an unattended scanner in the hosted
+app. Binance live market data, TradingView alerts, and the read-only account connection are
+separate flows.
 
 ## Screenshots
 
-Captured from the running application. Both show only the app's built-in synthetic or sample data
-([how they were made](docs/PAGES.md#readme-screenshots)).
+Captured from the running application. It shows only the app's built-in synthetic data
+([how it was made](docs/PAGES.md#readme-screenshots)).
 
 ![Popup's example scan: five synthetic assets, DEMO1 to DEMO5, ranked with score, setup and reason, beside the evidence for DEMO5: score 80, mean-reverting regime, and which Long and Risk conditions are met or not met](docs/screenshots/research-example-scan.png)
 
-**Research: each result beside its evidence.** The app's built-in example scan, labeled
+**Model scan: each result beside its evidence.** The signed-out page's built-in example, labeled
 _Illustrative_: made-up readings for five made-up assets, scored by Popup's own model and setup
 rules. The selected result shows why a score of 80 still meets no setup. No market data.
 
-![Popup's Paper Desk in Simulation Mode with Sample data: 100,000 dollars of paper cash and an order ticket previewing a simulated 2,500 dollar BTC buy at the sample price](docs/screenshots/paper-desk-order-ticket.png)
-
-**Paper Desk: a simulated order.** A $2,500 paper buy previewed in the order ticket of a fresh
-$100,000 paper account. Prices are the app's labeled _Sample data_, the order was not submitted,
-and paper fills never reach a broker.
+Daily candidates and Account have no labeled synthetic mode. Filling them with made-up pairs,
+balances, or trades would misrepresent real records, so they are not pictured.
 
 ## Engineering highlights
 
 - **Explainable model:** a canonical TypeScript scoring engine with factor contributions and explicit insufficient-data states; a Pine Script HUD with a documented comparison contract.
 - **Reproducible research:** versioned candle contracts, captured scan inputs, and offline reproduction before reviewing saved scans.
-- **Atomic accounting:** isolated Live Tracking, Simulation, and Paper Trading ledgers, FIFO lots, and fee-aware realized P&L.
+- **Dated discovery:** a protected Edge Function stores one Binance Spot batch a day with its policy, coverage, and exclusions; the board reads stored batches.
+- **Atomic accounting:** isolated ledgers for tracked holdings and the paused simulations, FIFO lots, and fee-aware realized P&L.
 - **Responsive compute:** indicator and backtest calculations run in a Web Worker; market updates subscribe by symbol.
 - **Scoped access:** Supabase Auth and row-level security; authenticated TradingView ingestion; owner-only Binance reads.
 - **Quality checks:** CI runs typecheck, build, lint, tests with coverage, and independent fixture reproduction.
@@ -143,7 +146,7 @@ Open [http://localhost:8080](http://localhost:8080).
    ```
 
 2. In the app, open any asset and click **TradingView Indicator**, then click **Generate webhook token**. Copy the Pine Script after that: your token replaces `USER_SECRET_PLACEHOLDER` in its alert payloads.
-3. Follow [TradingView notification meaning and secure setup](./docs/TRADINGVIEW_NOTIFICATIONS.md) to create separate machine and phone alerts. The machine alert uses **Machine JSON**, **Any alert() function call**, and the webhook only; the phone alert uses **Human readable** and has no webhook. Signals from other timeframes are recorded but can't be executed.
+3. Follow [TradingView notification meaning and secure setup](./docs/TRADINGVIEW_NOTIFICATIONS.md) to create separate machine and phone alerts. The machine alert uses **Machine JSON**, **Any alert() function call**, and the webhook only; the phone alert uses **Human readable** and has no webhook. Alerts are recorded only: executing them is paused with the Paper Desk.
 
 ### Scripts
 
@@ -178,15 +181,17 @@ reference fixtures. Production builds check the database contract before deploym
 | [Product status](docs/PRODUCT_STATUS.md)                                                                     | Current capabilities, private-testing boundaries, and next priorities     |
 | [Technical feature guide](docs/WORKSPACE_GUIDE.md)                                                           | Model, ledgers, position sizing, webhook flow, and implementation details |
 | [Architecture](ARCHITECTURE.md)                                                                              | Source map and feature ownership                                          |
+| [Daily discovery](docs/MARKET_SCANNER.md#daily-discovery-binance-spot-unattended)                            | How the dated daily batch is collected, ranked, and verified              |
+| [Manual Spot experiments](docs/MANUAL_SPOT_EXPERIMENTS.md)                                                   | Owner records of real trades placed by hand, and what Popup checks        |
 | [Market scanner](docs/MARKET_SCANNER.md) / [crypto scan](docs/TRADINGVIEW_CRYPTO_SCAN.md)                    | Local scan workflow, source attribution, comparison, and coverage         |
-| [Decision Journal](docs/DECISION_JOURNAL.md)                                                                 | Signal decisions and recorded evidence                                    |
+| [Decision Journal](docs/DECISION_JOURNAL.md)                                                                 | Signal decisions and recorded evidence, now under Simulation history      |
 | [Binance Spot account](docs/BINANCE_SPOT_ACCOUNT.md) / [reconciliation](docs/BINANCE_SPOT_RECONCILIATION.md) | Owner-only read access and finite-history limits                          |
 | [Scanner research](docs/SCANNER_RESEARCH.md) / [model diagnostic](docs/MODEL_DIAGNOSTIC.md)                  | Findings, limitations, and the meaning of model conditions                |
 | [Pine comparison contract](docs/PINE_PARITY_ASSESSMENT.md)                                                   | Supported comparison between app scores and Pine HUD                      |
 | [TradingView setup](docs/TRADINGVIEW_NOTIFICATIONS.md)                                                       | Phone and webhook alerts, provenance, and secure setup                    |
 | [Strategy validation](docs/STRATEGY_VALIDATION.md)                                                           | Private decision replay and observation contracts                         |
 | [Releases](docs/RELEASE.md) / [contributing](CONTRIBUTING.md)                                                | Development checks, migrations, and review process                        |
-| [Product page](docs/PAGES.md)                                                                                | Published overview, README screenshots, and Social Preview assets         |
+| [Product page](docs/PAGES.md)                                                                                | Published overview page, README screenshots, and Social Preview assets    |
 
 ## Contributing and feedback
 

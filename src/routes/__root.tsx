@@ -87,7 +87,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: 'description',
         content:
-          'Explainable market signals, scan evidence and backtesting in one focused workspace.',
+          'Dated daily candidates, explainable daily-candle model scans and manual Spot records in one research workspace.',
       },
       { name: 'author', content: 'Popup' },
       { property: 'og:type', content: 'website' },

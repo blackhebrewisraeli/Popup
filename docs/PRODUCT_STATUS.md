@@ -49,4 +49,4 @@ Public beta, automated order execution, new providers, and expanded campaigns re
 
 ## Name and compatibility
 
-Popup was previously named ZeroChart. Some Pine filenames, workflow names, storage identifiers, and historical documents retain that name for compatibility or provenance. The product and canonical repository are **Popup** and `blackhebrewisraeli/Popup`.
+Popup was previously named ZeroChart. Pine filenames, local store folders, browser storage keys, secret names, the SonarQube project key, frozen research identifiers, and historical documents retain that name for compatibility or provenance. The product and canonical repository are **Popup** and `blackhebrewisraeli/Popup`.

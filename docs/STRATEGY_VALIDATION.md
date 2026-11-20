@@ -1,6 +1,6 @@
 # Private strategy-validation lab
 
-ZeroChart now has a browser-independent validation layer for the current implementation. It validates operational and decision behavior; it does **not** claim that the strategy is profitable or ready for paid use.
+Popup has a browser-independent validation layer for the current implementation. It validates operational and decision behavior; it does **not** claim that the strategy is profitable or ready for paid use.
 
 ## Actual contract
 

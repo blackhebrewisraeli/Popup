@@ -1,4 +1,4 @@
-# ZeroChart connection
+# Popup connection
 
 The dashboard reads every row in `public.assets_status`, paging in batches of 1,000. The database starts empty; **Sample data** is a separate, explicitly labeled frontend preview, not live prices or investment advice.
 
