@@ -162,6 +162,9 @@ const place = (name: string) => within(places()).getByRole('tab', { name });
 const board = () => screen.findByRole('region', { name: 'Daily candidates' });
 const shown = (name: string) =>
   screen.queryAllByRole('region', { name }).filter((el) => el.closest('[hidden]') === null);
+/** Text on screen: a hidden place stays mounted, so its copy is in the DOM but not shown. */
+const shownText = (text: RegExp) =>
+  screen.queryAllByText(text).filter((el) => el.closest('[hidden]') === null);
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -189,9 +192,10 @@ describe('Research entry point', () => {
         .map((tab) => tab.textContent),
     ).toEqual(['Daily candidates', 'Model scan (1D)', 'Markets directory']);
     expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByText(/Dated Binance Spot liquidity discovery/).textContent).toMatch(
-      /That rank is not a model score or a prediction\./,
-    );
+    // One explanation of what the board is, in its own header: liquidity, not a model score.
+    expect(shownText(/model score/)).toEqual([
+      within(section).getByText(/not a BUY\/SELL signal, a model score/),
+    ]);
     expect(within(section).getByText('Current')).toBeInTheDocument();
     expect(
       await within(section).findByRole('button', { name: 'Open BTC-USD details (BTCUSDT)' }),
@@ -211,7 +215,7 @@ describe('Research entry point', () => {
 
     fireEvent.click(place('Markets directory'));
     expect(shown('Markets directory')).toHaveLength(1);
-    expect(screen.queryByText(/Dated Binance Spot liquidity discovery/)).toBeNull();
+    expect(shownText(/liquidity-based shortlist/)).toEqual([]);
 
     fireEvent.click(place('Daily candidates'));
     expect(within(await board()).getByText('Current')).toBeInTheDocument();
@@ -222,6 +226,9 @@ describe('Research entry point', () => {
     db.owner = false;
     load();
     expect(await screen.findByText(/visible only to the configured owner/)).toBeInTheDocument();
+    expect(shownText(/model score/)).toEqual([
+      screen.getByText(/not a BUY\/SELL signal, a model score/),
+    ]);
     expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('table')).toBeNull();
     expect(db.reads.filter((table) => table.startsWith('discovery_'))).toEqual([]);

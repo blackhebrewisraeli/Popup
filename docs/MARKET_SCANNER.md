@@ -128,10 +128,12 @@ full answer only for a complete cohort.
 ## Reviewing a scan
 
 Research has three places, in this order: **Daily candidates** (where Research opens; see
-[Daily discovery](#daily-discovery-binance-spot-unattended)), **Model scan (1D)** and **Markets directory**. A line under
-them says what the open place is: discovery ranks pairs by 24-hour quote volume and that rank is not
-a model score or a prediction; the model scan is the existing model on closed daily candles, with
-its coverage and candle timestamps in its header. The directory holds the price table (asset
+[Daily discovery](#daily-discovery-binance-spot-unattended)), **Model scan (1D)** and **Markets directory**. Each says
+once what it is. Daily candidates says it in its own header, to the owner and to other sign-ins:
+pairs ranked by 24-hour quote volume, a liquidity shortlist, not a BUY/SELL signal or a model score.
+For Model scan (1D) a line under the places says it is the existing model on closed daily candles,
+with its coverage and candle timestamps in its header. On a phone the three places stay on one row
+of equal width; a label too long for its third wraps onto a second line. The directory holds the price table (asset
 details, an alert button and a broker link per row) and the price alerts panel, so it never reads
 as a second scanner. Model scan and directory stay mounted, so moving between places keeps the
 scan's filters, selection and comparison. The scan offers no order, broker or paper-trading

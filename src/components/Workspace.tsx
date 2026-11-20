@@ -431,12 +431,12 @@ export function MarketsSection({
 
 export type ResearchPlace = 'daily' | 'scan' | 'directory';
 
-/** What the open place is, so discovery's liquidity rank never reads as the model's score. */
-const PLACE_NOTE: Partial<Record<ResearchPlace, string>> = {
-  daily:
-    'Dated Binance Spot liquidity discovery: USDT pairs ranked by 24-hour quote volume in each stored batch. That rank is not a model score or a prediction.',
-  scan: 'The existing model evaluated on closed daily (1D) candles. The scan header gives the actual coverage and candle timestamps of the run shown.',
-};
+/**
+ * What Model scan (1D) is. Daily candidates says what it is in its own header (its rank is
+ * liquidity, not a model score) and the directory in its own, so neither repeats it here.
+ */
+const SCAN_NOTE =
+  'The existing model evaluated on closed daily (1D) candles. The scan header gives the actual coverage and candle timestamps of the run shown.';
 
 /**
  * Research has three places, in this order: Daily candidates, the unattended collector's
@@ -515,9 +515,7 @@ export function ResearchZone({
           </div>
         )}
         {place === 'scan' && <OpenSavedScanFile onOpen={open} buttonRef={openButton} tour />}
-        {PLACE_NOTE[place] && (
-          <p className="markets-score-help research-place-note">{PLACE_NOTE[place]}</p>
-        )}
+        {place === 'scan' && <p className="markets-score-help research-place-note">{SCAN_NOTE}</p>}
       </div>
       <div hidden={place !== 'scan'}>
         {file && <SavedScanFileView file={file} onClose={closeFile} />}
