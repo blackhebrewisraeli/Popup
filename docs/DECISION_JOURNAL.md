@@ -1,6 +1,6 @@
 # Decision & Execution Journal
 
-The Paper Desk's **Signal Journal** tab lists each TradingView tactical signal with what is recorded about it: where it came from, its current status, the paper fill linked to it, and, for a dismissal, when and why it was dismissed. It is read-only. It has no Execute or Dismiss button. Trades and dismissals still go through the Action Center.
+The **Signal Journal** lists each TradingView tactical signal with what is recorded about it: where it came from, its current status, the paper fill linked to it, and, for a dismissal, when and why it was dismissed. It is read-only. It has no Execute or Dismiss button. Since 20 November 2026 it sits under Account › Simulation history (`/paper-trading`): the Paper Desk and its Action Center, which executed and dismissed signals, are paused.
 
 The journal only shows facts the database recorded. When a fact was never stored, the journal says **Not recorded**. It doesn't reconstruct facts from other data.
 

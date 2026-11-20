@@ -19,7 +19,7 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   │   ├── __root.tsx                App shell: <head>, providers, global CSS
 │   │   ├── _workspace.tsx            Pathless layout that mounts the Workspace shell once
 │   │   ├── _workspace.index.tsx      /                 Core dashboard
-│   │   ├── _workspace.paper-trading.tsx  /paper-trading  Paper Trading terminal
+│   │   ├── _workspace.paper-trading.tsx  /paper-trading  Simulation history (paused Paper Desk, read-only)
 │   │   ├── _workspace.account.tsx    /account          Account panel
 │   │   └── p/$portfolioId.tsx        /p/:id            Public shared-portfolio view
 │   ├── components/                   Feature components (Workspace, ActionCenter, charts, modals)

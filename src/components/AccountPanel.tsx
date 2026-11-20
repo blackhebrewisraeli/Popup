@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Download, KeyRound, Sparkles } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Download, History, KeyRound, Sparkles } from 'lucide-react';
 import type { Asset } from '@/lib/assets';
 import { useAuth } from '@/lib/authStore';
 import { usePortfolio } from '@/lib/portfolioStore';
@@ -13,7 +14,7 @@ import { PortfolioDashboard } from '@/components/PortfolioDashboard';
 import { PricingModal } from '@/components/PricingModal';
 import { SpotExperiments } from '@/components/SpotExperiments';
 
-/** Same filenames the Paper Desk and Core dashboards export under. */
+/** Same filenames Simulation history and Tracked Holdings export under. */
 const EXPORTS: { type: PortfolioType; filename: string }[] = [
   { type: 'paper_trading', filename: 'popup-ledger-paper.csv' },
   { type: 'long_term_sim', filename: 'popup-ledger-simulation.csv' },
@@ -79,8 +80,8 @@ export function AccountPanel({
             TradingView Webhook
           </h3>
           <p>
-            Generate a webhook token and a Pine Script with it baked in. Alerts land in the Action
-            Center on your Paper Desk.
+            Generate a webhook token and a Pine Script with it baked in. Alerts are recorded in the
+            Signal Journal under Simulation history; the Paper Desk that executed them is paused.
           </p>
           <button type="button" className="portfolio-cash-btn" onClick={() => setPineOpen(true)}>
             <KeyRound size={13} /> Manage webhook keys
@@ -94,7 +95,11 @@ export function AccountPanel({
           <h3 id="account-export-title" className="portfolio-section-title">
             Data Export
           </h3>
-          <p>Download any ledger as CSV: fills, fees, cash movements and realized P&amp;L.</p>
+          <p>
+            Download any ledger as CSV: fills, fees, cash movements and realized P&amp;L. Paper
+            Trading and Simulation are simulated money; Live Tracking is the holdings you track by
+            hand.
+          </p>
           <div className="account-actions">
             {EXPORTS.map(({ type, filename }) => (
               <button
@@ -118,6 +123,9 @@ export function AccountPanel({
                 <Download size={13} /> Export Beta Audit CSV
               </button>
             )}
+            <Link to="/paper-trading" className="portfolio-cash-btn">
+              <History size={13} aria-hidden="true" /> Simulation history (read-only)
+            </Link>
           </div>
         </section>
       </div>

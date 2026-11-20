@@ -496,6 +496,15 @@ vi.mock('@/components/SpotExperiments', () => ({
 vi.mock('@/components/PortfolioDashboard', () => ({ PortfolioDashboard: () => null }));
 vi.mock('@/components/PricingModal', () => ({ PricingModal: () => null }));
 vi.mock('@/components/PineScriptModal', () => ({ PineScriptModal: () => null }));
+// Account renders outside a router here; its one in-app link only needs to be an anchor.
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  Link: ({ to, children, className }: { to: string; children?: ReactNode; className?: string }) => (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  ),
+}));
 
 describe('Account placement', () => {
   it('puts the leverage simulation outside the Binance Spot card and Manual Spot experiments', async () => {

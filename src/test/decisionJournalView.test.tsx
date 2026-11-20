@@ -152,7 +152,7 @@ describe('DecisionJournal', () => {
       .closest('details');
     expect(
       within(pendingItem as HTMLElement).getByText('Current eligibility').nextSibling,
-    ).toHaveTextContent('Checked when you review it in the Action Center');
+    ).toHaveTextContent('Not checked: the Action Center that reviewed signals is paused');
 
     const buttons = screen.getAllByRole('button').map((button) => button.textContent);
     expect(buttons).toEqual([' Refresh']);

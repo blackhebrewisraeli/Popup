@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type ReactNode } from 'react';
+import { memo, useId, useMemo, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, type Transition } from 'framer-motion';
 import {
   Activity,
@@ -495,14 +495,19 @@ export function TradeLedger({
   title = 'Trade Ledger',
   defaultOpen = false,
   embedded = false,
+  summary,
 }: Readonly<{
   transactions: PortfolioTransaction[];
   filename: string;
   title?: string;
   defaultOpen?: boolean;
   embedded?: boolean;
+  /** Shown under the heading, collapsed or not. */
+  summary?: ReactNode;
 }>) {
   const [open, setOpen] = useState(defaultOpen);
+  // Simulation history shows two ledgers on one page; each toggle controls its own panel.
+  const panelId = useId();
   const newestFirst = [...transactions].reverse();
 
   return (
@@ -517,7 +522,7 @@ export function TradeLedger({
               type="button"
               className="ledger-toggle"
               aria-expanded={open}
-              aria-controls="trade-ledger-panel"
+              aria-controls={panelId}
               onClick={() => setOpen((value) => !value)}
             >
               {title}
@@ -531,6 +536,7 @@ export function TradeLedger({
             <button
               type="button"
               className="portfolio-cash-btn ledger-export"
+              aria-label={`Export CSV, ${title}`}
               disabled={transactions.length === 0}
               onClick={() => downloadCsv(filename, tradeLedgerCsv(transactions))}
             >
@@ -539,8 +545,9 @@ export function TradeLedger({
           </div>
         </div>
       )}
+      {!embedded && summary}
       {(embedded || open) && (
-        <div id="trade-ledger-panel">
+        <div id={panelId}>
           {newestFirst.length > 0 ? (
             <div className="ledger-scroll">
               <table className="ledger-table">
@@ -620,8 +627,8 @@ export function TradeLedger({
 }
 
 /**
- * One Core ledger, chosen by the zone that mounts it: Simulation on the Paper
- * Desk, Live Tracking under Account. The two never share a screen.
+ * One Core ledger, chosen by the zone that mounts it. Only Account mounts it, with Live
+ * Tracking; the retired Simulation ledger is read under Simulation history instead.
  */
 export const PortfolioDashboard = memo(function PortfolioDashboard({
   assets: baseAssets,

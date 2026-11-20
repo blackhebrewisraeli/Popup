@@ -15,13 +15,13 @@ export type TourStepSpec = {
   opensResearchScan?: boolean;
 };
 
-/** Ordered by task: read the scan, open a saved one, record a real trade, practice on paper. */
+/** Ordered by task: read the scan, open a saved one, record a real trade. */
 export const TOUR_STEPS: readonly TourStepSpec[] = [
   {
     id: 'workspace',
     title: 'Your workspace',
     content:
-      'Research holds the market scan and its evidence, Paper Desk is a simulator, and Account holds your settings. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
+      'Research holds the market scan and its evidence, the Markets directory and Daily candidates. Account holds your settings. Paper Desk and Build Portfolio are paused; their simulated history stays readable from Account. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
     targets: ['workspace-nav'],
   },
   {
@@ -52,15 +52,8 @@ export const TOUR_STEPS: readonly TourStepSpec[] = [
     id: 'manual-spot',
     title: 'Real trades: Manual Spot experiments',
     content:
-      'You place real Spot trades yourself on Binance; Popup only reads Binance and never places orders. For sign-ins with access (currently the owner account only), Account › Manual Spot experiments records your decision, an optional plan and the executions you link.',
+      'You place real Spot trades yourself on Binance; Popup only reads Binance and never places orders. For sign-ins with access (currently the owner account only), Account › Manual Spot experiments records your decision, an optional plan and the executions you link. A record is not a verified current holding. Replay this tour any time from Tour.',
     targets: ['nav-account'],
-  },
-  {
-    id: 'simulated',
-    title: 'Simulated: Paper Desk and Build Portfolio',
-    content:
-      'Paper Desk and Build Portfolio (in Markets directory) use simulated cash and simulated fills. Nothing there reaches Binance or your Manual Spot records. Replay this tour any time from Tour.',
-    targets: ['nav-paper'],
   },
 ];
 

@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from 'react';
 import {
-  Activity,
   ArrowDown,
   ArrowUpRight,
   CandlestickChart,
@@ -88,14 +87,8 @@ const AssetDetailsModal = lazy(() =>
 const AuthModal = lazy(() =>
   import('@/components/AuthModal').then((m) => ({ default: m.AuthModal })),
 );
-const RoboAdvisor = lazy(() =>
-  import('@/components/RoboAdvisor').then((m) => ({ default: m.RoboAdvisor })),
-);
-const PortfolioDashboard = lazy(() =>
-  import('@/components/PortfolioDashboard').then((m) => ({ default: m.PortfolioDashboard })),
-);
-const PaperTradingTerminal = lazy(() =>
-  import('@/components/PaperTradingTerminal').then((m) => ({ default: m.PaperTradingTerminal })),
+const SimulationHistory = lazy(() =>
+  import('@/components/SimulationHistory').then((m) => ({ default: m.SimulationHistory })),
 );
 const AccountPanel = lazy(() =>
   import('@/components/AccountPanel').then((m) => ({ default: m.AccountPanel })),
@@ -269,13 +262,14 @@ const MarketRow = memo(function MarketRow({
   );
 });
 
-type WorkspaceView = 'research' | 'paper' | 'account';
+/** The header's tabs. Simulation history, at the retired Paper Desk's URL, sits under Account. */
+type WorkspaceTab = 'research' | 'account';
+type WorkspaceView = WorkspaceTab | 'history';
 
 const VIEW_PATHS = {
   research: '/',
-  paper: '/paper-trading',
   account: '/account',
-} as const satisfies Record<WorkspaceView, string>;
+} as const satisfies Record<WorkspaceTab, string>;
 
 /** The feed status pill: the connection first, then where the prices come from. */
 function feedStatusLabel(
@@ -347,23 +341,19 @@ function NoSignals({ onPreview }: Readonly<{ onPreview: () => void }>) {
 export function MarketsSection({
   rows,
   scores,
-  assets,
   marketView,
   onMarketView,
   assetClass,
   onAssetClass,
   onSelect,
-  onInvest,
 }: Readonly<{
   rows: Asset[];
   scores: ScanResults;
-  assets: Asset[];
   marketView: MarketView;
   onMarketView: (view: MarketView) => void;
   assetClass: AssetClassFilter;
   onAssetClass: (filter: AssetClassFilter) => void;
   onSelect: (asset: Asset) => void;
-  onInvest: () => void;
 }>) {
   return (
     <section className="markets" aria-label="Markets directory">
@@ -380,9 +370,6 @@ export function MarketsSection({
           <span className="markets-count font-mono">
             {rows.length} ASSET{rows.length === 1 ? '' : 'S'}
           </span>
-          <Suspense fallback={null}>
-            <RoboAdvisor assets={assets} onInvest={onInvest} />
-          </Suspense>
         </div>
       </div>
       <div className="markets-controls">
@@ -446,8 +433,8 @@ export type ResearchPlace = 'scan' | 'directory' | 'daily';
 
 /**
  * Research has three places: the ranked scan with its evidence; the Markets
- * directory (prices, alerts, broker links and the portfolio builder), so the
- * directory never reads as a second scanner; and Daily candidates, the
+ * directory (prices, alerts and broker links), so the directory never reads as a second
+ * scanner; and Daily candidates, the
  * unattended collector's latest batch. Scan and directory stay mounted, so switching keeps
  * the scan's filters, selection and comparison. Daily candidates mounts only while shown and
  * never waits on the market-data query: it reads its own batches. Under `vite dev` the scan's source
@@ -542,18 +529,17 @@ export function ResearchZone({
 }
 
 /**
- * Paper and portfolio-builder fills are simulated; Manual Spot experiments are records of real
- * trades the owner places by hand. Its link is shown to every sign-in: Account still gates them.
+ * Manual Spot experiments are records of real trades the owner places by hand, not a verified
+ * holding. Its link is shown to every sign-in: Account still gates them.
  */
 export function ClosedBetaBanner() {
   return (
     <p className="beta-banner">
-      <strong>Closed beta</strong> · Paper Desk and Build Portfolio trades are simulated.{' '}
+      <strong>Closed beta</strong> · Popup only reads Binance and places no orders.{' '}
       <Link to="/account" hash={SPOT_EXPERIMENTS_ANCHOR}>
         Manual Spot experiments
       </Link>{' '}
-      record real trades you place yourself on Binance; Popup only reads Binance and places no
-      orders.
+      record real trades you place yourself on Binance; they are not verified current holdings.
     </p>
   );
 }
@@ -577,14 +563,16 @@ function Terminal() {
   // Restored after a full page reload under `vite dev`; market data on a tab's first visit.
   const [marketsSource, setMarketsSource] = useResearchSource();
   const [researchPlace, setResearchPlace] = useState<ResearchPlace>('scan');
-  // The URL is the source of truth: / (Research), /paper-trading, /account.
+  // The URL is the source of truth: / (Research), /account, and /paper-trading, the retired
+  // Paper Desk's address, which now shows the read-only Simulation history.
   const navigate = useNavigate();
-  const onPaper = useMatch({ from: '/_workspace/paper-trading', shouldThrow: false }) !== undefined;
+  const onHistory =
+    useMatch({ from: '/_workspace/paper-trading', shouldThrow: false }) !== undefined;
   const onAccount = useMatch({ from: '/_workspace/account', shouldThrow: false }) !== undefined;
   let view: WorkspaceView = 'research';
-  if (onPaper) view = 'paper';
+  if (onHistory) view = 'history';
   else if (onAccount) view = 'account';
-  const setView = (next: WorkspaceView) => void navigate({ to: VIEW_PATHS[next] });
+  const setView = (next: WorkspaceTab) => void navigate({ to: VIEW_PATHS[next] });
   // The tour's only move: Research › Scan. Navigating to the current URL would reload the route.
   const router = useRouter();
   const openResearchScan = useCallback(() => {
@@ -651,7 +639,7 @@ function Terminal() {
             <span className="terminal-tag">SIGNALS</span>
           </a>
           <Segmented
-            value={view}
+            value={view === 'history' ? 'account' : view}
             ariaLabel="Workspace"
             onChange={setView}
             tour="workspace-nav"
@@ -662,15 +650,6 @@ function Terminal() {
                 label: (
                   <>
                     <Search size={14} /> Research
-                  </>
-                ),
-              },
-              {
-                value: 'paper',
-                tour: 'nav-paper',
-                label: (
-                  <>
-                    <Activity size={14} /> Paper Desk <span className="segment-tag">Sim</span>
                   </>
                 ),
               },
@@ -746,11 +725,9 @@ function Terminal() {
             </Button>
           </div>
         )}
-        {view === 'paper' && (
+        {view === 'history' && (
           <Suspense fallback={zoneFallback}>
-            <PaperTradingTerminal assets={baseAssets} />
-            <hr className="zone-divider" />
-            <PortfolioDashboard assets={baseAssets} portfolioType="long_term_sim" />
+            <SimulationHistory />
           </Suspense>
         )}
         {view === 'account' && <AccountZone assets={baseAssets} />}
@@ -772,13 +749,11 @@ function Terminal() {
               <MarketsSection
                 rows={rows}
                 scores={scores}
-                assets={baseAssets}
                 marketView={marketView}
                 onMarketView={setMarketView}
                 assetClass={assetClass}
                 onAssetClass={setAssetClass}
                 onSelect={setSelectedAsset}
-                onInvest={() => setView('paper')}
               />
             }
             alerts={
@@ -829,7 +804,7 @@ function Terminal() {
   return <AssetsStatusContext value={query.data ?? []}>{page}</AssetsStatusContext>;
 }
 
-/** Auth-gated app shell shared by `/` (Research), `/paper-trading` and `/account`. */
+/** Auth-gated app shell shared by `/` (Research), `/account` and `/paper-trading` (history). */
 export function Workspace() {
   const { user, loading } = useAuth();
   const [authOpen, setAuthOpen] = useState(false);

@@ -3,11 +3,11 @@ import { createFileRoute } from '@tanstack/react-router';
 export const Route = createFileRoute('/_workspace/paper-trading')({
   head: () => ({
     meta: [
-      { title: 'Paper Trading Terminal — Popup' },
+      { title: 'Simulation history — Popup' },
       {
         name: 'description',
         content:
-          'Simulation mode: trade tactical signals with simulated fills, track paper P&L and backtest a simulated portfolio. No real money.',
+          'Paper Desk and Build Portfolio are paused. Read and export earlier simulated records; nothing here places, changes or resets a trade.',
       },
     ],
   }),

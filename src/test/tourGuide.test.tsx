@@ -17,7 +17,7 @@ const pickFile = vi.fn();
 function Workspace({
   startOn,
   scanKey = true,
-}: Readonly<{ startOn: 'research' | 'paper' | 'account'; scanKey?: boolean }>) {
+}: Readonly<{ startOn: 'research' | 'history' | 'account'; scanKey?: boolean }>) {
   const [page, setPage] = useState(startOn);
   const [openCalls, setOpenCalls] = useState(0);
   const openResearchScan = useCallback(() => {
@@ -30,9 +30,6 @@ function Workspace({
         <div data-tour="workspace-nav" role="tablist" aria-label="Workspace">
           <button type="button" role="tab" data-tour="nav-research">
             Research
-          </button>
-          <button type="button" role="tab" data-tour="nav-paper">
-            Paper Desk
           </button>
           <button type="button" role="tab" data-tour="nav-account">
             Account
@@ -59,10 +56,10 @@ function Workspace({
           </button>
         </main>
       )}
-      {page === 'paper' && (
+      {page === 'history' && (
         <main>
           <button type="button" onClick={book}>
-            Buy
+            Export CSV
           </button>
         </main>
       )}
@@ -77,7 +74,6 @@ const STEP_TITLES = [
   'Score, Long and Model Risk',
   'Open a saved crypto scan',
   'Real trades: Manual Spot experiments',
-  'Simulated: Paper Desk and Build Portfolio',
 ];
 
 const tourButton = () => screen.getByRole('button', { name: 'Start product tour' });
@@ -117,19 +113,19 @@ afterEach(() => {
 });
 
 describe('the product tour', () => {
-  it('walks every step from Paper Desk, waiting for Research to render, and triggers nothing', async () => {
-    render(<Workspace startOn="paper" />);
+  it('walks every step from Simulation history, waiting for Research to render, and triggers nothing', async () => {
+    render(<Workspace startOn="history" />);
     const bodyStyle = document.body.getAttribute('style') ?? '';
     fireEvent.click(tourButton());
 
     await expectStep(1);
     // The header step stays where the user was.
-    expect(screen.getByTestId('page')).toHaveTextContent('paper');
+    expect(screen.getByTestId('page')).toHaveTextContent('history');
 
     press('Next');
     await expectStep(2);
     expect(screen.getByTestId('page')).toHaveTextContent('research');
-    for (const n of [3, 4, 5, 6]) {
+    for (const n of [3, 4, 5]) {
       press('Next');
       await expectStep(n);
     }
