@@ -263,7 +263,10 @@ Binance preflight ([MARKET_SCANNER.md › Activation](./MARKET_SCANNER.md#activa
 
 - Frontend: Instant Rollback to a deployment from before this change is safe. It never reads the
   tables, and stored batches stay.
-- Collection: unset `DAILY_DISCOVERY_ENABLED`. Nothing else changes.
+- Collection: on the Edge path (live since 2026-11-20), unset the function secret
+  `DISCOVERY_EDGE_ENABLED`, and invocations answer 503; `cron.unschedule` the three
+  `daily-discovery-*` jobs to stop the schedule. On the GitHub path, unset `DAILY_DISCOVERY_ENABLED`.
+  Nothing else changes.
 - Database: forward-only. Never drop the tables or delete their rows to undo this (the triggers
   refuse it). To withdraw access, revoke the `authenticated` grants in a new migration, after
   rolling the frontend back.
