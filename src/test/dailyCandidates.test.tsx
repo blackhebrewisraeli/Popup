@@ -106,7 +106,7 @@ async function collect(
   return storage;
 }
 
-function show(now: number, assets: Asset[] = [], onOpenAsset = vi.fn()) {
+function show(now: number, assets: Asset[] | null = [], onOpenAsset = vi.fn()) {
   vi.setSystemTime(now);
   // No wait between the board's own retry and the next read.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
@@ -138,30 +138,82 @@ describe('Daily candidates', () => {
     const section = await board();
     expect(within(section).getByText('Current')).toBeTruthy();
     expect(
-      within(section).getByText(/Batch 2026-11-20 · collected 20 Nov, 00:33 UTC/),
-    ).toBeTruthy();
-    expect(within(section).getByText('binance-spot-usdt-liquidity-v1')).toBeTruthy();
-    expect(within(section).getByText('Binance Spot public REST')).toBeTruthy();
-    expect(within(section).getByText('50 of 62 eligible')).toBeTruthy();
-    expect(within(section).getByText('8h 27m')).toBeTruthy();
-    expect(
       within(section).getByText(
         /not a BUY\/SELL signal, a model score or evidence of profitability/,
       ),
     ).toBeTruthy();
-    expect(within(section).getByText(/rolling, not a UTC calendar day/)).toBeTruthy();
-    const rows = within(within(section).getByRole('table')).getAllByRole('row').slice(1);
-    expect(rows).toHaveLength(50);
-    expect(within(rows[0]!).getByText('ZCT001USDT')).toBeTruthy();
-    expect(within(rows[0]!).getByText('60,000,000')).toBeTruthy();
+    // The batch summary: date, collection time and freshness, counts, latest attempt.
+    const summary = within(section).getByText('Batch date').closest('dl')!;
+    expect(within(summary).getByText('2026-11-20')).toBeTruthy();
+    expect(within(summary).getByText('20 Nov, 00:33 UTC')).toBeTruthy();
+    expect(within(summary).getByText('8h 27m ago')).toBeTruthy();
+    expect(within(summary).getByText('50 of 62 eligible')).toBeTruthy();
+    expect(within(summary).getByText('Batch collected')).toBeTruthy();
+    expect(within(summary).getByText('Latest attempt').closest('div')?.textContent).toContain(
+      'Collectedslot 2026-11-20',
+    );
+    // Provenance stays one disclosure away, closed by default.
+    const details = within(section).getByText('Batch details').closest('details')!;
+    expect(details.open).toBe(false);
+    expect(within(details).getByText('binance-spot-usdt-liquidity-v1')).toBeTruthy();
+    expect(within(details).getByText('Binance Spot public REST')).toBeTruthy();
+    expect(within(details).getByText(/rolling, not a UTC calendar day/)).toBeTruthy();
+    expect(within(details).getByText(/Passed in this browser before display/)).toBeTruthy();
+    const table = within(section).getByRole('table', { name: /Candidates for 2026-11-20/ });
     expect(
-      within(rows[0]!).getByText('Rank 1 of 62 eligible pairs by rolling 24h quote volume'),
+      within(table).getByText(
+        /Ranks 1–50 of 62 eligible pairs by rolling 24-hour quote volume, every window to 00:33:03 UTC/,
+      ),
     ).toBeTruthy();
-    expect(within(rows[15]!).getByText('BTCUSDT')).toBeTruthy();
-    expect(within(rows[31]!).getByText('Tokenized commodity')).toBeTruthy();
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((th) => th.textContent),
+    ).toEqual(['Rank', 'Pair', '24h quote volume (USDT)', 'Classification', 'Asset detail']);
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(50);
+    // Each row is named by its exact pair; rank and the exact-decimal volume follow it.
+    expect(within(rows[0]!).getByRole('rowheader').textContent).toMatch(/^ZCT001USDT/);
+    const [rank, volume, category] = within(rows[0]!).getAllByRole('cell');
+    expect(rank!.textContent).toBe('1');
+    expect(volume!.textContent).toBe('60,000,000');
+    expect(volume!.title).toBe('60000000.5 USDT, exactly as reported');
+    expect(category!.textContent).toBe('Not classified');
+    expect(within(rows[15]!).getByRole('rowheader').textContent).toMatch(/^BTCUSDT/);
+    expect(within(rows[31]!).getAllByRole('cell')[2]!.textContent).toBe('Tokenized commodity');
     // No prices from the ticker are shown as if they were refreshed evidence.
     expect(within(section).queryByText('1.10')).toBeNull();
     expect(db.reads.every((read) => read.filters.some((f) => f[1] === 'policy_id'))).toBe(true);
+  });
+
+  it('opens its disclosures without reading anything', async () => {
+    await collect([at(0, 33, 5)]);
+    show(at(9));
+    const section = await board();
+    const reads = db.reads.length;
+    for (const summary of within(section).getAllByText(/^(Batch details|Excluded or unranked)/)) {
+      const details = summary.closest('details')!;
+      fireEvent.click(summary);
+      details.open = true;
+      fireEvent(details, new Event('toggle'));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(db.reads).toHaveLength(reads);
+  });
+
+  it('tells unloaded market data apart from an unmapped pair', async () => {
+    await collect([at(0, 33, 5)]);
+    show(at(9), null);
+    const section = await board();
+    expect(
+      within(section).getByText('Live market data is not loaded, so no asset detail is linked.'),
+    ).toBeTruthy();
+    expect(within(section).queryAllByRole('button', { name: /^Open / })).toHaveLength(0);
+    const btc = within(section)
+      .getByRole('rowheader', { name: /^BTCUSDT/ })
+      .closest('tr')!;
+    expect(within(btc).getByText(/Live market data is not loaded/)).toBeTruthy();
+    expect(within(btc).queryByText('No Popup asset maps to this exact pair')).toBeNull();
   });
 
   it('opens Popup’s asset detail only for an exact symbol mapping', async () => {
@@ -202,7 +254,11 @@ describe('Daily candidates', () => {
     expect(within(await board()).getByText('Today’s batch not in yet')).toBeTruthy();
     cleanup();
     show(at(24 + 6));
-    expect(within(await board()).getByText('Stale')).toBeTruthy();
+    const section = await board();
+    expect(within(section).getByText('Stale')).toBeTruthy();
+    expect(within(section).getByRole('note').textContent).toMatch(
+      /Older than the daily bound: the next slot’s 06:00 UTC deadline passed/,
+    );
   });
 
   it('never shows yesterday’s batch as current after today’s attempt failed', async () => {
@@ -211,7 +267,12 @@ describe('Daily candidates', () => {
     const section = await board();
     expect(within(section).getByText('Today’s attempt failed')).toBeTruthy();
     expect(within(section).queryByText('Current')).toBeNull();
-    expect(within(section).getByText(/Batch 2026-11-20/)).toBeTruthy();
+    expect(within(section).getByRole('note').textContent).toMatch(
+      /previous slot’s batch: today’s collection failed/,
+    );
+    // The shown batch's collection time stays apart from the latest attempt's.
+    expect(within(section).getByText('2026-11-20')).toBeTruthy();
+    expect(within(section).getByText('20 Nov, 00:33 UTC')).toBeTruthy();
     const attempt = within(section).getByText('Failed').closest('div');
     expect(attempt?.textContent).toContain('slot 2026-11-21 · REGION_BLOCKED');
     expect(attempt?.textContent).toContain('3m after the slot');
@@ -272,7 +333,7 @@ describe('Daily candidates', () => {
       /The 2026-11-21 batch failed verification: .*quote volume/,
     );
     expect(within(section).queryByRole('table')).toBeNull();
-    expect(within(section).queryByText(/Batch 2026-11-20/)).toBeNull();
+    expect(within(section).queryByText(/2026-11-20/)).toBeNull();
     expect(within(section).getByText('No batch to show')).toBeTruthy();
   });
 
@@ -287,6 +348,7 @@ describe('Daily candidates', () => {
     expect(
       within(section).getByText(/Partial batch: 1 eligible pair has no valid 24h figure/),
     ).toBeTruthy();
+    expect(within(section).getByText('1 eligible without a valid 24h figure')).toBeTruthy();
     cleanup();
     await collect([at(0, 33, 5)], { market: { instruments: [], tickers: () => [] } });
     show(at(9));

@@ -1233,7 +1233,6 @@ body {
 .scan-link-button:focus-visible,
 .scan-compare-remove:focus-visible,
 .scan-guide-details > summary:focus-visible,
-.discovery-exclusions > summary:focus-visible,
 .scan-review .portfolio-cash-btn:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -1522,57 +1521,387 @@ body {
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
-/* Daily candidates: one row per pair, figures in tabular mono, sideways scroll on a phone. */
+/* Daily candidates: heading and purpose, one batch summary band, warnings in full view, the
+   ranked list as the main content, then disclosures for provenance. Scoped to the board. */
+.daily-candidates {
+  font-variant-numeric: tabular-nums;
+}
+.daily-head {
+  display: grid;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 2px solid var(--foreground);
+}
+.daily-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+.daily-lede {
+  max-width: 76ch;
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  text-wrap: pretty;
+}
+.daily-lede strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.daily-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 16px 0 0;
+  border-block: 1px solid var(--border);
+}
+.daily-summary > div {
+  min-width: 0;
+  padding: 12px 16px;
+}
+.daily-summary > div:first-child {
+  padding-left: 0;
+}
+.daily-summary > div + div {
+  border-left: 1px solid var(--border);
+}
+.daily-summary dt,
+.daily-facts dt {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.daily-summary dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.daily-summary dd.market-scan-sub,
+.daily-facts dd.market-scan-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+.daily-attempt-failed {
+  color: color-mix(in oklch, var(--destructive) 72%, var(--foreground));
+}
+/* Warnings: full text, tinted by their own hue; failures and refusals in the destructive hue. */
+.daily-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.daily-notice > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.daily-notice > p {
+  max-width: 96ch;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.daily-notice.is-warn {
+  color: color-mix(in oklch, var(--accent-amber) 55%, var(--foreground));
+  background: var(--accent-amber-soft);
+  border-color: var(--accent-amber-border);
+}
+.daily-notice.is-fail {
+  color: color-mix(in oklch, var(--destructive) 70%, var(--foreground));
+  background: color-mix(in oklch, var(--destructive) 7%, var(--background));
+  border-color: color-mix(in oklch, var(--destructive) 32%, transparent);
+}
+.daily-empty {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+.daily-list {
+  margin-top: 22px;
+}
+.daily-list-note {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+.daily-table-scroll {
+  margin-top: 0;
+}
 .discovery-table {
   /* Contains the cells' visually hidden text, which would otherwise widen the page. */
   position: relative;
   width: 100%;
-  min-width: 600px;
   border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.discovery-table caption {
+  padding: 0 0 10px;
+  caption-side: top;
+  text-align: left;
   font-size: 12.5px;
-  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+.discovery-table caption strong {
+  margin-right: 8px;
+  font:
+    600 15px 'DM Sans',
+    sans-serif;
+  color: var(--foreground);
 }
 .discovery-table th,
 .discovery-table td {
-  padding: 8px 14px 8px 0;
+  padding: 8px 12px;
   border-top: 1px solid var(--border);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+  font-weight: 400;
 }
 .discovery-table thead th {
+  padding-block: 0 8px;
   border-top: none;
-  font:
-    600 10px 'JetBrains Mono',
-    monospace;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 22%, transparent);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: bottom;
   color: var(--muted-foreground);
 }
-.discovery-table th:nth-child(3),
-.discovery-number {
+.discovery-table tbody tr:first-child > * {
+  border-top: none;
+}
+.discovery-table tbody tr:hover {
+  background: color-mix(in oklch, var(--muted) 70%, transparent);
+}
+.discovery-table .discovery-rank {
+  width: 3.5rem;
+  padding-left: 4px;
   text-align: right;
 }
-.discovery-rank,
+td.discovery-rank {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.discovery-table .discovery-pair {
+  width: 15rem;
+}
+.discovery-table .discovery-number {
+  width: 11rem;
+  text-align: right;
+}
+td.discovery-number,
 .discovery-symbol,
-.discovery-number,
 .discovery-symbol-list {
   font-family: 'JetBrains Mono', monospace;
 }
-.discovery-rank {
-  width: 3rem;
-  color: var(--muted-foreground);
+td.discovery-number {
+  font-size: 13px;
+  font-weight: 500;
 }
 .discovery-symbol {
+  display: block;
+  font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.discovery-sub {
+  display: block;
+  margin-top: 2px;
+  font:
+    400 11.5px 'DM Sans',
+    sans-serif;
+  color: var(--muted-foreground);
+}
+.discovery-table .discovery-class-col {
+  padding-left: 32px;
+}
+.discovery-class {
+  color: var(--muted-foreground);
+}
+.discovery-class.is-classified {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+.discovery-class-inline,
+.discovery-class-legend {
+  display: none;
+}
+.discovery-table .discovery-detail {
+  width: 8.5rem;
 }
 .discovery-symbol-list {
   font-size: 11.5px;
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
-.discovery-exclusions > summary {
+/* Secondary detail: closed by default, one consistent row per disclosure. */
+.daily-disclosures {
+  margin-top: 22px;
+  border-bottom: 1px solid var(--border);
+}
+.daily-disclosure {
+  border-top: 1px solid var(--border);
+}
+.daily-disclosure > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 11px 0;
+  list-style: none;
+  font:
+    600 13.5px 'DM Sans',
+    sans-serif;
   cursor: pointer;
+}
+.daily-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.daily-disclosure > summary:hover .daily-chevron {
+  color: var(--foreground);
+}
+.daily-disclosure > summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.daily-chevron {
+  flex: none;
+  color: var(--muted-foreground);
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.daily-disclosure[open] > summary .daily-chevron {
+  transform: rotate(90deg);
+}
+.daily-disclosure-hint {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.daily-disclosure-body {
+  padding: 0 0 16px 23px;
+}
+.daily-facts {
+  display: grid;
+  gap: 12px;
+  max-width: 96ch;
+  margin: 0;
+}
+.daily-facts > div {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  column-gap: 16px;
+}
+.daily-facts dd {
+  grid-column: 2;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.daily-exclusion-list {
+  display: grid;
+  gap: 8px;
+  max-width: 96ch;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  list-style: none;
+}
+.daily-exclusion-list strong {
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-chevron {
+    transition: none;
+  }
+}
+@media (max-width: 760px) {
+  .daily-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .daily-summary > div:nth-child(odd) {
+    padding-left: 0;
+    border-left: none;
+  }
+  .daily-summary > div:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .daily-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .daily-facts dd {
+    grid-column: 1;
+  }
+}
+/* A phone keeps rank, pair, volume and the detail action in view; the classification moves
+   under the pair rather than off screen. */
+@media (max-width: 640px) {
+  .discovery-class-col {
+    display: none;
+  }
+  .discovery-class-inline {
+    display: block;
+    margin-top: 4px;
+  }
+  /* "Not classified" stays readable to assistive tech; the legend says it for everyone else. */
+  .discovery-class-inline.is-unclassified {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .discovery-class-legend {
+    display: block;
+    margin-top: 2px;
+  }
+  .discovery-table .discovery-pair {
+    width: auto;
+  }
+  .discovery-table th,
+  .discovery-table td {
+    padding: 8px 6px;
+  }
+  .discovery-table .discovery-rank {
+    width: 2rem;
+    padding-left: 0;
+  }
+  .discovery-table .discovery-number {
+    width: auto;
+  }
+  .discovery-table .discovery-detail {
+    width: auto;
+    padding-right: 0;
+    text-align: right;
+  }
+  .discovery-table thead th {
+    white-space: normal;
+  }
+  .daily-disclosure-body {
+    padding-left: 0;
+  }
 }
 .scan-compare-remove {
   display: inline-flex;

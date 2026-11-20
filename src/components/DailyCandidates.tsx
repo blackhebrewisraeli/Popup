@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { ChevronRight, OctagonAlert, TriangleAlert } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Fact } from '@/components/MarketScanSummary';
 import type { Asset } from '@/lib/assets';
@@ -9,6 +10,7 @@ import {
   DISCOVERY_POLICY_ID,
   discoveryFeedState,
   slotForDate,
+  UNSUCCESSFUL_ATTEMPTS,
   verifyDiscoveryBatch,
   type DiscoveryAttemptStatus,
   type DiscoveryCategory,
@@ -158,15 +160,24 @@ function assetFor(symbol: string, assets: readonly Asset[]): Asset | undefined {
   return assets.find((asset) => toBinanceSymbol(asset.ticker) === symbol);
 }
 
+function CategoryLabel({ category }: Readonly<{ category: DiscoveryCategory }>) {
+  return (
+    <span className={cn('discovery-class', category !== 'unclassified' && 'is-classified')}>
+      {CATEGORY_LABEL[category]}
+    </span>
+  );
+}
+
 function CandidateRow({
   member,
-  ranked,
+  showWindow,
   asset,
   noAsset,
   onOpenAsset,
 }: Readonly<{
   member: DiscoveryMember;
-  ranked: number;
+  /** False when every row's window closes at the same second; the caption then says it once. */
+  showWindow: boolean;
   asset: Asset | undefined;
   /** Why there is no detail route, when `asset` is undefined. */
   noAsset: string;
@@ -174,24 +185,32 @@ function CandidateRow({
 }>) {
   return (
     <tr>
-      <td className="discovery-rank">#{member.rank}</td>
-      <td>
+      <td className="discovery-rank">{member.rank}</td>
+      <th scope="row" className="discovery-pair">
         <span className="discovery-symbol">{member.symbol}</span>
-        <span className="market-scan-sub block">Binance Spot · {member.baseAsset}/USDT</span>
-      </td>
+        <span className="discovery-sub">{member.baseAsset}/USDT</span>
+        {/* A phone has no Classification column: the same label rides under the pair. */}
+        <span
+          className={cn(
+            'discovery-class-inline',
+            member.category === 'unclassified' && 'is-unclassified',
+          )}
+        >
+          <CategoryLabel category={member.category} />
+        </span>
+      </th>
       <td className="discovery-number" title={`${member.quoteVolume} USDT, exactly as reported`}>
         {wholeUnits(member.quoteVolume)}
-        <span className="market-scan-sub block">
-          24h to {UTC_SECONDS.format(member.windowCloseTime)} UTC
-        </span>
+        {showWindow && (
+          <span className="discovery-sub">
+            24h to {UTC_SECONDS.format(member.windowCloseTime)} UTC
+          </span>
+        )}
       </td>
-      <td>
-        Rank {member.rank} of {ranked} eligible pairs by rolling 24h quote volume
+      <td className="discovery-class-col">
+        <CategoryLabel category={member.category} />
       </td>
-      <td className={cn(member.category === 'unclassified' && 'text-muted-foreground')}>
-        {CATEGORY_LABEL[member.category]}
-      </td>
-      <td>
+      <td className="discovery-detail">
         {asset ? (
           <Button
             variant="outline"
@@ -211,6 +230,25 @@ function CandidateRow({
   );
 }
 
+/** A collapsed secondary section; its content is already rendered, so opening it reads nothing. */
+function Disclosure({
+  summary,
+  hint,
+  className,
+  children,
+}: Readonly<{ summary: string; hint?: string; className?: string; children: ReactNode }>) {
+  return (
+    <details className={cn('daily-disclosure', className)}>
+      <summary>
+        <ChevronRight aria-hidden="true" className="daily-chevron" size={15} />
+        <span>{summary}</span>
+        {hint && <span className="daily-disclosure-hint">{hint}</span>}
+      </summary>
+      <div className="daily-disclosure-body">{children}</div>
+    </details>
+  );
+}
+
 function Exclusions({ result }: Readonly<{ result: DiscoveryResult }>) {
   const groups = new Map<string, string[]>();
   for (const { symbol, reason } of result.exclusions) {
@@ -218,11 +256,12 @@ function Exclusions({ result }: Readonly<{ result: DiscoveryResult }>) {
   }
   if (groups.size === 0 && result.coverage.malformed === 0) return null;
   return (
-    <details className="market-scan-coverage discovery-exclusions">
-      <summary className="market-scan-label">
-        Excluded or unranked USDT pairs ({result.exclusions.length})
-      </summary>
-      <ul className="market-scan-list market-scan-notes">
+    <Disclosure
+      className="discovery-exclusions"
+      summary={`Excluded or unranked USDT pairs (${result.exclusions.length})`}
+      hint="By reason"
+    >
+      <ul className="daily-exclusion-list">
         {[...groups].map(([reason, symbols]) => (
           <li key={reason}>
             <strong>
@@ -238,7 +277,22 @@ function Exclusions({ result }: Readonly<{ result: DiscoveryResult }>) {
           </li>
         )}
       </ul>
-    </details>
+    </Disclosure>
+  );
+}
+
+/** A warning that stays in full view above the list; it is never folded into a disclosure. */
+function Notice({
+  tone,
+  role = 'note',
+  children,
+}: Readonly<{ tone: 'warn' | 'fail'; role?: 'note' | 'alert'; children: ReactNode }>) {
+  const Icon = tone === 'fail' ? OctagonAlert : TriangleAlert;
+  return (
+    <div role={role} className={cn('daily-notice', tone === 'fail' ? 'is-fail' : 'is-warn')}>
+      <Icon aria-hidden="true" size={16} />
+      <p>{children}</p>
+    </div>
   );
 }
 
@@ -246,7 +300,7 @@ function BatchNotes({ evidence }: Readonly<{ evidence: DiscoveryEvidence }>) {
   const { status, coverage } = evidence.result;
   if (status === 'EMPTY') {
     return (
-      <output className="market-scan-empty block">
+      <output className="daily-empty">
         Collection succeeded and no USDT pair was eligible, so this date has no candidates. This is
         a recorded result, not a failed collection.
       </output>
@@ -254,14 +308,14 @@ function BatchNotes({ evidence }: Readonly<{ evidence: DiscoveryEvidence }>) {
   }
   if (status === 'PARTIAL') {
     return (
-      <p className="market-scan-fit scan-stale" role="note">
+      <Notice tone="warn">
         Partial batch: {coverage.invalid} eligible{' '}
         {coverage.invalid === 1 ? 'pair has' : 'pairs have'} no valid 24h figure
         {coverage.malformed > 0 &&
           ` and ${coverage.malformed} exchangeInfo entries were unreadable`}
         . They are not ranked and nothing stands in for them, so a pair among them may belong in the
         list.
-      </p>
+      </Notice>
     );
   }
   return null;
@@ -282,40 +336,59 @@ function CandidatesTable({
     assets === null
       ? 'Live market data is not loaded, so no asset detail is linked'
       : 'No Popup asset maps to this exact pair';
+  const windows = new Set(members.map((member) => UTC_SECONDS.format(member.windowCloseTime)));
+  const sharedWindow = windows.size === 1 ? [...windows][0] : null;
   return (
-    <section
-      className="scan-compare-scroll"
-      aria-label="Candidates, scrollable"
-      tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
-    >
-      <table className="discovery-table">
-        <caption className="sr-only">
-          Daily candidates for {evidence.slot.date}, by rolling 24-hour quote volume
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">#</th>
-            <th scope="col">Pair</th>
-            <th scope="col">24h quote volume (USDT)</th>
-            <th scope="col">Why included</th>
-            <th scope="col">Category</th>
-            <th scope="col">Asset detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {members.map((member) => (
-            <CandidateRow
-              key={member.symbol}
-              member={member}
-              ranked={coverage.ranked}
-              asset={assets === null ? undefined : assetFor(member.symbol, assets)}
-              noAsset={noAsset}
-              onOpenAsset={onOpenAsset}
-            />
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div className="daily-list">
+      {assets === null && <p className="daily-list-note">{noAsset}.</p>}
+      <section
+        className="scan-compare-scroll daily-table-scroll"
+        aria-label="Candidates, scrollable"
+        tabIndex={0} // NOSONAR(S6845): a scrollable region must take focus so the keyboard can scroll it
+      >
+        <table className="discovery-table">
+          <caption>
+            <strong>Candidates for {evidence.slot.date}</strong>{' '}
+            <span>
+              Ranks 1–{members.length} of {coverage.ranked} eligible pairs by rolling 24-hour quote
+              volume{sharedWindow && `, every window to ${sharedWindow} UTC`}
+            </span>
+            <span className="discovery-class-legend">
+              Pairs without a classification label are not classified.
+            </span>
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" className="discovery-rank">
+                Rank
+              </th>
+              <th scope="col">Pair</th>
+              <th scope="col" className="discovery-number">
+                24h quote volume (USDT)
+              </th>
+              <th scope="col" className="discovery-class-col">
+                Classification
+              </th>
+              <th scope="col" className="discovery-detail">
+                Asset detail
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((member) => (
+              <CandidateRow
+                key={member.symbol}
+                member={member}
+                showWindow={sharedWindow === null}
+                asset={assets === null ? undefined : assetFor(member.symbol, assets)}
+                noAsset={noAsset}
+                onOpenAsset={onOpenAsset}
+              />
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 
@@ -323,10 +396,15 @@ function AttemptFact({ attempt }: Readonly<{ attempt: Attempt | null }>) {
   if (!attempt) return <Fact label="Latest attempt" value="None recorded" />;
   const late =
     Date.parse(attempt.started_at) - Date.parse(slotForDate(attempt.slot_date).scheduledFor);
+  const unsuccessful = UNSUCCESSFUL_ATTEMPTS.has(attempt.status as DiscoveryAttemptStatus);
   return (
     <Fact
       label="Latest attempt"
-      value={attemptLabel(attempt.status)}
+      value={
+        <span className={cn(unsuccessful && 'daily-attempt-failed')}>
+          {attemptLabel(attempt.status)}
+        </span>
+      }
       detail={[
         `slot ${attempt.slot_date}`,
         attempt.failure_code,
@@ -335,6 +413,71 @@ function AttemptFact({ attempt }: Readonly<{ attempt: Attempt | null }>) {
         .filter(Boolean)
         .join(' · ')}
     />
+  );
+}
+
+/** Provenance, policy, coverage and verification: every fact the summary leaves out. */
+function BatchDetails({
+  verified,
+  refused,
+  collected,
+}: Readonly<{
+  verified: DiscoveryEvidence | null;
+  refused: string | null;
+  collected: number | null;
+}>) {
+  let verification = 'No stored batch to verify.';
+  if (verified) {
+    verification =
+      'Passed in this browser before display: the stored evidence matches its recorded SHA-256, was recorded under this policy for its own slot, its inputs pass the collector’s rules, and its members, order and exclusions re-derive exactly from those inputs.';
+  } else if (refused) {
+    verification = `Refused: ${refused}. Nothing from the batch is shown.`;
+  }
+  return (
+    <Disclosure summary="Batch details" hint="Source, policy, coverage, verification">
+      <dl className="daily-facts">
+        {verified && (
+          <Fact
+            label="Slot and collection"
+            value={`Slot 00:30 UTC; ticker received ${UTC_SECONDS.format(collected ?? 0)} UTC, ${ageLabel(
+              (collected ?? 0) - Date.parse(verified.slot.scheduledFor),
+            )} after the slot`}
+          />
+        )}
+        <Fact
+          label="Source"
+          value="Binance Spot public REST"
+          detail="exchangeInfo and 24hr ticker (MINI)"
+        />
+        <Fact
+          label="Policy"
+          value={DISCOVERY_POLICY_ID}
+          detail={`${DISCOVERY_POLICY.kind}; top ${DISCOVERY_POLICY.ranking.maxMembers}`}
+        />
+        {verified && (
+          <Fact
+            label="Coverage"
+            value={`${verified.result.coverage.selected} of ${verified.result.coverage.eligible} eligible`}
+            detail={[
+              `${verified.result.coverage.usdtQuoted} USDT pairs listed`,
+              `${verified.result.coverage.notTrading} not trading`,
+              `${verified.result.coverage.stablecoin} stablecoin bases`,
+              `${verified.result.coverage.invalid} without a valid 24h figure`,
+              verified.result.coverage.malformed > 0 &&
+                `${verified.result.coverage.malformed} unreadable`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          />
+        )}
+        <Fact label="Verification" value={verification} />
+        <Fact
+          label="How it is collected"
+          value="Collected unattended once a day for the 00:30 UTC slot from Binance’s public Spot market data; it does not refresh between batches and shows no prices. The 24-hour window is rolling, not a UTC calendar day."
+          detail="Saved TradingView scans are a separate source: open one under Model scan (1D). They are owner-session imports and are not collected daily."
+        />
+      </dl>
+    </Disclosure>
   );
 }
 
@@ -353,10 +496,11 @@ function Board({
   // A refused batch is never current: the feed then has no batch to show.
   const state = discoveryFeedState(verified ? feed.batchDate : null, feed.attempt, now);
   const collected = verified ? Date.parse(verified.collection.ticker.receivedAt) : null;
+  const coverage = verified?.result.coverage;
   return (
     <section className="market-scan daily-candidates" aria-label="Daily candidates">
-      <header className="market-scan-head">
-        <div className="market-scan-heading">
+      <header className="daily-head">
+        <div className="daily-title-row">
           <h2 className="market-scan-title">Daily candidates</h2>
           <p className="market-scan-state">
             <span className={cn('market-scan-status', FEED_TONE[state])}>{FEED_LABEL[state]}</span>
@@ -366,87 +510,56 @@ function Board({
             {refused && (
               <span className="market-scan-status market-scan-failed">Failed verification</span>
             )}
-            {feed.batchDate && collected !== null && (
-              <span>
-                Batch {feed.batchDate} · collected {UTC_TIME.format(collected)} UTC
-              </span>
-            )}
           </p>
         </div>
-        <div className="scan-viewing is-saved" role="note" aria-label="What this view shows">
-          <p className="scan-viewing-title">
-            <strong>Discovery candidates</strong> <span>not signals, not scores</span>
-          </p>
-          <p>
-            Binance Spot USDT pairs ranked by Binance&rsquo;s rolling 24-hour quote volume when the
-            batch was collected: a liquidity-based shortlist to investigate later, not a BUY/SELL
-            signal, a model score or evidence of profitability.
-          </p>
-          <p className="market-scan-sub">
-            Collected unattended once a day for the 00:30 UTC slot from Binance&rsquo;s public Spot
-            market data; it does not refresh between batches and shows no prices. The 24-hour window
-            is rolling, not a UTC calendar day. Saved TradingView scans are a separate source: open
-            one under Model scan (1D). They are owner-session imports and are not collected daily.
-          </p>
-        </div>
-        <dl className="market-scan-stats">
-          <Fact
-            label="Batch date"
-            value={feed.batchDate ?? 'None'}
-            detail={
-              verified &&
-              `Slot 00:30 UTC; ticker received ${UTC_SECONDS.format(collected ?? 0)} UTC, ${ageLabel(
-                (collected ?? 0) - Date.parse(verified.slot.scheduledFor),
-              )} after the slot`
-            }
-          />
-          <Fact
-            label="Source"
-            value="Binance Spot public REST"
-            detail="exchangeInfo and 24hr ticker (MINI)"
-          />
-          <Fact
-            label="Policy"
-            value={DISCOVERY_POLICY_ID}
-            detail={`${DISCOVERY_POLICY.kind}; top ${DISCOVERY_POLICY.ranking.maxMembers}`}
-          />
-          {verified && (
-            <Fact
-              label="Coverage"
-              value={`${verified.result.coverage.selected} of ${verified.result.coverage.eligible} eligible`}
-              detail={[
-                `${verified.result.coverage.usdtQuoted} USDT pairs listed`,
-                `${verified.result.coverage.notTrading} not trading`,
-                `${verified.result.coverage.stablecoin} stablecoin bases`,
-                `${verified.result.coverage.invalid} without a valid 24h figure`,
-                verified.result.coverage.malformed > 0 &&
-                  `${verified.result.coverage.malformed} unreadable`,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            />
-          )}
-          <Fact
-            label="Batch age"
-            value={collected === null ? '—' : ageLabel(now - collected)}
-            detail={refused ? 'The latest batch failed verification.' : FEED_DETAIL[state]}
-          />
-          <AttemptFact attempt={feed.attempt} />
-        </dl>
+        <p className="daily-lede">
+          Binance Spot USDT pairs ranked by Binance&rsquo;s rolling 24-hour quote volume when the
+          batch was collected: <strong>a liquidity-based shortlist to investigate later</strong>,
+          not a BUY/SELL signal, a model score or evidence of profitability.
+        </p>
       </header>
       {refused && (
-        <div role="alert" className="error-banner">
-          <span>
-            The {feed.batchDate} batch failed verification: {refused}. Its candidates are not shown,
-            and no earlier batch is shown in its place.
-          </span>
-        </div>
+        <Notice tone="fail" role="alert">
+          The {feed.batchDate} batch failed verification: {refused}. Its candidates are not shown,
+          and no earlier batch is shown in its place.
+        </Notice>
       )}
+      {!refused && state !== 'current' && (
+        <Notice tone={FEED_TONE[state] === 'market-scan-failed' ? 'fail' : 'warn'}>
+          {FEED_DETAIL[state]}
+        </Notice>
+      )}
+      <dl className="daily-summary">
+        <Fact
+          label="Batch date"
+          value={feed.batchDate ?? 'None'}
+          detail={feed.batchDate ? 'Daily slot, 00:30 UTC' : undefined}
+        />
+        <Fact
+          label="Batch collected"
+          value={collected === null ? '—' : `${UTC_TIME.format(collected)} UTC`}
+          detail={collected === null ? undefined : `${ageLabel(now - collected)} ago`}
+        />
+        <Fact
+          label="Candidates"
+          value={coverage ? `${coverage.selected} of ${coverage.eligible} eligible` : '—'}
+          detail={
+            coverage &&
+            (coverage.invalid > 0
+              ? `${coverage.invalid} eligible without a valid 24h figure`
+              : `Top ${DISCOVERY_POLICY.ranking.maxMembers} by 24h quote volume`)
+          }
+        />
+        <AttemptFact attempt={feed.attempt} />
+      </dl>
       {verified && <BatchNotes evidence={verified} />}
       {verified && (
         <CandidatesTable evidence={verified} assets={assets} onOpenAsset={onOpenAsset} />
       )}
-      {verified && <Exclusions result={verified.result} />}
+      <div className="daily-disclosures">
+        <BatchDetails verified={verified} refused={refused} collected={collected} />
+        {verified && <Exclusions result={verified.result} />}
+      </div>
     </section>
   );
 }
@@ -501,10 +614,10 @@ export function DailyCandidates({
   }
   if (!owner.data) {
     return (
-      <section className="market-scan" aria-label="Daily candidates">
-        <header className="market-scan-head">
+      <section className="market-scan daily-candidates" aria-label="Daily candidates">
+        <header className="daily-head">
           <h2 className="market-scan-title">Daily candidates</h2>
-          <p className="market-scan-empty">
+          <p className="daily-lede">
             During the private beta, daily candidates are visible only to the configured owner.
           </p>
         </header>

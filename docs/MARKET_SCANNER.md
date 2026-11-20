@@ -504,9 +504,20 @@ attempt for that slot failed, was missed or conflicted. From that deadline, 29 h
 own slot, it is **Stale**. Both boundaries are tested to the millisecond. Batch age (since the ticker
 response) and the latest attempt are shown beside it.
 
+**Layout.** In order: the heading with the feed state, one sentence on what the list is (a liquidity
+shortlist, not a signal), then any warning in full (refused, failed or missed attempt, awaiting,
+stale, partial), then a four-part summary: batch date, batch collected (time and age), candidates
+(selected of eligible, or how many eligible pairs lack a valid 24h figure) and the latest attempt,
+labelled apart from the batch. The ranked list follows, with each row named by its exact pair.
+Source, policy, slot timing, coverage counts, what verification passed, how the batch is collected,
+and exclusions sit in two closed disclosures; opening them reads nothing. Below 640 px the
+classification moves under the pair instead of its own column, and pairs without a label are
+announced as not classified.
+
 **Asset detail** opens only where a live `assets_status` row's Binance symbol is exactly the pair
 (`toBinanceSymbol`), never for a sample row. While live market data is loading, has failed or is
-set aside for sample data, each row says it is not loaded instead of claiming no asset maps; the
+set aside for sample data, a line above the list says it is not loaded (and each row's dash says the
+same to assistive technology) instead of claiming no asset maps; the
 board itself does not wait on that read, and the market-data and sample-data banners are not shown
 over it. The board shows no prices and does not refresh between batches.
 
