@@ -50,6 +50,7 @@ import {
   type EquityDailyProvider,
   type EquityDailySeries,
 } from '@/lib/usEquityDaily';
+import { compareTickers } from '../../supabase/functions/_shared/compareTickers';
 
 /** Bump whenever a change can move a scan's results, ranking or coverage. */
 export const SCANNER_VERSION = 'market-scan-v2';
@@ -285,11 +286,7 @@ const UNMAPPED_EQUITY_DETAIL =
 
 const COHORT_ORDER: readonly TickerKind[] = ['crypto', 'equity', 'forex'];
 
-/** Code-unit order, so ties break the same way in every runtime and locale. */
-export function compareTickers(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
+export { compareTickers };
 
 /** The universe as scanned: unique tickers in code-unit order. */
 export function scanUniverse(tickers: readonly string[]): string[] {

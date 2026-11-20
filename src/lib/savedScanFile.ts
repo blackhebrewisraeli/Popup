@@ -25,6 +25,10 @@ import {
   type TradingViewDevScan,
 } from '@/lib/tradingViewDevScan';
 import { spotSymbol } from '@/lib/tradingViewSymbol';
+import {
+  digestBytes,
+  webSha256 as sharedWebSha256,
+} from '../../supabase/functions/_shared/webSha256';
 
 /**
  * Larger than any crypto snapshot needs: a 25-pair `crypto-usdt-v1` scan is about 1 MB. Checked
@@ -58,14 +62,8 @@ export function tooLarge(size: number): SavedScanFileCheck {
   };
 }
 
-const hex = (digest: ArrayBuffer) =>
-  Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-
-const digestBytes = async (bytes: Uint8Array<ArrayBuffer>) =>
-  hex(await crypto.subtle.digest('SHA-256', bytes));
-
 /** Web Crypto over the string's UTF-8 bytes, exactly what node:crypto hashes for the scan store. */
-export const webSha256: Sha256 = (text) => digestBytes(new TextEncoder().encode(text));
+export const webSha256: Sha256 = sharedWebSha256;
 
 /** A file-supplied string, shortened for a message. */
 const quoted = (value: unknown) => JSON.stringify(String(value).slice(0, 60));

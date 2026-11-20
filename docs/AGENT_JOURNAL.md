@@ -21,6 +21,12 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-20 · Daily discovery Edge collector (not deployed) · Draft PR, branch `feat/daily-discovery-edge`, from `41d9331`.**
+  - **Changed:** the policy module moved unchanged to `supabase/functions/_shared/dailyDiscovery.ts`, and the collection lifecycle to `_shared/dailyDiscoveryRun.ts`. `src/lib/dailyDiscovery.ts`, `src/lib/stableSerialize.ts` and `scripts/dailyDiscovery.ts` re-export them. New `supabase/functions/daily-discovery`: secret key, `eu-west-1`, flag `DISCOVERY_EDGE_ENABLED`, then sign-in as `discovery_automation` through the publishable key. A 140 s invocation budget is new; Node is unchanged. No migration, grant, table or dependency.
+  - **Evidence:** a golden capture before and after the move is byte-identical (policy `b28becf5…`, synthetic batches `229586a3…` and `f06f998f…`), and the local Edge runtime recomputes the same hashes. 27 Edge tests, 13 caught mutations, full suite 140 files and 2,355 tests. Deno 2.1.4 type-check passes. The bundle builds without `src/` and boots in local Edge Runtime v1.76.2 with synthetic settings: 401, 405, 421, 503 and 500 refuse; an enabled run with no reachable database stops at sign-in (502).
+  - **Not done:** no deploy, user, secret, cron, collection or flag. `DAILY_DISCOVERY_ENABLED` stays unset.
+  - **Next:** owner review, then the release sequence in [docs/MARKET_SCANNER.md › Edge collector](MARKET_SCANNER.md#edge-collector-not-deployed).
+
 - **2026-11-19 · Discovery preflight deployed and invoked once: Binance reachable from `eu-west-1` · Docs-only PR, branch `docs/discovery-preflight-result`, from `41d9331`.**
   - **Deployed:** `discovery-preflight` version 1 from a clean checkout of `41d9331` (#203's merge; function files identical to the reviewed `f223698`) to `tldvgvlswananoxafocw`. The downloaded source is byte-identical to the checkout. `verify_jwt` is false; secret-key and region guards are unchanged. No other function was deployed and no migration ran.
   - **Observed:** one pg_net invocation (request 5849, 22:46:10Z) with `x-region: eu-west-1` through Vault. Served in `eu-west-1`: HTTP 200, `reachable: true`. exchangeInfo 200 ok 725 ms (3,711 listed, 743 USDT, 526 TRADING spot USDT, 0 malformed). Ticker 200 ok 257 ms (3,754 entries, 526/526 valid). Edge and function logs show exactly one invocation.
