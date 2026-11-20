@@ -21,7 +21,7 @@ export const TOUR_STEPS: readonly TourStepSpec[] = [
     id: 'workspace',
     title: 'Your workspace',
     content:
-      'Research holds the market scan and its evidence, the Markets directory and Daily candidates. Account holds your settings. Paper Desk and Build Portfolio are paused; their simulated history stays readable from Account. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
+      'Research holds the market scan and its evidence, the Markets directory and Daily candidates. Account starts with Manual Spot experiments for sign-ins with access, then the holdings you track by hand; data export and the TradingView webhook sit in a closed section below. Paper Desk and Build Portfolio are paused; their simulated history stays readable from that section. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
     targets: ['workspace-nav'],
   },
   {

@@ -93,7 +93,7 @@ VITE_SUPABASE_URL=http://127.0.0.1:55621 VITE_SUPABASE_ANON_KEY=$KEY VITE_SUPABA
   VITE_SUPABASE_PROJECT_ID=zcaccept npx vite dev --port 8082 --strictPort
 ```
 
-Before any mutation, confirm in the page that `import.meta.env.VITE_SUPABASE_URL` is `http://127.0.0.1:55621` and that every API request goes to that origin. Then sign up a throwaway `@example.test` account in the app, and take a webhook token from **Account → Manage webhook keys** (the Webhook URL field shows the local function URL). Keep the token and password in the scratch dir only.
+Before any mutation, confirm in the page that `import.meta.env.VITE_SUPABASE_URL` is `http://127.0.0.1:55621` and that every API request goes to that origin. Then sign up a throwaway `@example.test` account in the app, and take a webhook token from **Account → Data export and TradingView webhook → Manage webhook keys** (the Webhook URL field shows the local function URL). Keep the token and password in the scratch dir only.
 
 ### Synthetic data
 

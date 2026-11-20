@@ -21,11 +21,17 @@ whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-20 · Paper Desk and Build Portfolio paused; Simulation history read-only · Draft PR, branch `feat/retire-paper-desk`, from `fdaae21`.**
+- **2026-11-20 · Account starts with Binance Spot and Manual Spot experiments · Draft PR, branch `feat/account-manual-spot-first`, from `10a584e`. UI only.**
+  - **Changed:** Account now shows the owner's Binance Spot card, with Manual Spot experiments inside it, right after the heading. Tracked Holdings follows as its own section, and its subtitle says it is separate from Binance balances and experiment-linked fills. Data Export (all ledger CSVs, the Beta Audit CSV, the Simulation history link) and TradingView webhook keys moved into one closed disclosure at the end. Its contents and the Pine dialog mount only when opened. The Subscription card, its Pricing modal and `PerpetualWorkspace` are gone from Account. The tour's first step, the route description and the docs describe the new order.
+  - **Kept:** owner check, per-user keying and the `/account#spot-experiments` reveal are untouched. Subscriptions, Pro gates and `PricingModal` elsewhere are unchanged. The perpetual modules and their tests stay but are not mounted anywhere. There is no schema, RPC, storage-key or request change, and Beta Audit logging still runs.
+  - **Evidence:** see the PR for test, mutation and synthetic browser results.
+  - **Next:** owner review.
+
+- **2026-11-20 · Paper Desk and Build Portfolio paused; Simulation history read-only · Merged [#207](https://github.com/blackhebrewisraeli/Popup/pull/207) as `10a584e` (head `63766cd`), branch `feat/retire-paper-desk`, from `fdaae21`.**
   - **Changed:** the header shows Research and Account only. Markets directory has no Build Portfolio. `/paper-trading` now shows Simulation history: the Paper Trading and Simulation ledgers with CSV export, their cash and open lots at the last record, and the read-only Signal Journal. It has no booking, top-up, reset, close, cash or allocation control. Account › Data Export links to it. The tour, the closed-beta banner, the Pine modal and the landing copy no longer offer the paused flows.
   - **Kept:** `PaperTradingTerminal`, `RoboAdvisor`, `ActionCenter`, `TacticalSignals`, `SignalDiagnostics` and `useProposalExecution` stay in the tree with their tests, but nothing mounts them. The store, ledgers, RPCs, the walk-forward log and every storage key are unchanged. Account's Tracked Holdings dashboard (Live Tracking) is unchanged.
   - **Evidence:** new `retiredSimulationFlows` test (navigation, old URL, read-only controls, zero writes); two mutations caught. Full suite 141 files, 2,360 tests; build passes. Synthetic browser check: desktop and 375 px, light and dark, keyboard order, zero non-GET requests on opening history, and the tour ends in 5 steps.
-  - **Next:** owner review. Public copy (README, `docs/site`, the Paper Desk screenshot) and removing the unmounted components are separate tasks.
+  - **Status:** the owner merged it at 02:28Z; main CI passed on `10a584e`. Public copy (README, `docs/site`, the Paper Desk screenshot) and removing the unmounted components are separate tasks.
 
 - **2026-11-20 · Daily discovery Edge collector released; first batch accepted · Docs-only PR, branch `docs/daily-discovery-edge-release`, from `2957b2c`.**
   - **Released:** [#205](https://github.com/blackhebrewisraeli/Popup/pull/205) merged as `2957b2c` (tree identical to the reviewed `657fada`). `daily-discovery` version 1 deployed from it; the downloaded source is byte-identical. With the flag unset, a pinned pg_net call answered 503 and stored nothing. The owner created the automation user (confirmed) and its two function secrets. The role went to the one user matching the email secret's digest. `DISCOVERY_EDGE_ENABLED=true` was set, and cron jobs 6–8 (00:33, 02:03, 04:33) were registered.

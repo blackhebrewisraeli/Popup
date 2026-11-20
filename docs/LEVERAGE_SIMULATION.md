@@ -4,8 +4,10 @@
 perpetual **long**. It does arithmetic on numbers the owner types. It is not a Binance execution
 model, an eligibility check or a liquidation calculator.
 
-**Stage: engine, an offline Account section, a public contract-facts panel and a filter
-comparison.** [Account](#in-account) shows the engine's figures for numbers typed there. The
+**Stage: engine, an offline simulation card, a public contract-facts panel and a filter
+comparison, none of them mounted.** Since 20 November 2026 Account no longer shows the three cards
+([details](#in-account)); their modules and tests stay in the tree. When mounted, the simulation
+shows the engine's figures for numbers typed there. The
 simulation makes no network request and has no storage, account access, scanner change or link to
 the Manual Spot record. Beside it, a separate [public contract data](#public-contract-data) panel
 reads public facts about the TRXUSDT perpetual, only when asked, and never fills the simulation. A
@@ -152,7 +154,12 @@ A liquidation reference is not a guaranteed maximum loss.
 
 ## In Account
 
-**Leverage simulation** (`src/components/LeverageSimulation.tsx`) is its own card in Account, below
+**Removed from Account on 20 November 2026.** Account now centres on the Binance Spot card and its
+Manual Spot experiments, so `PerpetualWorkspace` is not mounted anywhere. The components, engine
+and tests below are kept unchanged; nothing was deleted and no derivatives logic changed. The rest
+of this document describes the cards as they behave when mounted.
+
+**Leverage simulation** (`src/components/LeverageSimulation.tsx`) was its own card in Account, below
 and outside the Binance Spot card and its Manual Spot experiments. Every signed-in user sees it; it
 reads nothing, so it needs no owner check.
 
@@ -320,7 +327,8 @@ data. It runs arithmetic checks of the simulation's current result against the f
 public read. It sends no request, has no storage, and never rounds, resizes or changes an input.
 There is no overall verdict, and nothing says a position is ready to trade.
 
-The three cards share one account-keyed state (`PerpetualWorkspace` in AccountPanel). The simulation
+The three cards share one state (`PerpetualWorkspace`, which must be keyed by account wherever it
+is mounted). The simulation
 and the facts panel report each change in the same event that makes it, so the comparison never
 sees an old input or an old read.
 
