@@ -465,6 +465,7 @@ Owner-authorized, from `2957b2c`, the merge of #205. Its tree is identical to th
 | First batch     | pg_net request 5871 at 01:15:59Z: HTTP 200 `complete` for slot `2026-11-20`, run 01:16:00.761–01:16:02.634Z, served in `eu-west-1`. 3,711 listed, 743 USDT, 218 not trading, 6 stablecoin, 519 eligible, 0 invalid, 50 selected. Evidence SHA-256 `550e114b…`. One batch and one `complete` attempt, both recorded by the automation user. |
 | Verification    | `verifyDiscoveryBatch` on the stored row: ok. Policy, slot and hash match; result `COMPLETE` with 50 members.                                                                                                                                                                                                                              |
 | Same-slot retry | pg_net request 5872 at 01:18:15Z: HTTP 200 `already_collected` in 212 ms with the same SHA-256. Still one batch; the stored slot is found before any Binance request, and the run reports no coverage.                                                                                                                                     |
+| Board           | 01:28Z, signed in as the owner on the production deployment of `2957b2c`: Research › Daily candidates shows batch 2026-11-20 as **Current**, collected 01:16 UTC, 50 of 519 eligible, ranks 1–50, and the latest attempt as already collected, nothing fetched.                                                                            |
 | Unchanged       | Experiment, entry, fill, paper, virtual-trade, signal, dismissal, token, portfolio, subscription and Spot-owner rows (counts and hashes), storage objects, Vault secret names, cron jobs 1–3 and the other four users. The price feeds kept running.                                                                                       |
 
 Every function's version number rose by 3 between the deploy and the first batch, in step with the
@@ -473,8 +474,6 @@ stayed the same.
 
 **Awaiting:**
 
-- the owner's view of Research › Daily candidates (the hosted owner session had expired, and only the
-  owner signs in);
 - the scheduled 02:03 and 04:33 runs recording `already_collected`;
 - the first scheduled collection, 2026-11-21 00:33.
 
