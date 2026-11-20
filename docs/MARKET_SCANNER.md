@@ -127,11 +127,15 @@ full answer only for a complete cohort.
 
 ## Reviewing a scan
 
-Research has two places: **Scan** (the default) and **Markets directory**. The directory holds the
-price table (asset details, an alert button and a broker link per row), the price alerts panel and
-Build Portfolio, so it never reads as a second scanner. Both stay mounted, so moving between them keeps the scan's
-filters, selection and comparison. The scan offers no order, broker or paper-trading action; those
-stay in the directory and on the Paper Desk.
+Research has three places, in this order: **Daily candidates** (where Research opens; see
+[Daily discovery](#daily-discovery-binance-spot-unattended)), **Model scan (1D)** and **Markets directory**. A line under
+them says what the open place is: discovery ranks pairs by 24-hour quote volume and that rank is not
+a model score or a prediction; the model scan is the existing model on closed daily candles, with
+its coverage and candle timestamps in its header. The directory holds the price table (asset
+details, an alert button and a broker link per row) and the price alerts panel, so it never reads
+as a second scanner. Model scan and directory stay mounted, so moving between places keeps the
+scan's filters, selection and comparison. The scan offers no order, broker or paper-trading
+action; broker links stay in the directory.
 
 Each scan (the live Market scan and the TradingView development scan) heads with its source,
 timeframe, data as of (with freshness and any cache age) and coverage, stated once for the scan.
@@ -501,8 +505,10 @@ own slot, it is **Stale**. Both boundaries are tested to the millisecond. Batch 
 response) and the latest attempt are shown beside it.
 
 **Asset detail** opens only where a live `assets_status` row's Binance symbol is exactly the pair
-(`toBinanceSymbol`), never for a sample row. The board shows no prices and does not refresh between
-batches.
+(`toBinanceSymbol`), never for a sample row. While live market data is loading, has failed or is
+set aside for sample data, each row says it is not loaded instead of claiming no asset maps; the
+board itself does not wait on that read, and the market-data and sample-data banners are not shown
+over it. The board shows no prices and does not refresh between batches.
 
 ### Supabase Edge preflight
 
@@ -834,8 +840,8 @@ stay byte-identical. The source selector's count stays the published import's.
 
 ### Opening a saved crypto scan file
 
-In any build, the hosted app included, **Open saved crypto scan** beside Research's Scan and
-Markets directory opens one saved TradingView crypto scan from a file the owner chooses. It
+In any build, the hosted app included, **Open saved crypto scan** in Research's Model scan (1D)
+place opens one saved TradingView crypto scan from a file the owner chooses. It
 reviews a scan that already exists. It fetches no bars, runs no new scan and connects to nothing:
 a new scan still needs the owner's agent session and the [runbook](#refreshing-it-owner-runbook).
 

@@ -162,11 +162,14 @@ function CandidateRow({
   member,
   ranked,
   asset,
+  noAsset,
   onOpenAsset,
 }: Readonly<{
   member: DiscoveryMember;
   ranked: number;
   asset: Asset | undefined;
+  /** Why there is no detail route, when `asset` is undefined. */
+  noAsset: string;
   onOpenAsset: (asset: Asset) => void;
 }>) {
   return (
@@ -199,8 +202,8 @@ function CandidateRow({
             {asset.ticker}
           </Button>
         ) : (
-          <span className="text-muted-foreground" title="No Popup asset maps to this exact pair">
-            —<span className="sr-only">No Popup asset maps to this exact pair</span>
+          <span className="text-muted-foreground" title={noAsset}>
+            —<span className="sr-only">{noAsset}</span>
           </span>
         )}
       </td>
@@ -270,11 +273,15 @@ function CandidatesTable({
   onOpenAsset,
 }: Readonly<{
   evidence: DiscoveryEvidence;
-  assets: readonly Asset[];
+  assets: readonly Asset[] | null;
   onOpenAsset: (asset: Asset) => void;
 }>) {
   const { members, coverage } = evidence.result;
   if (members.length === 0) return null;
+  const noAsset =
+    assets === null
+      ? 'Live market data is not loaded, so no asset detail is linked'
+      : 'No Popup asset maps to this exact pair';
   return (
     <section
       className="scan-compare-scroll"
@@ -301,7 +308,8 @@ function CandidatesTable({
               key={member.symbol}
               member={member}
               ranked={coverage.ranked}
-              asset={assetFor(member.symbol, assets)}
+              asset={assets === null ? undefined : assetFor(member.symbol, assets)}
+              noAsset={noAsset}
               onOpenAsset={onOpenAsset}
             />
           ))}
@@ -334,7 +342,11 @@ function Board({
   feed,
   assets,
   onOpenAsset,
-}: Readonly<{ feed: DailyFeed; assets: readonly Asset[]; onOpenAsset: (asset: Asset) => void }>) {
+}: Readonly<{
+  feed: DailyFeed;
+  assets: readonly Asset[] | null;
+  onOpenAsset: (asset: Asset) => void;
+}>) {
   const now = useMinuteClock();
   const verified = feed.verification?.ok ? feed.verification.evidence : null;
   const refused = feed.verification && !feed.verification.ok ? feed.verification.reason : null;
@@ -374,7 +386,7 @@ function Board({
             Collected unattended once a day for the 00:30 UTC slot from Binance&rsquo;s public Spot
             market data; it does not refresh between batches and shows no prices. The 24-hour window
             is rolling, not a UTC calendar day. Saved TradingView scans are a separate source: open
-            one under Scan. They are owner-session imports and are not collected daily.
+            one under Model scan (1D). They are owner-session imports and are not collected daily.
           </p>
         </div>
         <dl className="market-scan-stats">
@@ -448,8 +460,11 @@ export function DailyCandidates({
   assets,
   onOpenAsset,
 }: Readonly<{
-  /** Live assets_status rows only, never sample data: they give the exact-symbol detail route. */
-  assets: readonly Asset[];
+  /**
+   * Live assets_status rows only, never sample data: they give the exact-symbol detail route.
+   * Null while live market data is not loaded; the board shows the same without detail links.
+   */
+  assets: readonly Asset[] | null;
   onOpenAsset: (asset: Asset) => void;
 }>) {
   const { user } = useAuth();

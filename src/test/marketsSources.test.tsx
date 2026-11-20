@@ -177,7 +177,7 @@ describe('Markets source: market data or the local TradingView import', () => {
     expect(screen.getByRole('table', { name: 'Markets table' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
     expect(screen.queryByRole('tablist', { name: 'Markets source' })).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Model scan (1D)' }));
     expect(
       screen.queryByRole('region', { name: 'TradingView development scan' }),
     ).not.toBeInTheDocument();
@@ -407,7 +407,10 @@ describe('Research zone', () => {
   it('opens on the scan and keeps the Markets directory and alerts in a place of their own', async () => {
     stubLocalRoutes(vi.fn(json(IMPORT)));
     renderResearch();
-    expect(screen.getByRole('tab', { name: 'Scan' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Model scan (1D)' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     expect(screen.getByRole('region', { name: 'Market scan' })).toBeInTheDocument();
     for (const name of ['Markets directory', 'Price alerts']) {
       expect(screen.queryByRole('region', { name })).toBeNull();
@@ -422,7 +425,7 @@ describe('Research zone', () => {
     expect(within(markets).getByRole('group', { name: 'Market view' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Price alerts' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Market scan' })).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Model scan (1D)' }));
 
     await screen.findByRole('tab', { name: 'TradingView import 4' });
     fireEvent.click(screen.getByRole('tab', { name: /TradingView import/ }));
@@ -480,7 +483,7 @@ describe('Research zone', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Markets directory' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Scan' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Model scan (1D)' }));
     expect(search).toHaveValue('BTC');
     expect(within(scan).getByRole('checkbox', { name: 'Compare BTC-USD' })).toBeChecked();
     expect(within(scan).getByRole('button', { name: /^BTC-USD,/ })).toHaveAttribute(

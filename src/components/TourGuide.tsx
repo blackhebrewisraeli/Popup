@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type { Options, PartialDeep, Styles, TooltipRenderProps } from 'react-joyride';
 import { Compass } from 'lucide-react';
-import { buildTourSteps, TOUR_STEPS } from '@/lib/tourSteps';
+import { buildTourSteps, TOUR_STEPS, type TourResearchPlace } from '@/lib/tourSteps';
 
 // react-joyride loads on the first Tour click, not with the workspace.
 const Joyride = lazy(() => import('react-joyride').then((m) => ({ default: m.Joyride })));
@@ -94,13 +94,15 @@ function TourLoader() {
 /**
  * The product tour. One instance at a time: a Tour click while it runs does nothing. Finish,
  * Skip and Escape unmount Joyride (its portal and overlay go with it) and return focus to Tour,
- * so a restart always begins at step 1. `openResearchScan` is its only effect on the workspace.
+ * so a restart always begins at step 1. `openResearch` is its only effect on the workspace.
  */
-export function TourGuide({ openResearchScan }: Readonly<{ openResearchScan: () => void }>) {
+export function TourGuide({
+  openResearch,
+}: Readonly<{ openResearch: (place: TourResearchPlace) => void }>) {
   const [run, setRun] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const started = useRef(false);
-  const steps = useMemo(() => buildTourSteps(TOUR_STEPS, openResearchScan), [openResearchScan]);
+  const steps = useMemo(() => buildTourSteps(TOUR_STEPS, openResearch), [openResearch]);
 
   useEffect(() => {
     if (!run) {

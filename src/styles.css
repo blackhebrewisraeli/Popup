@@ -660,10 +660,10 @@ body {
   width: 100%;
 }
 
-/* Research: an editorial desk. Two places (Scan, Markets directory), no card around the scan:
-   a strong rule over the header, hairline dividers and tabular numerals. Coral marks only the
-   active view, the selected row and focus. Status and risk always carry a word, never color
-   alone. */
+/* Research: an editorial desk. Three places (Daily candidates, Model scan, Markets directory),
+   no card around the scan: a strong rule over the header, hairline dividers and tabular
+   numerals. Coral marks only the active view, the selected row and focus. Status and risk
+   always carry a word, never color alone. */
 .research-source {
   display: inline-flex;
   align-items: center;
@@ -683,6 +683,12 @@ body {
   justify-content: space-between;
   gap: 10px 16px;
   margin-bottom: 22px;
+}
+/* One line on its own row under the places, saying what the open one is. */
+.research-place-note {
+  flex: 1 1 100%;
+  max-width: none;
+  margin: 0;
 }
 .market-scan {
   margin-bottom: 18px;

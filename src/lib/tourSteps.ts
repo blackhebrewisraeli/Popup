@@ -1,9 +1,12 @@
 import type { Step } from 'react-joyride';
 
+/** The Research places a tour step may open: Daily candidates, or Model scan (1D). */
+export type TourResearchPlace = 'daily' | 'scan';
+
 /**
  * One tour step. `targets` are `data-tour` names, preferred first: the step anchors to the first
  * one shown on the page. Each list ends with a target the workspace always shows (a header tab,
- * or the Research bar once the step has opened Research › Scan), so a step never depends on
+ * or the Research bar once the step has opened its Research place), so a step never depends on
  * loaded data, an opened file, a balance, a subscription or the owner check.
  */
 export type TourStepSpec = {
@@ -11,26 +14,34 @@ export type TourStepSpec = {
   title: string;
   content: string;
   targets: readonly [string, ...string[]];
-  /** Switch to Research › Scan before showing the step. The tour navigates nowhere else. */
-  opensResearchScan?: boolean;
+  /** Switch to this Research place before showing the step. The tour navigates nowhere else. */
+  opensResearch?: TourResearchPlace;
 };
 
-/** Ordered by task: read the scan, open a saved one, record a real trade. */
+/** Ordered by task: today's candidates, then the model scan and a saved one, then a real trade. */
 export const TOUR_STEPS: readonly TourStepSpec[] = [
   {
     id: 'workspace',
     title: 'Your workspace',
     content:
-      'Research holds the market scan and its evidence, the Markets directory and Daily candidates. Account starts with Manual Spot experiments for sign-ins with access, then the holdings you track by hand; data export and the TradingView webhook sit in a closed section below. Paper Desk and Build Portfolio are paused; their simulated history stays readable from that section. This tour only switches to Research › Scan: it never opens a file, saves a record or books a trade.',
+      'Research opens on Daily candidates, then Model scan (1D) with its evidence, then the Markets directory. Account starts with Manual Spot experiments for sign-ins with access, then the holdings you track by hand; data export and the TradingView webhook sit in a closed section below. Paper Desk and Build Portfolio are paused; their simulated history stays readable from that section. This tour only switches between Research places: it never opens a file, saves a record or books a trade.',
     targets: ['workspace-nav'],
   },
   {
-    id: 'research-scan',
-    title: 'Research › Scan',
+    id: 'daily-candidates',
+    title: 'Research › Daily candidates',
     content:
-      'Scan scores a fixed list of instruments on daily candles that have closed, and shows the evidence behind each result. Live prices move during the day, but they are not intraday signals. Only crypto pairs are scanned here; stocks and ETFs appear in Markets directory without a score.',
-    targets: ['research-places', 'nav-research'],
-    opensResearchScan: true,
+      'A dated batch of Binance Spot USDT pairs, ranked by 24-hour quote volume when it was collected: a liquidity shortlist to look into. Its rank is not a model score or a prediction. During the private beta only the owner account sees the batch; other sign-ins see an access notice.',
+    targets: ['place-daily', 'research-places', 'nav-research'],
+    opensResearch: 'daily',
+  },
+  {
+    id: 'research-scan',
+    title: 'Research › Model scan (1D)',
+    content:
+      'Model scan runs the existing model on a fixed list of instruments, using daily candles that have closed, and shows the evidence behind each result; its header gives the coverage and candle timestamps of the run shown. Live prices move during the day, but they are not intraday signals. Only crypto pairs are scanned here; stocks and ETFs appear in Markets directory without a score.',
+    targets: ['place-scan', 'research-places', 'nav-research'],
+    opensResearch: 'scan',
   },
   {
     id: 'scan-facts',
@@ -38,7 +49,7 @@ export const TOUR_STEPS: readonly TourStepSpec[] = [
     content:
       'Each candidate shows separate facts. The score (0–100) measures how closely its readings match the model, and orders the rank. Long conditions and the Model Risk flag are checked on their own. A high rank or score is not an instruction to buy, and a Risk flag is not an instruction to sell.',
     targets: ['scan-key', 'research-places', 'nav-research'],
-    opensResearchScan: true,
+    opensResearch: 'scan',
   },
   {
     id: 'saved-scan',
@@ -46,7 +57,7 @@ export const TOUR_STEPS: readonly TourStepSpec[] = [
     content:
       'Opens one saved TradingView crypto scan file from your computer and checks it in this browser. It shows that past scan as it was saved: it does not run a new scan, fetch prices or refresh itself.',
     targets: ['open-saved-scan', 'research-places', 'nav-research'],
-    opensResearchScan: true,
+    opensResearch: 'scan',
   },
   {
     id: 'manual-spot',
@@ -99,24 +110,25 @@ export function waitForTarget(name: string, timeoutMs = TARGET_WAIT_MS): Promise
 }
 
 /**
- * Joyride steps for `specs`. A step that opens Research › Scan switches there first and waits for
- * its preferred target, then anchors to whichever of its targets is shown. Header steps are
- * `isFixed`: the header is sticky, so Joyride neither scrolls the page nor loses the target.
+ * Joyride steps for `specs`. A step that opens a Research place switches there first (Back
+ * included) and waits for its preferred target, then anchors to whichever of its targets is
+ * shown. Header steps are `isFixed`: the header is sticky, so Joyride neither scrolls the page
+ * nor loses the target.
  */
 export function buildTourSteps(
   specs: readonly TourStepSpec[],
-  openResearchScan: () => void,
+  openResearch: (place: TourResearchPlace) => void,
 ): Step[] {
-  return specs.map(({ id, title, content, targets, opensResearchScan }) => ({
+  return specs.map(({ id, title, content, targets, opensResearch }) => ({
     id,
     title,
     content,
     target: () => findTarget(targets),
     placement: 'bottom',
-    isFixed: !opensResearchScan,
-    ...(opensResearchScan && {
+    isFixed: !opensResearch,
+    ...(opensResearch && {
       before: () => {
-        openResearchScan();
+        openResearch(opensResearch);
         return waitForTarget(targets[0]);
       },
     }),
