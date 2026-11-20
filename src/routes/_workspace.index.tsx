@@ -7,7 +7,7 @@ export const Route = createFileRoute('/_workspace/')({
       {
         name: 'description',
         content:
-          'A market scanner that explains every result: each asset’s score, rank, and the setup conditions it meets or misses.',
+          'Research opens on a dated shortlist of liquid Binance Spot pairs, ranked by volume rather than score. The model scan explains each asset’s score and the setup conditions it meets or misses.',
       },
       { property: 'og:title', content: 'Popup — Signals worth opening' },
       {

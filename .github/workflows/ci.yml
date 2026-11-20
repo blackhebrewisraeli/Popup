@@ -1,4 +1,4 @@
-name: ZeroChart CI
+name: Popup CI
 
 on:
   push:

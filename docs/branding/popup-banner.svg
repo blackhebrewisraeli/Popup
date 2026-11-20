@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
   <title id="title">Popup</title>
-  <desc id="desc">Explainable market research and paper trading. Research, evidence, simulation.</desc>
+  <desc id="desc">Daily candidates, model evidence and manual Spot records. Research, evidence, records.</desc>
   <rect width="1280" height="360" rx="24" fill="#101114"/>
   <path d="M900 0v360M1000 0v360M1100 0v360M1200 0v360M800 80h480M800 180h480M800 280h480" stroke="#25272d"/>
   <rect x="64" y="64" width="72" height="72" rx="16" fill="#ff7a5c"/>
@@ -9,8 +9,8 @@
   </g>
   <text x="158" y="120" fill="#faf9f6" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700">Popup</text>
   <text x="64" y="210" fill="#faf9f6" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="700">Understand the signal.</text>
-  <text x="64" y="260" fill="#aaaeb8" font-family="Arial, Helvetica, sans-serif" font-size="30">Inspect the evidence. Test the decision.</text>
-  <text x="64" y="320" fill="#ffab95" font-family="Arial, Helvetica, sans-serif" font-size="16" letter-spacing="3">RESEARCH / EVIDENCE / SIMULATION</text>
+  <text x="64" y="260" fill="#aaaeb8" font-family="Arial, Helvetica, sans-serif" font-size="30">Inspect the evidence. Record the decision.</text>
+  <text x="64" y="320" fill="#ffab95" font-family="Arial, Helvetica, sans-serif" font-size="16" letter-spacing="3">CANDIDATES / EVIDENCE / RECORDS</text>
   <rect x="890" y="105" width="290" height="150" rx="18" fill="#191b20" stroke="#3b3d46"/>
   <circle cx="920" cy="137" r="5" fill="#ff7a5c"/>
   <text x="940" y="143" fill="#f1f0ed" font-family="Arial, Helvetica, sans-serif" font-size="17">Evidence before action</text>
