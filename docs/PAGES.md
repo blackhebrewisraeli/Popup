@@ -14,6 +14,10 @@ The served `index.html` and `styles.css` matched `docs/site` on `main` byte for 
 - The [Popup product page workflow](../.github/workflows/pages.yml) deploys on pushes to `main`
   that change `docs/site/**` or the workflow. To redeploy without a change, run
   **Actions → Popup product page → Run workflow** on `main`.
+- Each run attempt uploads its own artifact, `github-pages-<run id>-<attempt>`, and deploys that
+  name, so **Re-run failed jobs** works too. Before this, every attempt of a run used
+  `github-pages`, and a re-run failed because deploy-pages found more than one artifact with that
+  name.
 - After each deployment, check the published page as described in [Preview](#preview).
 
 The two links are kept apart. The application itself is <https://popup-signals.vercel.app>: the
