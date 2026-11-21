@@ -489,9 +489,10 @@ expired (kept about 6 h). Job 6 first fired on 2026-11-21: it was registered aft
 Israel time), TradingView's Binance daily bars show BTCUSDT −4.90% close to close, base volume
 2.21× the mean of the 30 preceding daily bars, and ETHUSDT −7.64% at 2.50×. Two pairs are not the
 market. The ranking uses rolling 24-hour windows, not UTC days: slot `2026-11-20`'s end by 01:16Z
-that day, so they hold at most its first 76 minutes; slot `2026-11-21`'s run from 00:12–00:33Z on the 20th to the same times
-on the 21st. A high-volume sell-off can reorder a liquidity ranking. That explains no member's
-inclusion and shows no predictive value. No rule, threshold, schedule or stored row changed.
+that day, so they hold at most its first 76 minutes; slot `2026-11-21`'s run from 00:12–00:33Z on
+the 20th to the same times on the 21st. A high-volume sell-off can reorder a liquidity ranking.
+That explains no member's inclusion and shows no predictive value. No rule, threshold, schedule or
+stored row changed.
 
 ### Board and freshness
 
