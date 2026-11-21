@@ -21,6 +21,11 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-21 · Daily discovery scheduled retries accepted · Docs-only PR, branch `docs/daily-discovery-scheduled-runs`, from `43e3a3f`.**
+  - **Observed (read-only):** cron job 7 (run 5868, 02:03Z) and job 8 (run 5889, 04:33Z) on 2026-11-20 each made one `eu-west-1` invocation that recorded `already_collected` with SHA-256 `550e114b…`. Slot `2026-11-20` still has one batch, unchanged; 4 attempts in total; no other invocation. pg_net responses for those runs had expired, so evidence is cron run details, attempts and function logs ([record](MARKET_SCANNER.md#edge-release-record-2026-11-20)).
+  - **Awaiting:** the first scheduled collection, 2026-11-21 00:33 (job 6), and `verifyDiscoveryBatch` on its batch. Nothing monitors it.
+  - **Not changed:** no invocation, flag, schedule, secret, deployment, policy or row. Collector acceptance only: it says nothing about investment performance.
+
 - **2026-11-20 · Daily candidates board redesigned for review · Draft PR, branch `feat/daily-candidates-board-redesign`, from `21c7e42`. Presentation only.**
   - **Changed:** heading with the feed state and one purpose sentence; warnings in full above a four-part batch summary (batch date, batch collected with age, candidates, latest attempt); the ranked list as the main content with aligned volumes and the pair as each row's header; source, policy, coverage, verification and exclusions in two closed disclosures. The old explainer box and the per-row "Rank N of M" sentence are gone (the caption says it once). Volumes are now right-aligned under their header (a specificity bug had left them left-aligned). At 375 px the list fits without sideways scrolling.
   - **Kept:** queries, polling, verification, freshness bounds, rank order, exact-decimal title, identity matching, owner gate, no-detail states, collector, schema and stored data.

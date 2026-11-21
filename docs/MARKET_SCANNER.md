@@ -472,16 +472,19 @@ Owner-authorized, from `2957b2c`, the merge of #205. Its tree is identical to th
 | Verification    | `verifyDiscoveryBatch` on the stored row: ok. Policy, slot and hash match; result `COMPLETE` with 50 members.                                                                                                                                                                                                                              |
 | Same-slot retry | pg_net request 5872 at 01:18:15Z: HTTP 200 `already_collected` in 212 ms with the same SHA-256. Still one batch; the stored slot is found before any Binance request, and the run reports no coverage.                                                                                                                                     |
 | Board           | 01:28Z, signed in as the owner on the production deployment of `2957b2c`: Research › Daily candidates shows batch 2026-11-20 as **Current**, collected 01:16 UTC, 50 of 519 eligible, ranks 1–50, and the latest attempt as already collected, nothing fetched.                                                                            |
+| Scheduled runs  | Cron job 7 (run 5868, 02:03Z) and job 8 (run 5889, 04:33Z): one `eu-west-1` invocation each (`b1650d8a…`, `02c37407…`), HTTP 200. Attempts `edge-13212aec…` and `edge-15526515…` both `already_collected` with the same SHA-256. Still one batch, hash and record time unchanged.                                                          |
 | Unchanged       | Experiment, entry, fill, paper, virtual-trade, signal, dismissal, token, portfolio, subscription and Spot-owner rows (counts and hashes), storage objects, Vault secret names, cron jobs 1–3 and the other four users. The price feeds kept running.                                                                                       |
 
 Every function's version number rose by 3 between the deploy and the first batch, in step with the
 three project secret writes (two by the owner, then the flag). Every bundle hash and update time
 stayed the same.
 
-**Awaiting:**
+The scheduled runs were checked on 2026-11-21 from cron run details, attempt rows and
+function logs; the function had no other invocation. Their pg_net responses had expired (kept
+about 6 h). Job 6 had not fired: it was registered after 00:33.
 
-- the scheduled 02:03 and 04:33 runs recording `already_collected`;
-- the first scheduled collection, 2026-11-21 00:33.
+**Awaiting:** the first scheduled collection, 2026-11-21 00:33 (job 6), and `verifyDiscoveryBatch`
+on its batch.
 
 ### Board and freshness
 
