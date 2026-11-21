@@ -2,9 +2,11 @@
  * Local entry points for protocol v1 (docs/SPOT_24H_PROBABILITY.md). Reads only Binance public
  * market data and writes only git-ignored files. No account, order, alert or production store.
  */
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { fetchSymbolCandles } from '@/lib/binance';
 import { slotForDate, type DiscoveryEvidence } from '../supabase/functions/_shared/dailyDiscovery';
 import { collectDiscoveryEvidence } from '../supabase/functions/_shared/dailyDiscoveryRun';
@@ -172,7 +174,41 @@ export async function collectHistory(
 }
 
 /** Offline: verifies the inputs, runs the protocol and writes its results once. */
-export async function runEvaluation(dir = DATA_DIR, outputDir = RESEARCH_OUTPUT_DIR) {
+/** Every source file the evaluation loads, whose git blob the result records. */
+export const SOURCE_FILES = [
+  'docs/spot-24h-probability.v1.json',
+  'scripts/spot24h.ts',
+  'scripts/spot24hRun.ts',
+  'scripts/swingStructureEvaluation.ts',
+  'scripts/scannerResearch.ts',
+  'src/lib/indicators.ts',
+  'src/lib/candleValidation.ts',
+  'src/lib/stableSerialize.ts',
+  'supabase/functions/_shared/stableSerialize.ts',
+  'supabase/functions/_shared/dailyDiscovery.ts',
+] as const;
+
+export type Git = (...args: string[]) => Promise<string>;
+const git: Git = async (...args) =>
+  (await promisify(execFile)('git', args, { encoding: 'utf8' })).stdout.trim();
+
+/** The commit names all the code that runs only if no tracked file differs from it. */
+export async function codeIdentity(run: Git = git) {
+  const changed = await run('status', '--porcelain', '--untracked-files=no');
+  if (changed) {
+    throw new Error(`Tracked files differ from HEAD; commit before running:\n${changed}`);
+  }
+  const sourceBlobs: Record<string, string> = {};
+  for (const file of SOURCE_FILES) sourceBlobs[file] = await run('hash-object', file);
+  return { repositoryCommit: await run('rev-parse', 'HEAD'), sourceBlobs };
+}
+
+export async function runEvaluation(
+  dir = DATA_DIR,
+  outputDir = RESEARCH_OUTPUT_DIR,
+  identity: () => ReturnType<typeof codeIdentity> = codeIdentity,
+) {
+  const code = await identity();
   await verifyUniverse(dir);
   const files: Record<string, { sha256: string; candles: number; retrievedAt: string }> = {};
   const candles: Record<string, HourCandle[]> = {};
@@ -188,13 +224,20 @@ export async function runEvaluation(dir = DATA_DIR, outputDir = RESEARCH_OUTPUT_
     candles[symbol] = file.candles;
   }
   const results = evaluateProtocol(candles);
-  const manifest = { universe: PROTOCOL.universe.evidenceFile, candleFiles: files };
+  const manifest = {
+    repositoryCommit: code.repositoryCommit,
+    protocol: results.protocol,
+    sourceBlobs: code.sourceBlobs,
+    universe: PROTOCOL.universe.evidenceFile,
+    candleFiles: files,
+  };
   const content = `${JSON.stringify({ manifest, results }, null, 2)}\n`;
   const path = join(outputDir, `spot-24h-probability-${results.protocol.sha256.slice(0, 12)}.json`);
   const status = await saveResearchResults(path, content);
   return {
     status,
     path,
+    repositoryCommit: code.repositoryCommit,
     contentSha256: sha256(content),
     savedSha256: sha256(await readFile(path)),
     summary: resultsSummary(results),

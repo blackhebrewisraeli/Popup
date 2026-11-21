@@ -37,7 +37,13 @@ import {
   type Protocol,
   type ScenarioEvaluation,
 } from './spot24h';
-import { collectHistory, fetchHistory, verifyUniverse } from './spot24hRun';
+import {
+  codeIdentity,
+  collectHistory,
+  fetchHistory,
+  SOURCE_FILES,
+  verifyUniverse,
+} from './spot24hRun';
 
 const ms = Date.parse;
 const bar = (t: number, open: number, high: number, low: number, close: number): HourCandle => ({
@@ -641,6 +647,21 @@ describe('runner', () => {
     await expect(
       collectHistory('unused', () => ms(PROTOCOL.data.collectionCutoff) - 1),
     ).rejects.toThrow('only after the collection cutoff');
+  });
+
+  it('records the commit and source blobs only from an unmodified tracked tree', async () => {
+    const clean = async (...args: string[]) => {
+      if (args[0] === 'status') return '';
+      if (args[0] === 'rev-parse') return 'c0ffee';
+      return `blob:${args[1]}`;
+    };
+    const identity = await codeIdentity(clean);
+    expect(identity.repositoryCommit).toBe('c0ffee');
+    expect(Object.keys(identity.sourceBlobs)).toEqual([...SOURCE_FILES]);
+    expect(identity.sourceBlobs['scripts/spot24h.ts']).toBe('blob:scripts/spot24h.ts');
+    const dirty = async (...args: string[]) =>
+      args[0] === 'status' ? ' M scripts/spot24h.ts' : clean(...args);
+    await expect(codeIdentity(dirty)).rejects.toThrow('commit before running');
   });
 
   it('refuses a universe file that is not the recorded one', async () => {

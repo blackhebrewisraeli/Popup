@@ -178,10 +178,15 @@ npm run evaluate -- spot-24h-evaluate
    or a selection that differs from the recorded pairs.
 2. **History**, only after the cutoff: each member's 1h candles from the history start, paged by
    open time, saved once per pair. A saved pair is never fetched again.
-3. **Evaluation**, offline: reads the saved files, runs the protocol and writes
-   `.zerochart-reports/spot-24h-probability-<12 hex>.json` once. A rerun prints `UNCHANGED` for
-   identical bytes, or `CONFLICT` and overwrites nothing. The file holds the candle files' SHA-256,
-   per-pair coverage, every evaluation table and all 120 current candidates with their reasons.
+3. **Evaluation**, offline: refuses to start while any tracked file differs from `HEAD`, so the
+   commit names all the code that runs. It reads the saved files, runs the protocol and writes
+   `.zerochart-reports/spot-24h-probability-<12 hex>.json` once. The file's manifest records the
+   run commit, the protocol's id and SHA-256, the git blob of each source file the evaluation
+   loads, the universe evidence's SHA-256 and each candle file's SHA-256. It also holds per-pair
+   coverage, every evaluation table and all 120 current candidates with their reasons. A rerun
+   prints `UNCHANGED` for identical bytes, or `CONFLICT` and overwrites nothing. Because the commit
+   is in the file, a rerun at any other commit reports `CONFLICT` by design: reproduce at the run
+   commit.
 
 Nothing here reads an account, places an order, sets an alert, writes an experiment record or
 touches a production store.
