@@ -473,6 +473,7 @@ Owner-authorized, from `2957b2c`, the merge of #205. Its tree is identical to th
 | Same-slot retry | pg_net request 5872 at 01:18:15Z: HTTP 200 `already_collected` in 212 ms with the same SHA-256. Still one batch; the stored slot is found before any Binance request, and the run reports no coverage.                                                                                                                                     |
 | Board           | 01:28Z, signed in as the owner on the production deployment of `2957b2c`: Research › Daily candidates shows batch 2026-11-20 as **Current**, collected 01:16 UTC, 50 of 519 eligible, ranks 1–50, and the latest attempt as already collected, nothing fetched.                                                                            |
 | Scheduled runs  | Cron job 7 (run 5868, 02:03Z) and job 8 (run 5889, 04:33Z): one `eu-west-1` invocation each (`b1650d8a…`, `02c37407…`), HTTP 200. Attempts `edge-13212aec…` and `edge-15526515…` both `already_collected` with the same SHA-256. Still one batch, hash and record time unchanged.                                                          |
+| First scheduled | Cron job 6 (run 6051, 2026-11-21 00:33Z): one `eu-west-1` invocation (`d5d19d0f…`), HTTP 200. Attempt `edge-ae9364ec…` `complete` for slot `2026-11-21`: 520 eligible, 0 invalid, 50 selected, SHA-256 `b1ed73a0…`. `verifyDiscoveryBatch`: ok, `COMPLETE` with 50 members. Slot `2026-11-20` unchanged.                                   |
 | Unchanged       | Experiment, entry, fill, paper, virtual-trade, signal, dismissal, token, portfolio, subscription and Spot-owner rows (counts and hashes), storage objects, Vault secret names, cron jobs 1–3 and the other four users. The price feeds kept running.                                                                                       |
 
 Every function's version number rose by 3 between the deploy and the first batch, in step with the
@@ -480,11 +481,17 @@ three project secret writes (two by the owner, then the flag). Every bundle hash
 stayed the same.
 
 The scheduled runs were checked on 2026-11-21 from cron run details, attempt rows and
-function logs; the function had no other invocation. Their pg_net responses had expired (kept
-about 6 h). Job 6 had not fired: it was registered after 00:33.
+function logs; the function had no other invocation. The 02:03 and 04:33 pg_net responses had
+expired (kept about 6 h). Job 6 first fired on 2026-11-21: it was registered after 00:33 on the
+20th. The release sequence's acceptance steps are complete.
 
-**Awaiting:** the first scheduled collection, 2026-11-21 00:33 (job 6), and `verifyDiscoveryBatch`
-on its batch.
+**Market context, not acceptance.** On the UTC date 2026-11-20 (Friday 02:00 to Saturday 02:00
+Israel time), TradingView's Binance daily bars show BTCUSDT −4.90% close to close, base volume
+2.21× the mean of the 30 preceding daily bars, and ETHUSDT −7.64% at 2.50×. Two pairs are not the
+market. The ranking uses rolling 24-hour windows, not UTC days: slot `2026-11-20`'s end by 01:16Z
+that day, so they hold at most its first 76 minutes; slot `2026-11-21`'s run from 00:12–00:33Z on the 20th to the same times
+on the 21st. A high-volume sell-off can reorder a liquidity ranking. That explains no member's
+inclusion and shows no predictive value. No rule, threshold, schedule or stored row changed.
 
 ### Board and freshness
 

@@ -21,10 +21,11 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
-- **2026-11-21 · Daily discovery scheduled retries accepted · Docs-only PR, branch `docs/daily-discovery-scheduled-runs`, from `43e3a3f`.**
-  - **Observed (read-only):** cron job 7 (run 5868, 02:03Z) and job 8 (run 5889, 04:33Z) on 2026-11-20 each made one `eu-west-1` invocation that recorded `already_collected` with SHA-256 `550e114b…`. Slot `2026-11-20` still has one batch, unchanged; 4 attempts in total; no other invocation. pg_net responses for those runs had expired, so evidence is cron run details, attempts and function logs ([record](MARKET_SCANNER.md#edge-release-record-2026-11-20)).
-  - **Awaiting:** the first scheduled collection, 2026-11-21 00:33 (job 6), and `verifyDiscoveryBatch` on its batch. Nothing monitors it.
-  - **Not changed:** no invocation, flag, schedule, secret, deployment, policy or row. Collector acceptance only: it says nothing about investment performance.
+- **2026-11-21 · Daily discovery scheduled runs accepted · Docs-only PR, branch `docs/daily-discovery-scheduled-runs`, from `43e3a3f`.**
+  - **Observed (read-only):** on 2026-11-20, cron job 7 (run 5868, 02:03Z) and job 8 (run 5889, 04:33Z) each made one `eu-west-1` invocation that recorded `already_collected` with SHA-256 `550e114b…`; no new batch. On 2026-11-21, job 6 (run 6051, 00:33Z) collected slot `2026-11-21`: `complete`, 50 of 520 eligible, 0 invalid, SHA-256 `b1ed73a0…`, and `verifyDiscoveryBatch` passes (as it still does for `2026-11-20`). Two batches, five attempts, no other invocation ([record](MARKET_SCANNER.md#edge-release-record-2026-11-20)). The 02:03 and 04:33 pg_net responses had expired; evidence is cron run details, attempts and function logs.
+  - **Market context (owner-reported, cross-checked on TradingView; not acceptance):** UTC 2026-11-20 had BTCUSDT −4.90% at 2.21× and ETHUSDT −7.64% at 2.50× their 30-day mean base volume. Slot `2026-11-21`'s 24-hour windows mostly cover that day; slot `2026-11-20`'s precede it. No predictive value is implied.
+  - **Not changed:** no invocation, flag, schedule, secret, deployment, policy, threshold or row. Collector acceptance only: it says nothing about investment performance or any strategy.
+  - **Next:** owner merges this docs PR. Nothing monitors later slots.
 
 - **2026-11-20 · Daily candidates board redesigned for review · Draft PR, branch `feat/daily-candidates-board-redesign`, from `21c7e42`. Presentation only.**
   - **Changed:** heading with the feed state and one purpose sentence; warnings in full above a four-part batch summary (batch date, batch collected with age, candidates, latest attempt); the ranked list as the main content with aligned volumes and the pair as each row's header; source, policy, coverage, verification and exclusions in two closed disclosures. The old explainer box and the per-row "Rank N of M" sentence are gone (the caption says it once). Volumes are now right-aligned under their header (a specificity bug had left them left-aligned). At 375 px the list fits without sideways scrolling.
