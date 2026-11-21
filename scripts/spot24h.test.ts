@@ -28,6 +28,7 @@ import {
   selectUniverse,
   splitOf,
   supportOf,
+  expectancyOf,
   currentCandidates,
   type Candidate,
   type Features,
@@ -48,10 +49,21 @@ const bar = (t: number, open: number, high: number, low: number, close: number):
   close,
 });
 
-/** Deterministic random walk of hourly candles from `start`. */
+/** mulberry32: exact 32-bit arithmetic, so successive draws are independent. */
+function random32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+/** I.i.d. random walk of hourly candles from `start`: no candle carries information about the next. */
 function walk(start: number, hours: number, seed = 7, price = 100): HourCandle[] {
-  let x = seed;
-  const random = () => (x = (x * 1_103_515_245 + 12_345) % 2 ** 31) / 2 ** 31;
+  const random = random32(seed);
   return Array.from({ length: hours }, (_, k) => {
     const open = price;
     const close = open * (1 + (random() - 0.5) * 0.03);
@@ -337,6 +349,8 @@ describe('estimation', () => {
     expect(evaluation!.brier.base).toBeCloseTo((1 - base) ** 2, 12);
     expect(evaluation!.counts).toEqual({ TARGET: 3, STOP: 0, TIMEOUT: 0, AMBIGUOUS: 0 });
     expect(evaluation!.calibration.inTheLarge).toBeCloseTo(0.5, 12);
+    // Only low/positive has a probability and a positive fit-set mean net return.
+    expect(evaluation!.selected).toMatchObject({ observations: 1, days: 1, meanNet: 0.02 });
   });
 });
 
@@ -371,7 +385,33 @@ const evaluation = (overrides: Partial<ScenarioEvaluation>): ScenarioEvaluation 
   },
   calibration: { inTheLarge: 0.01, weightedCellError: 0.02, cells: [] },
   meanNetReturn: 0,
+  selected: {
+    observations: 600,
+    days: 60,
+    meanNet: 0.002,
+    interval95: { low: 0.0005, high: 0.004, defined: 2000, replicates: 2000 },
+  },
   ...overrides,
+});
+
+describe('expectancy', () => {
+  it('needs 300 selected test observations on 30 days with a positive lower bound', () => {
+    expect(expectancyOf(evaluation({}))).toEqual({ status: 'SUPPORTED', failing: [] });
+    const selected = evaluation({}).selected;
+    expect(
+      expectancyOf(evaluation({ selected: { ...selected, observations: 299 } })).failing,
+    ).toEqual(['EXPECTANCY_EVIDENCE']);
+    expect(expectancyOf(evaluation({ selected: { ...selected, days: 29 } })).failing).toEqual([
+      'EXPECTANCY_EVIDENCE',
+    ]);
+    const atZero = { ...selected, interval95: { ...selected.interval95!, low: 0 } };
+    expect(expectancyOf(evaluation({ selected: atZero })).failing).toEqual(['EXPECTANCY']);
+    const none = { observations: 0, days: 0, meanNet: null, interval95: null };
+    expect(expectancyOf(evaluation({ selected: none })).failing).toEqual([
+      'EXPECTANCY_EVIDENCE',
+      'EXPECTANCY',
+    ]);
+  });
 });
 
 describe('support', () => {
@@ -452,10 +492,13 @@ describe('ranking', () => {
     ]);
   });
 
-  it('qualifies nothing whose scenario is unsupported, whose window is incomplete or that lost money', () => {
-    const rows = Array.from({ length: 300 }, (_, i) =>
-      obs(i % 30, 'low/positive', six(i % 3 ? 'STOP' : 'TARGET')),
-    );
+  it('qualifies only candidates passing both gates, with a complete window and a positive history', () => {
+    // low/positive: one TARGET (+2%) per three STOPs (-1%), a negative mean net return.
+    // mid/positive: one TARGET per STOP, a positive one.
+    const rows = Array.from({ length: 300 }, (_, i) => [
+      obs(i % 30, 'low/positive', six(i % 4 ? 'STOP' : 'TARGET')),
+      obs(i % 30, 'mid/positive', six(i % 2 ? 'STOP' : 'TARGET')),
+    ]).flat();
     const fits = fitFrequencies(rows);
     const features: Features = {
       rsi: 30,
@@ -465,21 +508,34 @@ describe('ranking', () => {
       v: 0.01,
       cell: 'low/positive',
     };
-    const supported = PROTOCOL.scenarios.map((_, s) => ({
-      status: s === 0 ? 'SUPPORTED' : 'NOT_SUPPORTED',
+    const gates = PROTOCOL.scenarios.map((_, s) => ({
+      probability: s <= 1 ? 'SUPPORTED' : 'NOT_SUPPORTED',
+      expectancy: s === 0 ? 'SUPPORTED' : 'NOT_SUPPORTED',
     }));
     const none = () => ({ p: null, net: null });
-    const candidates = currentCandidates({ AAA: features, BBB: null }, fits, supported, none);
+    const candidates = currentCandidates(
+      { AAA: features, BBB: null, CCC: { ...features, cell: 'mid/positive' } },
+      fits,
+      gates,
+      none,
+    );
     const first = candidates.find((c) => c.symbol === 'AAA' && c.scenario === 'T3S3')!;
-    // Two STOPs at -1% for each TARGET at +2% average zero: not positive.
     expect(first.reasons).toEqual(['NON_POSITIVE_HISTORICAL_NET']);
+    expect(candidates.find((c) => c.symbol === 'AAA' && c.scenario === 'T5S3')!.reasons).toEqual([
+      'EXPECTANCY_NOT_SUPPORTED',
+      'NON_POSITIVE_HISTORICAL_NET',
+    ]);
+    const qualified = candidates.filter((c) => c.rank !== null);
+    expect(qualified.map((c) => [c.symbol, c.scenario, c.rank])).toEqual([['CCC', 'T3S3', 1]]);
+    expect(qualified[0]!.probability).toBe(0.5);
+    expect(qualified[0]!.score).toBeCloseTo(rankingScore(0.5, potentialNetGain(0.01, 3)), 15);
     expect(first.targetPrice).toBeCloseTo(103, 12);
     expect(first.stopPrice).toBeCloseTo(97, 12);
     expect(candidates.find((c) => c.symbol === 'BBB')!.reasons).toEqual(['FEATURES_UNAVAILABLE']);
-    expect(candidates.find((c) => c.scenario === 'T5S3' && c.symbol === 'AAA')!.reasons).toContain(
+    expect(candidates.find((c) => c.scenario === 'T8S3' && c.symbol === 'CCC')!.reasons).toEqual([
       'SCENARIO_NOT_SUPPORTED',
-    );
-    expect(candidates.every((c) => c.rank === null)).toBe(true);
+      'EXPECTANCY_NOT_SUPPORTED',
+    ]);
   });
 });
 
@@ -553,6 +609,31 @@ describe('evaluateProtocol on synthetic candles', () => {
     expect(coverage.featuresUnavailable).toBe(50);
     expect(coverage.observations).toBe(361 - 56);
   });
+});
+
+describe('negative control', () => {
+  // On an i.i.d. walk nothing is predictable, so any skill or expectancy here would mean look-ahead.
+  it('finds no skill, no expectancy and no shortlist in random walks over the protocol dates', () => {
+    const protocol: Protocol = {
+      ...PROTOCOL,
+      universe: { ...PROTOCOL.universe, members: ['AAAUSDT', 'BBBUSDT', 'CCCUSDT', 'DDDUSDT'] },
+      uncertainty: { ...PROTOCOL.uncertainty, replicates: 200 },
+    };
+    const start = ms(PROTOCOL.data.historyStart);
+    const hours = (ms(PROTOCOL.data.collectionCutoff) - start) / HOUR_MS;
+    const candles = Object.fromEntries(
+      protocol.universe.members.map((symbol, j) => [symbol, walk(start, hours, 1000 + j, 50 + j)]),
+    );
+    const results = evaluateProtocol(candles, protocol);
+    expect(results.confirmatory.map((e) => e.support.status)).toEqual(
+      Array(6).fill('NOT_SUPPORTED'),
+    );
+    expect(results.confirmatory.map((e) => e.expectancy.status)).toEqual(
+      Array(6).fill('NOT_SUPPORTED'),
+    );
+    expect(results.current.verdict).toBe('INSUFFICIENT_EVIDENCE');
+    expect(results.current.shortlist).toEqual([]);
+  }, 30_000);
 });
 
 describe('runner', () => {

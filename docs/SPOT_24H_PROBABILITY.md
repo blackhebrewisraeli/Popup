@@ -7,8 +7,9 @@ printed by every run. Where this page and the JSON differ, the JSON governs. Any
 first run is a v2 file, never an edit.
 
 **Recorded before any outcome.** This page and the JSON were committed after the universe step
-below and before any 1h candle inside the evaluation period was retrieved. Nothing here was chosen
-after seeing an outcome, a probability or a calibration figure.
+below and before any 1h candle inside the evaluation period was retrieved (`9a3b2d5`, then
+[revision 2](#revision-2-recorded-before-any-real-data)). Nothing here was chosen after seeing an
+outcome, a probability or a calibration figure.
 
 ## The question
 
@@ -83,11 +84,62 @@ criterion named.
 3. **Calibration:** calibration in the large ≤ 0.03, and the observation-weighted cell error ≤ 0.05.
 4. **Consistency:** ΔBrier < 0 on validation as well.
 
-A current candidate qualifies only if its scenario is supported, its window is complete, its cell
-has a probability, its potential net gain is positive and the current fit's mean realized net return
-for that scenario and cell is positive. With no supported scenario the result is **insufficient
-evidence** and no shortlist. Supported scenarios with no qualifying candidate give **no qualifying
-candidate**. A shortlist entry is a research probability at a reference price, never an order.
+A supported probability says the frequencies are calibrated and beat the base rate. It does not say
+a trade pays: a calibrated 40% can still lose money after costs.
+
+## When expectancy counts as supported (revision 2)
+
+Also per scenario, on test only. Take the test observations whose cell, in the confirmatory fit,
+has a probability and a positive mean realized net return. It is SUPPORTED if there are at least 300
+of them on at least 30 days, and their mean realized net return is above zero with its 95%
+block-bootstrap lower bound above zero. This is one out-of-sample test of the selection rule per
+scenario, rather than 36 in-sample point estimates.
+
+## Qualification
+
+A current candidate qualifies only if its scenario's probability and expectancy are both supported,
+its window is complete, its cell has a probability, its potential net gain is positive and the
+current fit's mean realized net return for that scenario and cell is positive. With no supported
+probability the result is **insufficient evidence** and no shortlist. Otherwise, with nothing that
+meets every rule, the result is **no qualifying candidate**. A shortlist entry is a research
+probability at a reference price, never an order.
+
+## Revision 2, recorded before any real data
+
+The first commit of this protocol (`9a3b2d5`) qualified candidates on the current fit's point
+estimate alone, over 36 scenario-cells. Before any real candle was retrieved, a synthetic check
+showed that this point estimate was the only guard against noise. Expectancy above was added as a
+second test-only gate. It can only remove candidates. The JSON's `revisions` records the change.
+
+**What that synthetic check really showed.** Its generator was a floating-point linear
+congruential generator, and `x × 1103515245` passes 2^53. The draws were therefore not
+independent, and the "random walks" carried predictable structure that persisted from train to
+test. That structure is why both gates passed on some seeds; it was not a flaw in the protocol.
+With an exact 32-bit generator (mulberry32), five seeds of 20 i.i.d. walks over the protocol's
+dates give no supported probability, no cell with a positive mean net return, and **insufficient
+evidence** each time. The gate stays because the reason for it stands on its own.
+
+## Synthetic verification
+
+[`scripts/spot24h.test.ts`](../scripts/spot24h.test.ts) checks, on synthetic candles only:
+
+- event order: target before a later stop and the reverse, gaps through either level, equality as
+  a touch, AMBIGUOUS when one bar touches both, TIMEOUT at the 24th close;
+- fees and slippage, the potential net gain, and a gain wiped out by costs;
+- causal features: changing or dropping any candle from T onward, or before the window, changes
+  nothing. Changing the last closed candle changes the features, and a gap refuses the decision;
+- invalid, duplicate, misaligned and open candles, refused and never repaired. A missing candle
+  removes exactly the decisions that need it: 6 outcomes and 50 feature windows;
+- purging at both boundaries, and that test-period candles change neither the development nor the
+  confirmatory fit;
+- the evidence floors, both gates with each failing criterion named, and ranking ties resolved the
+  same way for any input order;
+- a **negative control**: four i.i.d. walks over the protocol's dates give no supported
+  probability, no supported expectancy and no shortlist. A one-hour look-ahead in the features
+  makes this test fail on its own.
+
+Mutations that let features see the entry bar, drop the purge, fit on test data, count an
+ambiguous bar as a success or loosen expectancy to a point estimate each fail at least one test.
 
 ## Limitations known in advance
 
@@ -101,3 +153,35 @@ candidate**. A shortlist entry is a research probability at a reference price, n
   association, not proof of an edge.
 - **Not the closed TRX record.** TRXUSDT is a member here, but the closed Manual Spot experiment is
   neither read nor changed.
+
+## Running it
+
+Code: [`scripts/spot24h.ts`](../scripts/spot24h.ts) (pure: validation, features, outcomes, fits,
+evaluation, bootstrap, ranking) and [`scripts/spot24hRun.ts`](../scripts/spot24hRun.ts) (the three
+local steps). Tests: [`scripts/spot24h.test.ts`](../scripts/spot24h.test.ts), synthetic candles
+only. The commands take no options; the protocol fixes every input, path and output.
+
+```bash
+npm run evaluate -- spot-24h-universe
+```
+
+```bash
+npm run evaluate -- spot-24h-collect
+```
+
+```bash
+npm run evaluate -- spot-24h-evaluate
+```
+
+1. **Universe**, before the cutoff: the discovery evidence and each candidate's first 1h candle,
+   saved once. Done for v1; its SHA-256 is in the JSON, and every later step refuses another file
+   or a selection that differs from the recorded pairs.
+2. **History**, only after the cutoff: each member's 1h candles from the history start, paged by
+   open time, saved once per pair. A saved pair is never fetched again.
+3. **Evaluation**, offline: reads the saved files, runs the protocol and writes
+   `.zerochart-reports/spot-24h-probability-<12 hex>.json` once. A rerun prints `UNCHANGED` for
+   identical bytes, or `CONFLICT` and overwrites nothing. The file holds the candle files' SHA-256,
+   per-pair coverage, every evaluation table and all 120 current candidates with their reasons.
+
+Nothing here reads an account, places an order, sets an alert, writes an experiment record or
+touches a production store.

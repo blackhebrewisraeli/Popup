@@ -276,6 +276,13 @@ export interface PairCoverage {
 
 export const dayOf = (time: number) => Math.floor(time / DAY_MS);
 
+/** Smallest and largest value without spreading a long array into Math.min / Math.max. */
+export const extent = (values: readonly number[]): [number | null, number | null] =>
+  values.reduce<[number | null, number | null]>(
+    ([low, high], v) => [low === null || v < low ? v : low, high === null || v > high ? v : high],
+    [null, null],
+  );
+
 /** Every grid decision whose 24-hour label ended by the cutoff, with its outcome per scenario. */
 export function pairObservations(
   symbol: string,
@@ -289,8 +296,8 @@ export function pairObservations(
   for (const { code } of index.issues) issues[code] = (issues[code] ?? 0) + 1;
   const coverage: PairCoverage = {
     included: index.included,
-    firstOpen: opens.length ? Math.min(...opens) : null,
-    lastOpen: opens.length ? Math.max(...opens) : null,
+    firstOpen: extent(opens)[0],
+    lastOpen: extent(opens)[1],
     issues,
     decisions: 0,
     featuresUnavailable: 0,
@@ -499,6 +506,13 @@ export interface ScenarioEvaluation {
     cells: { cell: string; n: number; predicted: number | null; observed: number | null }[];
   };
   meanNetReturn: number | null;
+  /** expectancy.selection: observations in cells the fit found profitable. */
+  selected: {
+    observations: number;
+    days: number;
+    meanNet: number | null;
+    interval95: Interval | null;
+  };
 }
 
 export function evaluateFit(
@@ -514,6 +528,11 @@ export function evaluateFit(
     const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
     const deltaByDay = new Float64Array(positions);
     const nByDay = new Float64Array(positions);
+    const selectedNet = new Float64Array(positions);
+    const selectedN = new Float64Array(positions);
+    const selectedDays = new Set<number>();
+    let selectedSum = 0;
+    let selectedCount = 0;
     const days = new Set<number>();
     const byCell = new Map<string, { n: number; wins: number }>();
     let net = 0;
@@ -527,7 +546,15 @@ export function evaluateFit(
       const outcome = o.outcomes[s]!;
       counts[outcome.category] += 1;
       net += outcome.net;
-      const p = fit.cells[o.cell]?.p ?? null;
+      const fitCell = fit.cells[o.cell];
+      if (fitCell && fitCell.p !== null && fitCell.meanNet !== null && fitCell.meanNet > 0) {
+        selectedNet[o.day - firstDay]! += outcome.net;
+        selectedN[o.day - firstDay]! += 1;
+        selectedDays.add(o.day);
+        selectedSum += outcome.net;
+        selectedCount += 1;
+      }
+      const p = fitCell?.p ?? null;
       if (p === null || base === null) continue;
       const y = outcome.category === 'TARGET' ? 1 : 0;
       const method = (p - y) ** 2;
@@ -582,6 +609,14 @@ export function evaluateFit(
         cells,
       },
       meanNetReturn: observations.length ? net / observations.length : null,
+      selected: {
+        observations: selectedCount,
+        days: selectedDays.size,
+        meanNet: selectedCount ? selectedSum / selectedCount : null,
+        interval95: selectedCount
+          ? ratioInterval(orders, selectedNet, selectedN, [0.025, 0.975])
+          : null,
+      },
     };
   });
 }
@@ -590,6 +625,27 @@ export function evaluateFit(
 // Support: decided on test only
 
 export type SupportCriterion = 'EVIDENCE' | 'SKILL' | 'CALIBRATION' | 'CONSISTENCY';
+export type ExpectancyCriterion = 'EXPECTANCY_EVIDENCE' | 'EXPECTANCY';
+
+/** expectancy: the fit's profitable cells must also be profitable on test, beyond noise. */
+export function expectancyOf(
+  test: ScenarioEvaluation,
+  protocol: Protocol = PROTOCOL,
+): { status: 'SUPPORTED' | 'NOT_SUPPORTED'; failing: ExpectancyCriterion[] } {
+  const { observations, distinctDays } = protocol.expectancy.minimumSelected;
+  const { selected } = test;
+  const failing: ExpectancyCriterion[] = [];
+  if (selected.observations < observations || selected.days < distinctDays)
+    failing.push('EXPECTANCY_EVIDENCE');
+  if (
+    selected.meanNet === null ||
+    !(selected.meanNet > 0) ||
+    selected.interval95 === null ||
+    !(selected.interval95.low > 0)
+  )
+    failing.push('EXPECTANCY');
+  return { status: failing.length ? 'NOT_SUPPORTED' : 'SUPPORTED', failing };
+}
 
 export function supportOf(
   test: ScenarioEvaluation,
@@ -622,6 +678,7 @@ export function supportOf(
 
 export type DisqualifyReason =
   | 'SCENARIO_NOT_SUPPORTED'
+  | 'EXPECTANCY_NOT_SUPPORTED'
   | 'FEATURES_UNAVAILABLE'
   | 'INSUFFICIENT_EVIDENCE'
   | 'NO_NET_GAIN'
@@ -671,14 +728,15 @@ export function rankCandidates(candidates: readonly Candidate[]): Candidate[] {
 export function currentCandidates(
   current: Readonly<Record<string, Features | null>>,
   fits: readonly ScenarioFit[],
-  support: readonly { status: string }[],
+  gates: readonly { probability: string; expectancy: string }[],
   intervals: (scenario: number, cell: string) => { p: Interval | null; net: Interval | null },
   protocol: Protocol = PROTOCOL,
 ): Candidate[] {
   const candidates = Object.entries(current).flatMap(([symbol, features]) =>
     protocol.scenarios.map(({ id, targetV, stopV }, s): Candidate => {
       const reasons: DisqualifyReason[] = [];
-      if (support[s]?.status !== 'SUPPORTED') reasons.push('SCENARIO_NOT_SUPPORTED');
+      if (gates[s]?.probability !== 'SUPPORTED') reasons.push('SCENARIO_NOT_SUPPORTED');
+      if (gates[s]?.expectancy !== 'SUPPORTED') reasons.push('EXPECTANCY_NOT_SUPPORTED');
       if (!features) {
         reasons.push('FEATURES_UNAVAILABLE');
         return {
@@ -760,6 +818,11 @@ export function evaluateProtocol(
   const confirmatoryFit = fitFrequencies([...train, ...validation], protocol);
   const confirmatory = evaluateFit(confirmatoryFit, test, 'test', protocol);
   const support = confirmatory.map((t, s) => supportOf(t, development[s]!));
+  const expectancy = confirmatory.map((t) => expectancyOf(t, protocol));
+  const gates = support.map((p, s) => ({
+    probability: p.status,
+    expectancy: expectancy[s]!.status,
+  }));
 
   // Current fit: every decision whose label ended by the cutoff, purged ones included.
   const currentFit = fitFrequencies(observations, protocol);
@@ -782,18 +845,21 @@ export function evaluateProtocol(
       net: ratioInterval(orders, net, n, [0.05, 0.95]),
     };
   };
-  const candidates = currentCandidates(current, currentFit, support, intervals, protocol);
+  const candidates = currentCandidates(current, currentFit, gates, intervals, protocol);
   const shortlist = candidates.filter((c) => c.rank !== null);
   let verdict: 'SHORTLIST' | 'NO_QUALIFYING_CANDIDATE' | 'INSUFFICIENT_EVIDENCE' = 'SHORTLIST';
   if (!support.some((s) => s.status === 'SUPPORTED')) verdict = 'INSUFFICIENT_EVIDENCE';
   else if (shortlist.length === 0) verdict = 'NO_QUALIFYING_CANDIDATE';
 
-  const splitSummary = (rows: readonly Observation[]) => ({
-    observations: rows.length,
-    days: new Set(rows.map((o) => o.day)).size,
-    firstDecision: rows.length ? new Date(rows[0]!.time).toISOString() : null,
-    lastDecision: rows.length ? new Date(Math.max(...rows.map((o) => o.time))).toISOString() : null,
-  });
+  const splitSummary = (rows: readonly Observation[]) => {
+    const [first, last] = extent(rows.map((o) => o.time));
+    return {
+      observations: rows.length,
+      days: new Set(rows.map((o) => o.day)).size,
+      firstDecision: first === null ? null : new Date(first).toISOString(),
+      lastDecision: last === null ? null : new Date(last).toISOString(),
+    };
+  };
   return {
     protocol: { id: protocol.protocolId, sha256: protocolSha256(protocol) },
     evaluationTime: new Date(evaluationTime).toISOString(),
@@ -806,7 +872,11 @@ export function evaluateProtocol(
       currentFit: splitSummary(observations),
     },
     development,
-    confirmatory: confirmatory.map((evaluation, s) => ({ ...evaluation, support: support[s]! })),
+    confirmatory: confirmatory.map((evaluation, s) => ({
+      ...evaluation,
+      support: support[s]!,
+      expectancy: expectancy[s]!,
+    })),
     currentFit,
     current: { verdict, candidates, shortlist },
   };

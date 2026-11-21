@@ -144,6 +144,16 @@
     "consistency": "Validation deltaBrier < 0 (point estimate)",
     "result": "SUPPORTED only if all four hold; otherwise NOT_SUPPORTED with each failing criterion named"
   },
+  "expectancy": {
+    "decidedOn": "test only, per scenario",
+    "selection": "Test observations whose cell has a probability and a positive mean realized net return in the confirmatory fit (train + validation)",
+    "minimumSelected": {
+      "observations": 300,
+      "distinctDays": 30
+    },
+    "criterion": "The selected observations' mean realized net return > 0, with its 95% block-bootstrap lower bound > 0 (percentile 2.5 of test replicates, the fit held fixed)",
+    "result": "SUPPORTED only if both hold; otherwise NOT_SUPPORTED with each failing criterion named"
+  },
   "ranking": {
     "weights": { "probability": 0.55, "netGain": 0.45 },
     "netGainNormalization": "gNorm = min(max(potentialNetGain, 0), 0.10) / 0.10",
@@ -152,17 +162,26 @@
   },
   "qualification": {
     "rules": [
-      "The scenario is SUPPORTED",
+      "The scenario's probability is SUPPORTED",
+      "The scenario's expectancy is SUPPORTED",
       "The pair's 200-candle window ending at the current evaluation is complete and valid",
       "The current cell has a probability in the current fit",
       "potentialNetGain > 0",
       "The current fit's mean realized net return for that scenario and cell > 0"
     ],
-    "none": "No supported scenario: report insufficient evidence and no shortlist. Supported but nothing qualifies: report no qualifying candidate.",
+    "none": "No scenario with a SUPPORTED probability: report insufficient evidence and no shortlist. Otherwise, with no candidate meeting every rule: report no qualifying candidate.",
     "referencePrice": "Close of the last candle before the current evaluation; a real entry would be later and different"
   },
   "output": {
     "results": ".zerochart-reports/spot-24h-probability-<protocol sha256, 12 hex>.json, written once; a rerun reports UNCHANGED or CONFLICT and never overwrites",
     "notExecutionReady": "A research probability, never an order, alert, sizing instruction or experiment record"
-  }
+  },
+  "revisions": [
+    {
+      "revision": 2,
+      "recordedBefore": "Any 1h candle inside the evaluation period was retrieved, and any run on real data",
+      "change": "Added expectancy, a second test-only gate, and made it a qualification rule",
+      "reason": "Before any real data, a synthetic check exposed that the current fit's point estimate over 36 scenario-cells was the only guard against noise. That check's generator later proved to have predictable structure (a floating-point LCG), which explains its passes; with an exact i.i.d. random walk (five seeds, 20 pairs, these dates) nothing passed either gate. The added gate needs the fit's profitable cells to stay profitable on untouched test data, and can only remove candidates."
+    }
+  ]
 }

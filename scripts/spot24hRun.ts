@@ -241,6 +241,16 @@ export function resultsSummary(results: ProtocolResults) {
         weightedCellError: round(test.calibration.weightedCellError),
         testMeanNetReturn: round(test.meanNetReturn, 5),
         support: test.support,
+        selectedTest: {
+          observations: test.selected.observations,
+          days: test.selected.days,
+          meanNet: round(test.selected.meanNet, 5),
+          interval95: test.selected.interval95 && [
+            round(test.selected.interval95.low, 5),
+            round(test.selected.interval95.high, 5),
+          ],
+        },
+        expectancy: test.expectancy,
       };
     }),
     current: {
