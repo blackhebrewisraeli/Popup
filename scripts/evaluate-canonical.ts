@@ -91,6 +91,7 @@ import { researchSummaryCrypto, runScannerResearchCrypto } from './scannerResear
 import { researchSummaryV2, runScannerResearchV2 } from './scannerResearchV2';
 import { diagnosticSummary, runModelDiagnosticCrypto } from './modelDiagnostic';
 import { runSwingStructureEvaluation } from './swingStructureEvaluationRun';
+import { collectHistory, collectUniverse, runEvaluation } from './spot24hRun';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -125,7 +126,10 @@ const USAGE = `Usage:
   npm run evaluate -- scanner-research-v2 EXPORT.json [--output-dir DIR]
   npm run evaluate -- scanner-research-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]
   npm run evaluate -- model-diagnostic-crypto EXPORT.json [--scan-store DIR] [--output-dir DIR]
-  npm run evaluate -- swing-structure-evaluation   (frozen study; reads only the export its spec names)`;
+  npm run evaluate -- swing-structure-evaluation   (frozen study; reads only the export its spec names)
+  npm run evaluate -- spot-24h-universe            (protocol v1 universe step; before the cutoff)
+  npm run evaluate -- spot-24h-collect             (protocol v1 public 1h history; after the cutoff)
+  npm run evaluate -- spot-24h-evaluate            (protocol v1, offline; writes one git-ignored result)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -618,6 +622,33 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runSwingStructureEvaluation();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/spot-24h-probability.v1.json fixes every input, path and output, so these take no options.
+  'spot-24h-universe': async (value, args) => {
+    assertOptions(
+      'spot-24h-universe',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    printJson(await collectUniverse());
+  },
+  'spot-24h-collect': async (value, args) => {
+    assertOptions(
+      'spot-24h-collect',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    printJson(await collectHistory());
+  },
+  'spot-24h-evaluate': async (value, args) => {
+    assertOptions(
+      'spot-24h-evaluate',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runEvaluation();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
