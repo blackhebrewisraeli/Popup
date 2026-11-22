@@ -291,14 +291,19 @@ export function verdictOf(
   });
   const separated = perScenario.every((x) => Object.values(x.separation).every(Boolean));
   const profitable = perScenario.every((x) => x.netReturn);
-  const verdict = !evidence
-    ? 'INSUFFICIENT_EVIDENCE'
-    : !separated
-      ? 'NO_CONSISTENT_SEPARATION'
-      : !profitable
-        ? 'IMPROVES_BUT_LOSES_MONEY'
-        : 'MERITS_SEPARATE_VALIDATION';
-  return { verdict, evidence, scenarios: perScenario };
+  return {
+    verdict: verdictFrom(evidence, separated, profitable),
+    evidence,
+    scenarios: perScenario,
+  };
+}
+
+/** decision.verdicts, in the specification's order. */
+function verdictFrom(evidence: boolean, separated: boolean, profitable: boolean) {
+  if (!evidence) return 'INSUFFICIENT_EVIDENCE';
+  if (!separated) return 'NO_CONSISTENT_SEPARATION';
+  if (!profitable) return 'IMPROVES_BUT_LOSES_MONEY';
+  return 'MERITS_SEPARATE_VALIDATION';
 }
 
 /** How often each breadth occurred, over the distinct decision times of a set of rows. */
