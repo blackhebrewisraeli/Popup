@@ -307,6 +307,11 @@ output once. The output records the code commit, so reproduce at `b389791`: it r
 at another commit it reports `CONFLICT` and overwrites nothing. It never writes the protocol, the v1
 result, the diagnostic output or the market data.
 
+After the run, commit `9aaa71d` moved the runner's steps after verification into `breadthStudy` so
+they could be tested, without changing them. Run at that commit into a separate directory, the
+runner wrote the same reconciliation, results and manifest as the recorded output; only the code
+commit and that file's blob differ.
+
 Code: [`scripts/spot24hBreadth.ts`](../scripts/spot24hBreadth.ts) (pure: state, comparisons,
 months, bootstrap, verdict) and [`scripts/spot24hBreadthRun.ts`](../scripts/spot24hBreadthRun.ts)
 (verification, rebuild, output). Tests:
@@ -317,7 +322,10 @@ zero return not positive; that a missing candle, a duplicate, an invalid price o
 makes the state unavailable instead of shrinking the denominator; that changing, removing,
 duplicating or corrupting every candle from any T onward leaves every earlier state unchanged; that
 unavailable decisions count in all and coverage but in neither state; that a bootstrap replicate
-equals the statistic over the whole drawn days; each verdict; and the runner's identity checks.
+equals the statistic over the whole drawn days; each verdict; the runner's identity checks; and,
+on a synthetic v1 run through v1's own functions, that the study reconciles every row, states it
+from v1's candle validity, makes every decision unavailable while a member has no candles, and
+refuses rows that differ in number or fail to reconcile.
 Mutations that count a zero return as positive, permit exactly half, read the candle opening at T,
 use T − 24h, ignore a missing pair, pool unavailable decisions with permitted ones, drop the month
 share or skip the net-return criterion each fail at least one test.
