@@ -60,6 +60,8 @@ app's; see `docs/PINE_PARITY_ASSESSMENT.md`).
 │   ├── scannerResearchV2.ts          Its v2: v1's groups against a volatility-matched baseline
 │   ├── scannerResearchReport.ts      Its private HTML report
 │   ├── swingStructure.ts             Research candidate: swing-structure direction; offline, unapproved
+│   ├── spot24h.ts                    24-hour Spot target-before-stop prototype (docs/spot-24h-probability.v1.json)
+│   ├── spot24hRun.ts                 Its local steps: universe, public 1h history, offline evaluation
 │   ├── observationCampaign.ts        Frozen forward-observation campaigns
 │   ├── outcomeMeasurement.ts         Prospective outcome measurement for observed signals
 │   ├── decisionsReport.ts            Private decisions-evidence report (HTML)

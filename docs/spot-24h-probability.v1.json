@@ -1,0 +1,187 @@
+{
+  "protocolId": "popup-spot-24h-target-before-stop-v1",
+  "version": 1,
+  "status": "Proposed method. Running it measures it; it is not validated predictive ability until the test criteria below say so.",
+  "event": "A long Binance Spot position opened at the evaluation time reaches its target before its stop, within 24 hours. Spot only, no leverage, one position per pair and scenario.",
+  "data": {
+    "provider": "binance-spot-public-rest",
+    "endpoint": "https://api.binance.com/api/v3/klines (existing fetchSymbolCandles in src/lib/binance.ts)",
+    "interval": "1h",
+    "intervalMs": 3600000,
+    "closeOffsetMs": 3599999,
+    "collectionCutoff": "2026-11-22T00:00:00.000Z",
+    "included": "Candles whose close time (open + 3,599,999 ms) is before the cutoff; the last opens at 2026-11-21T23:00:00.000Z.",
+    "historyStart": "2024-11-13T16:00:00.000Z",
+    "requestLimit": 1000,
+    "storage": ".zerochart-market-data/spot-24h-v1/ (git-ignored; public market data only, no account data)",
+    "repair": "None. No fill, interpolation, deduplication, nearby-bar substitution or second retrieval."
+  },
+  "universe": {
+    "source": "Daily Discovery policy binance-spot-usdt-liquidity-v1, collected locally with collectDiscoveryEvidence (exchangeInfo and 24-hour ticker) before the cutoff and saved as received",
+    "walk": "Discovery members in rank order (24-hour USDT quote volume, descending)",
+    "exclude": {
+      "stablecoinBase": "Excluded by the discovery policy itself",
+      "additionalBases": {
+        "stablecoinOrFiat": ["BFUSD", "EUR", "FDUSD"],
+        "tokenizedCommodity": ["PAXG"],
+        "tokenizedEquityOrEtf": ["CRCLB", "GOOGLB", "MSTRB", "MUB", "NVDAB", "SOXLB"]
+      },
+      "additionalBasesNote": "Classified by exact base asset code from the 50 discovery members of 2026-11-21T21:03Z, before any candle history was read. The discovery policy does not list them, and SOXLB tracks a 3x leveraged ETF.",
+      "leveragedProduct": "Base asset ending in UP, DOWN, BULL or BEAR whose remainder is the base asset of another USDT instrument in the same exchangeInfo",
+      "labelledByDiscovery": ["duplicate-exposure", "tokenized-commodity"]
+    },
+    "historyRequirement": "First 1h candle (startTime 0, limit 1) opens at or before data.historyStart",
+    "size": 20,
+    "sizeRule": "The first 20 qualifying members; all qualifying members if fewer than 20",
+    "evidenceFile": {
+      "path": ".zerochart-market-data/spot-24h-v1/universe.json",
+      "sha256": "b43acfda258cacfb6c6ec7d3962f9038172a6f5fc3192152cac3a2244520e853",
+      "discoveryCutoff": "2026-11-21T21:03:18.870Z",
+      "discoveryStatus": "COMPLETE, 50 of 520 eligible"
+    },
+    "members": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT",
+      "ZECUSDT",
+      "XRPUSDT",
+      "NEARUSDT",
+      "BNBUSDT",
+      "UNIUSDT",
+      "DOGEUSDT",
+      "SUIUSDT",
+      "ENAUSDT",
+      "PEPEUSDT",
+      "ADAUSDT",
+      "TRXUSDT",
+      "LINKUSDT",
+      "TAOUSDT",
+      "LTCUSDT",
+      "WLDUSDT",
+      "AVAXUSDT",
+      "AAVEUSDT"
+    ]
+  },
+  "decisions": {
+    "gridUtcHours": [0, 4, 8, 12, 16, 20],
+    "information": "Only 1h candles closed at or before the decision time T (the last opens at T - 1h)",
+    "firstDecision": "2024-11-22T00:00:00.000Z",
+    "currentEvaluation": "2026-11-22T00:00:00.000Z"
+  },
+  "features": {
+    "windowCandles": 200,
+    "window": "200 consecutive valid closed 1h candles, the last opening at T - 1h. Any gap, duplicate or invalid candle makes the decision FEATURES_UNAVAILABLE.",
+    "indicators": "src/lib/indicators.ts unchanged: rsi(close, 14), macd(close, 12, 26, 9).histogram, atr(high, low, close, 14); each read at the window's last index",
+    "volatilityUnit": "v = ATR14 / close of the window's last candle",
+    "rsiBands": { "low": "RSI < 40", "mid": "40 <= RSI <= 60", "high": "RSI > 60" },
+    "macdStates": { "positive": "histogram > 0", "nonPositive": "histogram <= 0" },
+    "cells": "rsiBand x macdState: 6 cells"
+  },
+  "scenarios": [
+    { "id": "T3S3", "targetV": 3, "stopV": 3 },
+    { "id": "T5S3", "targetV": 5, "stopV": 3 },
+    { "id": "T8S3", "targetV": 8, "stopV": 3 },
+    { "id": "T3S5", "targetV": 3, "stopV": 5 },
+    { "id": "T5S5", "targetV": 5, "stopV": 5 },
+    { "id": "T8S5", "targetV": 8, "stopV": 5 }
+  ],
+  "outcome": {
+    "entry": "Open of the 1h candle opening at T",
+    "levels": "target = entry x (1 + targetV x v); stop = entry x (1 - stopV x v)",
+    "forwardWindow": "The 24 consecutive valid 1h candles opening T to T + 23h. Any missing or invalid candle makes the outcome OUTCOME_MISSING: excluded and counted.",
+    "scan": "Bars in order. If a bar opens at or below the stop: STOP filled at the open. If it opens at or above the target: TARGET filled at the target. Else high >= target and low <= stop in the same bar: AMBIGUOUS. Else low <= stop: STOP at the stop. Else high >= target: TARGET at the target. No hit in 24 bars: TIMEOUT at the 24th bar's close.",
+    "success": "TARGET only. AMBIGUOUS is never success; its net return is computed as a STOP at the stop price.",
+    "categories": ["TARGET", "STOP", "TIMEOUT", "AMBIGUOUS"]
+  },
+  "costs": {
+    "feePerFill": 0.001,
+    "feeBasis": "Assumed Binance Spot regular-user rate, maker or taker, without BNB discount",
+    "slippagePerMarketFill": 0.0005,
+    "marketFills": "Entry, stop and timeout exits; the target is a resting limit with no slippage",
+    "netReturn": "(1 - fee)^2 x exitFill x (1 - exitSlippage) / (entry x (1 + entrySlippage)) - 1",
+    "potentialNetGain": "netReturn of a TARGET exit",
+    "notModelled": "Lot-size and minimum-notional rounding, partial fills, queue position at the target, spread beyond the slippage, latency and manual delay"
+  },
+  "estimation": {
+    "method": "Conditional empirical frequency: p(scenario, cell) = TARGET count / observations in that scenario and cell over the fit set. No smoothing, no fitted coefficients, no use of the 0-100 model score.",
+    "benchmark": "Base rate p0(scenario) = TARGET count / observations in that scenario over the same fit set, all cells",
+    "minimumFitEvidence": { "observations": 300, "distinctDays": 30 },
+    "belowMinimum": "INSUFFICIENT_EVIDENCE: no probability for that scenario and cell"
+  },
+  "splits": {
+    "boundaries": ["2025-11-22T00:00:00.000Z", "2026-05-22T00:00:00.000Z"],
+    "train": "firstDecision <= T and T + 24h <= 2025-11-22T00:00Z",
+    "validation": "2025-11-22T00:00Z <= T and T + 24h <= 2026-05-22T00:00Z",
+    "test": "2026-05-22T00:00Z <= T and T + 24h <= collectionCutoff",
+    "purge": "A decision whose 24-hour label crosses a boundary belongs to no split",
+    "development": "Fit on train, report on validation",
+    "confirmatory": "Fit on train + validation, evaluate on test. Only this decides support.",
+    "current": "Fit on every decision with T + 24h <= collectionCutoff; score the current evaluation"
+  },
+  "metrics": {
+    "brier": "Mean (p - success)^2 over observations whose cell has a probability; the base rate is scored on the same observations",
+    "deltaBrier": "Brier(method) - Brier(base rate); negative is better",
+    "calibration": "Per cell: predicted p against the observed TARGET rate. In the large: |mean predicted - observed rate|. Weighted cell error: observation-weighted mean |p - observed rate| over cells.",
+    "netReturn": "Mean realized net return per scenario and split; exploratory"
+  },
+  "uncertainty": {
+    "method": "Moving block bootstrap over UTC decision days: whole days (every pair and decision hour together), blocks of 7 consecutive days, never wrapped",
+    "replicates": 2000,
+    "random": {
+      "seed": "popup-spot-24h-target-before-stop-v1",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|a={attempt}",
+      "draws": "blockStarts in scripts/swingStructureEvaluation.ts (SHA-256 counter with rejection)"
+    },
+    "deltaBrierInterval": "Percentile 2.5 to 97.5 of test replicates, the fit held fixed",
+    "currentProbabilityInterval": "Percentile 5 to 95 of the cell frequency re-estimated on bootstrap replicates of the current fit days",
+    "quantile": "Linear interpolation between order statistics (type 7)"
+  },
+  "support": {
+    "decidedOn": "test only, per scenario",
+    "evidence": "At least 2,000 test observations with a probability on at least 90 distinct days, covering at least 95% of the scenario's test observations",
+    "skill": "deltaBrier < 0 and its 95% upper bound < 0",
+    "calibration": "Calibration in the large <= 0.03 and weighted cell error <= 0.05",
+    "consistency": "Validation deltaBrier < 0 (point estimate)",
+    "result": "SUPPORTED only if all four hold; otherwise NOT_SUPPORTED with each failing criterion named"
+  },
+  "expectancy": {
+    "decidedOn": "test only, per scenario",
+    "selection": "Test observations whose cell has a probability and a positive mean realized net return in the confirmatory fit (train + validation)",
+    "minimumSelected": {
+      "observations": 300,
+      "distinctDays": 30
+    },
+    "criterion": "The selected observations' mean realized net return > 0, with its 95% block-bootstrap lower bound > 0 (percentile 2.5 of test replicates, the fit held fixed)",
+    "result": "SUPPORTED only if both hold; otherwise NOT_SUPPORTED with each failing criterion named"
+  },
+  "ranking": {
+    "weights": { "probability": 0.55, "netGain": 0.45 },
+    "netGainNormalization": "gNorm = min(max(potentialNetGain, 0), 0.10) / 0.10",
+    "score": "0.55 x p + 0.45 x gNorm",
+    "order": "score desc, then p desc, potentialNetGain desc, pair asc, scenario asc"
+  },
+  "qualification": {
+    "rules": [
+      "The scenario's probability is SUPPORTED",
+      "The scenario's expectancy is SUPPORTED",
+      "The pair's 200-candle window ending at the current evaluation is complete and valid",
+      "The current cell has a probability in the current fit",
+      "potentialNetGain > 0",
+      "The current fit's mean realized net return for that scenario and cell > 0"
+    ],
+    "none": "No scenario with a SUPPORTED probability: report insufficient evidence and no shortlist. Otherwise, with no candidate meeting every rule: report no qualifying candidate.",
+    "referencePrice": "Close of the last candle before the current evaluation; a real entry would be later and different"
+  },
+  "output": {
+    "results": ".zerochart-reports/spot-24h-probability-<protocol sha256, 12 hex>.json, written once; a rerun reports UNCHANGED or CONFLICT and never overwrites",
+    "notExecutionReady": "A research probability, never an order, alert, sizing instruction or experiment record"
+  },
+  "revisions": [
+    {
+      "revision": 2,
+      "recordedBefore": "Any 1h candle inside the evaluation period was retrieved, and any run on real data",
+      "change": "Added expectancy, a second test-only gate, and made it a qualification rule",
+      "reason": "Before any real data, a synthetic check exposed that the current fit's point estimate over 36 scenario-cells was the only guard against noise. That check's generator later proved to have predictable structure (a floating-point LCG), which explains its passes; with an exact i.i.d. random walk (five seeds, 20 pairs, these dates) nothing passed either gate. The added gate needs the fit's profitable cells to stay profitable on untouched test data, and can only remove candidates."
+    }
+  ]
+}
