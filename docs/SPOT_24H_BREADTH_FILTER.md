@@ -307,10 +307,11 @@ output once. The output records the code commit, so reproduce at `b389791`: it r
 at another commit it reports `CONFLICT` and overwrites nothing. It never writes the protocol, the v1
 result, the diagnostic output or the market data.
 
-After the run, commit `9aaa71d` moved the runner's steps after verification into `breadthStudy` so
-they could be tested, without changing them. Run at that commit into a separate directory, the
-runner wrote the same reconciliation, results and manifest as the recorded output; only the code
-commit and that file's blob differ.
+After the run, two commits changed code without changing the computation: `9aaa71d` moved the
+runner's steps after verification into `breadthStudy` so they could be tested, and `dcffb7e`
+replaced the verdict's nested conditional with an if-chain. Run at `dcffb7e` into a separate
+directory, the runner wrote the same reconciliation, results and manifest as the recorded output;
+only the code commit and those two files' blobs differ.
 
 Code: [`scripts/spot24hBreadth.ts`](../scripts/spot24hBreadth.ts) (pure: state, comparisons,
 months, bootstrap, verdict) and [`scripts/spot24hBreadthRun.ts`](../scripts/spot24hBreadthRun.ts)
