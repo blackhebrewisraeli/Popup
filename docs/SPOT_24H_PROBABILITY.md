@@ -16,6 +16,9 @@ probability met the support criteria, and no scenario's expectancy did. Probabil
 not supported under this protocol. See [Recorded run](#recorded-run-2026-11-22). This is research
 output only: nothing here proposes or sizes a trade.
 
+**Diagnosed** in [SPOT_24H_V1_DIAGNOSTIC.md](SPOT_24H_V1_DIAGNOSTIC.md), from the same saved data
+and the run commit's own code, without changing anything recorded here.
+
 ## The question
 
 Daily Discovery ranks liquidity, and the existing 0–100 model score is not a calibrated
