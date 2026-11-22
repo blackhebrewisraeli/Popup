@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { RESEARCH_OUTPUT_DIR, saveResearchResults } from './scannerResearch';
+import type { HourCandle, ProtocolResults } from './spot24h';
 import { analyse, breadthAt, SPEC, specSha256, type StatedRow } from './spot24hBreadth';
 import {
   DATA_DIR,
@@ -80,6 +81,39 @@ async function loadRunCommit(tree: string, commit: string, run: Git): Promise<V1
   return (await import(pathToFileURL(join(tree, 'scripts/spot24h.ts')).href)) as V1;
 }
 
+/**
+ * Once every identity holds: v1's observations rebuilt by its own functions and reconciled with the
+ * recorded result (as the diagnosis does), each given the state at its decision time from v1's own
+ * candle validity, then every table of the specification.
+ */
+export function breadthStudy(
+  v1: V1,
+  candles: Readonly<Record<string, readonly HourCandle[]>>,
+  recorded: ProtocolResults,
+  diagnosedObservations: number,
+) {
+  const { members } = v1.PROTOCOL.universe;
+  const { rows, observations } = rebuildRows(v1, candles);
+  const { reconciliation } = reconcile(v1, recorded, rows, observations);
+  if (!reconciliation.pass || rows.length !== diagnosedObservations) {
+    throw new Error(`Reconciliation failed: ${JSON.stringify(reconciliation)}`);
+  }
+  const cutoff = Date.parse(v1.PROTOCOL.data.collectionCutoff);
+  const valid = Object.fromEntries(
+    members.map((symbol) => [symbol, v1.indexHourly(candles[symbol] ?? [], cutoff).valid]),
+  );
+  const states = new Map<number, ReturnType<typeof breadthAt>>();
+  const stated: StatedRow[] = rows.map((row) => {
+    const breadth = states.get(row.time) ?? breadthAt(members, valid, row.time);
+    states.set(row.time, breadth);
+    return { ...row, breadth };
+  });
+  return {
+    reconciliation: { ...reconciliation, diagnosedObservations },
+    results: analyse(stated, v1.PROTOCOL.scenarios, members.length),
+  };
+}
+
 export async function runBreadthFilter(
   dataDir = DATA_DIR,
   outputDir = RESEARCH_OUTPUT_DIR,
@@ -105,27 +139,12 @@ export async function runBreadthFilter(
   try {
     const v1 = await loadRunCommit(tree, manifest.repositoryCommit, run);
     if (v1.protocolSha256() !== basis.protocol.sha256) throw new Error('Protocol identity differs');
-    const { members } = v1.PROTOCOL.universe;
-    const candles = await readCandleFiles(dataDir, members, manifest.candleFiles);
-
-    // The diagnosis's observations, rebuilt by v1's own functions and reconciled again.
-    const { rows, observations } = rebuildRows(v1, candles);
-    const { reconciliation } = reconcile(v1, recorded, rows, observations);
-    if (!reconciliation.pass || rows.length !== diagnosedObservations) {
-      throw new Error(`Reconciliation failed: ${JSON.stringify(reconciliation)}`);
-    }
-
-    // The state at each decision time, from v1's own candle validity.
-    const cutoff = Date.parse(v1.PROTOCOL.data.collectionCutoff);
-    const valid = Object.fromEntries(
-      members.map((symbol) => [symbol, v1.indexHourly(candles[symbol] ?? [], cutoff).valid]),
+    const candles = await readCandleFiles(
+      dataDir,
+      v1.PROTOCOL.universe.members,
+      manifest.candleFiles,
     );
-    const states = new Map<number, ReturnType<typeof breadthAt>>();
-    const stated: StatedRow[] = rows.map((row) => {
-      const breadth = states.get(row.time) ?? breadthAt(members, valid, row.time);
-      states.set(row.time, breadth);
-      return { ...row, breadth };
-    });
+    const { reconciliation, results } = breadthStudy(v1, candles, recorded, diagnosedObservations);
 
     const specification = { path: FILTER_FILES[0], id: SPEC.specificationId, sha256: specSha256() };
     const content = `${JSON.stringify(
@@ -146,8 +165,8 @@ export async function runBreadthFilter(
           reconstruction:
             'scripts/spot24h.ts from a git archive of the run commit; rows rebuilt and reconciled with scripts/spot24hDiagnosticRun.ts',
         },
-        reconciliation: { ...reconciliation, diagnosedObservations },
-        results: analyse(stated, v1.PROTOCOL.scenarios, members.length),
+        reconciliation,
+        results,
       },
       null,
       2,
@@ -157,7 +176,12 @@ export async function runBreadthFilter(
       `spot-24h-breadth-filter-${specification.sha256.slice(0, 12)}.json`,
     );
     const status = await saveResearchResults(path, content);
-    return { status, path, contentSha256: sha256(content), observations: rows.length };
+    return {
+      status,
+      path,
+      contentSha256: sha256(content),
+      observations: reconciliation.observations,
+    };
   } finally {
     await rm(tree, { recursive: true, force: true });
   }

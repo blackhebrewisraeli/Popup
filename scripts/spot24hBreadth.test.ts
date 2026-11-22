@@ -25,7 +25,8 @@ import {
   type Spec,
   type StatedRow,
 } from './spot24hBreadth';
-import { filterIdentity, verifyDiagnostic, verifyFile } from './spot24hBreadthRun';
+import * as spot24h from './spot24h';
+import { breadthStudy, filterIdentity, verifyDiagnostic, verifyFile } from './spot24hBreadthRun';
 import type { Git } from './spot24hDiagnosticRun';
 
 /** mulberry32: exact 32-bit arithmetic, so successive draws are independent. */
@@ -385,4 +386,92 @@ describe('runner identity', () => {
       verifyDiagnostic({ ...SPEC.basis.diagnostic, path, sha256: failed }),
     ).rejects.toThrow(/did not pass/);
   });
+});
+
+describe('the study on a synthetic v1 run', () => {
+  // Three members over v1's whole history, through v1's own functions: few replicates, as the
+  // recorded result's intervals are not what the study reconciles.
+  const members = PROTOCOL.universe.members.slice(0, 3);
+  const protocol = {
+    ...PROTOCOL,
+    universe: { ...PROTOCOL.universe, members },
+    uncertainty: { ...PROTOCOL.uncertainty, replicates: 20 },
+  };
+  const start = Date.parse(PROTOCOL.data.historyStart);
+  const hours = (CUTOFF - start) / HOUR_MS;
+  const walk = (seed: number) => {
+    const next = random32(seed);
+    let price = 100;
+    return Array.from({ length: hours }, (_, k): HourCandle => {
+      const open = price;
+      const close = open * (1 + (next() - 0.5) * 0.03);
+      price = close;
+      return {
+        timestamp: start + k * HOUR_MS,
+        closeTime: start + (k + 1) * HOUR_MS - 1,
+        open,
+        high: Math.max(open, close) * (1 + next() * 0.006),
+        low: Math.min(open, close) * (1 - next() * 0.006),
+        close,
+      };
+    });
+  };
+  const candles = Object.fromEntries(members.map((symbol, i) => [symbol, walk(41 + i)]));
+  const recorded = spot24h.evaluateProtocol(candles, protocol);
+  const observations = recorded.splits.currentFit.observations;
+  const v1 = { ...spot24h, PROTOCOL: protocol } as typeof spot24h;
+
+  it('rebuilds, reconciles and states every observation from the candles closed by its time', () => {
+    const { reconciliation, results } = breadthStudy(v1, candles, recorded, observations);
+    expect(reconciliation).toMatchObject({
+      pass: true,
+      observations,
+      diagnosedObservations: observations,
+    });
+    for (const period of ['train', 'validation', 'test'] as const) {
+      const states = results.states[period];
+      expect(states.UNAVAILABLE).toBe(0);
+      expect(states.PERMITTED + states.EXCLUDED).toBe(states.decisionTimes);
+      expect(states.positives).toHaveLength(members.length + 1);
+      const c = results.periods[period][0]!;
+      expect(c.all.observations).toBe(recorded.splits[period].observations);
+      expect(c.permitted.observations + c.excluded.observations).toBe(c.all.observations);
+    }
+    // Each decision's state is the one breadthAt gives from v1's own candle validity.
+    const valid = Object.fromEntries(
+      members.map((symbol) => [symbol, spot24h.indexHourly(candles[symbol]!, CUTOFF).valid]),
+    );
+    const time = Date.parse('2026-06-01T08:00:00.000Z');
+    const expected = breadthAt(members, valid, time).positive!;
+    expect(results.states.test.positives[expected]).toBeGreaterThan(0);
+    expect(results.decision.scenarios).toHaveLength(6);
+  }, 60_000);
+
+  it('makes every decision unavailable while a member has no candles, and counts them', () => {
+    const withAbsent = {
+      ...v1,
+      PROTOCOL: {
+        ...protocol,
+        universe: { ...protocol.universe, members: [...members, 'ABSENTUSDT'] },
+      },
+    } as typeof spot24h;
+    const { results } = breadthStudy(withAbsent, candles, recorded, observations);
+    const test = results.periods.test[0]!;
+    expect(test.permitted.observations + test.excluded.observations).toBe(0);
+    expect(test.unavailable.observations).toBe(test.all.observations);
+    expect(test.unavailable.coverage).toBe(1);
+    expect(results.states.test.UNAVAILABLE).toBe(results.states.test.decisionTimes);
+    expect(results.decision.verdict).toBe('INSUFFICIENT_EVIDENCE');
+  }, 60_000);
+
+  it('refuses rows that differ in number from the diagnosis, or fail to reconcile', () => {
+    expect(() => breadthStudy(v1, candles, recorded, observations - 1)).toThrow(
+      /Reconciliation failed/,
+    );
+    const resized = {
+      ...recorded,
+      splits: { ...recorded.splits, test: { ...recorded.splits.test, observations: 1 } },
+    };
+    expect(() => breadthStudy(v1, candles, resized, observations)).toThrow(/Reconciliation failed/);
+  }, 60_000);
 });
