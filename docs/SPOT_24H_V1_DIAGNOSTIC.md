@@ -16,10 +16,13 @@ revision; none of it can serve as untouched test data again.
 - **The gross return was not positive either.** Before costs, the mean was −0.06% to −0.16% per
   trade on validation and test in every scenario. A zero-cost run would still have lost on
   average. This is a diagnostic counterfactual, not an executable result.
-- **Time dominates the outcomes.** Calendar months describe 0.75% to 1.60% (validation) and 3.4%
-  to 4.0% (test) of the variance of gross returns. The six cells describe 0.01% to 0.05% and 0.34%
-  to 0.55%. Monthly mean gross returns ranged from −1.65% to +1.07%; every month in which a scenario
-  moved by more than 0.3% (about the cost) moved all six the same way.
+- **Outcomes varied most along time.** In-sample, calendar months describe 0.75% to 1.60%
+  (validation) and 3.4% to 4.0% (test) of the variance of gross returns; the six cells describe
+  0.01% to 0.05% and 0.34% to 0.55%. Monthly mean gross returns ranged from −1.65% to +1.07%;
+  every month in which a scenario moved by more than 0.3% (about the cost) moved all six the same
+  way. This describes the history after the fact. It is neither a causal nor a predictive result,
+  and because observations overlap and pairs co-move, chance alone can produce larger shares than
+  an independence reference suggests, above all for months.
 - **The probability's small test skill is not stable.** On validation, ΔBrier changes sign from
   month to month; on test, most of it comes from a few months. Validation's target rates were
   above the train base rate in every scenario, and the cells' errors outweighed their gains. On
@@ -288,9 +291,16 @@ cell over train and validation (in-sample) → on test:
 
 These breakdowns look for concentration. They are not a way to pick pairs, states or periods.
 
-**Share of variance described in-sample** (between-group sum of squares ÷ total). With no
-structure it would average about 0.02% for the six cells, 0.09% for the 20 pairs and 0.03% for
-the seven months of a split.
+**Share of variance described in-sample** (between-group sum of squares ÷ total). For
+independent observations and a grouping unrelated to the outcome, the share would average
+(groups − 1) ÷ (observations − 1): about 0.02% for the six cells, 0.09% for the 20 pairs and
+0.03% for the seven months of a split (the output's `varianceShare.noStructure`). These
+observations are not independent. Labels of decisions 4 hours apart overlap for 20 hours, the 20
+pairs move together, and cells persist from one decision to the next. The effective number of
+observations is therefore far smaller than the row count, and chance alone can give much larger
+shares than that reference. This applies most to months, which group whole stretches of
+overlapping, co-moving observations. The reference is a scale for independent data only, not a
+test, and no reference that accounts for this dependence was computed.
 
 | Scenario | TARGET: cells · pairs · months, validation | TARGET, test          | Gross: cells · pairs · months, validation | Gross, test           |
 | -------- | ------------------------------------------ | --------------------- | ----------------------------------------- | --------------------- |
@@ -389,9 +399,11 @@ both signs (7 to 9 of 20 negative).
    selection was empty in every scenario. The empty shortlist follows from that and from the
    probability gate.
 4. Before costs, the outcome contributions nearly offset; AMBIGUOUS bars are immaterial.
-5. Calendar months describe far more of the variance of outcomes and gross returns than the six
-   cells or the 20 pairs do, in both splits. Monthly mean gross returns ranged from −1.65% to
-   +1.07%, and every month in which a scenario moved by more than 0.3% moved all six the same way.
+5. In-sample, calendar months describe more of the variance of outcomes and gross returns than
+   the six cells or the 20 pairs do, in both splits. Monthly mean gross returns ranged from
+   −1.65% to +1.07%, and every month in which a scenario moved by more than 0.3% moved all six the
+   same way. These are descriptive figures; whether they exceed what chance gives under the data's
+   dependence was not tested.
 6. On validation, ΔBrier changes sign from month to month; on test it is negative in most months
    and largest in a few (June, August and November 2026 for T3S3). Test skill is spread across
    pairs, not concentrated in one.
@@ -401,8 +413,9 @@ both signs (7 to 9 of 20 negative).
 ### Plausible explanations that need another experiment
 
 - **Market direction set the sign of the gross return.** The 24-bar hold over the same decisions
-  was −0.07% on validation and −0.02% on test, and months with large common moves dominate. A
-  period with a different drift could give a different sign. Testing that needs new data.
+  was −0.07% on validation and −0.02% on test, and a few months with large common moves weigh
+  heavily in the means. A period with a different drift could give a different sign. Testing that
+  needs new data.
 - **The cells mostly track the common market state.** On 1h candles over 200 hours, co-moving
   pairs tend to share a cell (19 of 20 were in `mid/positive` at the current evaluation). Whether
   the cells add anything beyond a market-wide state was not measured.
@@ -426,7 +439,8 @@ both signs (7 to 9 of 20 negative).
   include dozens of comparisons, so some patterns are chance. Overlapping labels and co-moving
   pairs leave far fewer independent observations than rows; each split has only seven months.
 - **In-sample variance shares.** They describe grouping after the fact; a month is not known in
-  advance.
+  advance. Their independence reference understates what chance can produce here, so the
+  comparison between months, cells and pairs is descriptive only.
 - **Attribution convention.** The trade-order split assigns the small cross terms of fees and
   slippage by that order; another order would move them by about 10⁻⁶.
 - **Inherited from v1.** Survivorship in the universe, one venue, 1h bars hiding order inside a
@@ -443,18 +457,29 @@ the decision time, separates decisions whose 24-hour mean net return is positive
 is not._
 
 **Rationale.** The cost hurdle needs a conditional mean gross above about 0.3% per trade. In the
-confirmatory fit no cell came close (best +0.22%). Monthly means, by contrast, ranged from −1.65%
-to +1.07%, moved all six scenarios the same way whenever they exceeded 0.3%, and describe several
-times more of the variance than cells or pairs. If any part of that common variation is knowable
-at the decision time, it is the largest lever this data shows. If it is not, no pooled per-pair
-cell at this horizon is likely to clear the cost either, and the honest next step is to stop.
+confirmatory fit no cell came close (best +0.22%). Mean gross returns grouped by calendar month
+ranged from −1.65% to +1.07% and moved all six scenarios the same way whenever they exceeded 0.3%.
+Those groupings are made after the fact. They show that outcomes varied together over time, not
+that market moves caused the cells' results, and not that any state known at the decision time
+predicts them. The hypothesis is only that some of that common variation is knowable in advance.
+It is one candidate, not the only one; if it fails, that says nothing about other ways of using
+per-pair indicators.
 
 **Criterion, on genuinely unseen data.** A v2 protocol, frozen before its evaluation period
 starts, defines the state and its favourable value using only data available at freezing; the v1
 history may inform that choice but counts as development data. Everything else stays as in v1:
 universe rule, decision grid, six scenarios, levels, costs and the AMBIGUOUS rule. The evaluation
-uses only decisions after the freeze, over at least six calendar months. The hypothesis is
-supported for a scenario only if, in the favourable state:
+uses only decisions after the freeze, over a period the protocol fixes in advance.
+
+**Duration is a design proposal.** This diagnosis does not establish how long that period must be.
+At least six calendar months is proposed so that the evaluation spans several months; whether
+those months differ in market conditions cannot be known in advance. A duration alone does not guarantee adequate evidence: overlapping
+labels, co-moving pairs, how often the favourable state occurs and whether conditions vary within
+the period all decide how much the period can show. That is why the evidence floors and the bound
+below must hold as well. A period that ends without meeting them is inconclusive, not a pass, and
+v2 should say in advance what happens then.
+
+The hypothesis is supported for a scenario only if, in the favourable state:
 
 - there are at least 300 observations on at least 30 distinct days in at least 3 calendar months;
 - the mean net return is above zero, with the lower bound of a 7-day moving-block bootstrap above
