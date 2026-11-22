@@ -11,6 +11,11 @@ below and before any 1h candle inside the evaluation period was retrieved (`9a3b
 [revision 2](#revision-2-recorded-before-any-real-data)). Nothing here was chosen after seeing an
 outcome, a probability or a calibration figure.
 
+**Run once, 2026-11-22, at `2d848fb`: insufficient evidence, no shortlist.** No scenario's
+probability met the support criteria, and no scenario's expectancy did. Probability estimation is
+not supported under this protocol. See [Recorded run](#recorded-run-2026-11-22). This is research
+output only: nothing here proposes or sizes a trade.
+
 ## The question
 
 Daily Discovery ranks liquidity, and the existing 0–100 model score is not a calibrated
@@ -140,6 +145,139 @@ evidence** each time. The gate stays because the reason for it stands on its own
 
 Mutations that let features see the entry bar, drop the purge, fit on test data, count an
 ambiguous bar as a success or loosen expectancy to a point estimate each fail at least one test.
+
+## Recorded run (2026-11-22)
+
+Run once, after the cutoff, under the frozen protocol. Nothing was tuned, rerun or revised after
+the outcomes were read. Aggregates only: per-observation rows and candidates stay in the
+git-ignored result.
+
+### Identity and inputs
+
+| Item         | Value                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run commit   | `2d848fb1b5584d64f9892cd44627366246adf359`; no tracked file differed from it                                                                                                                                                                                                                                                                                                    |
+| Protocol     | `popup-spot-24h-target-before-stop-v1`, SHA-256 `b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a` (revision 2), blob `9abc1531…`                                                                                                                                                                                                                               |
+| Source blobs | `scripts/spot24h.ts` `5d6a9cfc…`, `scripts/spot24hRun.ts` `97e762b0…`, `scripts/swingStructureEvaluation.ts` `390fe8c6…`, `scripts/scannerResearch.ts` `676882e3…`, `src/lib/indicators.ts` `38bf08a0…`, `src/lib/candleValidation.ts` `f2d11061…`, `src/lib/stableSerialize.ts` `4cf67020…`, `_shared/stableSerialize.ts` `563d6d33…`, `_shared/dailyDiscovery.ts` `5251ad95…` |
+| Universe     | `universe.json` SHA-256 `b43acfda…`, as recorded in the protocol; members recomputed and matched                                                                                                                                                                                                                                                                                |
+| Candles      | 20 files, 17,720 candles each (2024-11-13T16:00Z to 2026-11-21T23:00Z), retrieved 2026-11-22T00:01:53Z to 00:05:09Z. The manifest holds each file's SHA-256                                                                                                                                                                                                                     |
+| Result       | `.zerochart-reports/spot-24h-probability-b3aa90fb8912.json`, 172,362 bytes, SHA-256 `662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e`, `CREATED`; the saved bytes' hash equals the run's                                                                                                                                                                       |
+
+**Reproducing it.** The commit is in the result, so reproduce at `2d848fb`, with the same data
+files: the command reports `UNCHANGED`, or `CREATED` with the same SHA-256 where no result exists.
+At any other commit it reports `CONFLICT` and overwrites nothing. No reproduction rerun was made,
+so the evaluation ran exactly once.
+
+### Coverage
+
+No candle issue of any kind, no missing hour, no unavailable feature window and no missing outcome:
+all 87,500 decisions (20 pairs × 4,375) became observations. Train 43,700 on 365 days, validation
+21,620 on 181 days, test 21,980 on 184 days. 200 decisions were purged at the boundaries. The
+current fit used all 87,500, on 730 days. Every test observation had a probability, so coverage was
+100% in every scenario.
+
+### All six scenarios
+
+Test split (2026-05-22 to the cutoff), 21,980 observations per scenario. ΔBrier is
+Brier(method) − Brier(base rate); negative favours the method.
+
+| Scenario | TARGET | STOP   | TIMEOUT | AMBIGUOUS  | Test ΔBrier [95%]              | Skill score | Validation ΔBrier | Calibration (large / cells) | Mean net per trade | Probability                       | Expectancy                 |
+| -------- | ------ | ------ | ------- | ---------- | ------------------------------ | ----------- | ----------------- | --------------------------- | ------------------ | --------------------------------- | -------------------------- |
+| T3S3     | 29.25% | 34.12% | 36.60%  | 6 (0.027%) | −0.00130 [−0.00296, +0.000002] | 0.63%       | +0.00002          | 0.022 / 0.027               | −0.41%             | Not supported: skill, consistency | Not supported (0 selected) |
+| T5S3     | 13.21% | 35.60% | 51.16%  | 5 (0.023%) | −0.00105 [−0.00273, +0.00005]  | 0.92%       | +0.00015          | 0.009 / 0.019               | −0.39%             | Not supported: skill, consistency | Not supported (0 selected) |
+| T8S3     | 4.95%  | 35.92% | 59.11%  | 4 (0.018%) | −0.00040 [−0.00108, +0.00004]  | 0.86%       | +0.00003          | 0.002 / 0.005               | −0.37%             | Not supported: skill, consistency | Not supported (0 selected) |
+| T3S5     | 30.62% | 14.42% | 54.95%  | 2 (0.009%) | −0.00128 [−0.00292, −0.00003]  | 0.60%       | +0.00011          | 0.020 / 0.027               | −0.44%             | Not supported: consistency        | Not supported (0 selected) |
+| T5S5     | 13.80% | 15.09% | 71.10%  | 1 (0.005%) | −0.00106 [−0.00274, +0.00004]  | 0.89%       | +0.00023          | 0.007 / 0.018               | −0.42%             | Not supported: skill, consistency | Not supported (0 selected) |
+| T8S5     | 5.12%  | 15.25% | 79.62%  | 1 (0.005%) | −0.00041 [−0.00110, +0.00004]  | 0.85%       | +0.00003          | 0.002 / 0.005               | −0.40%             | Not supported: skill, consistency | Not supported (0 selected) |
+
+- **Skill.** On test the cells beat the base rate by 0.6% to 0.9% of its Brier score, a small
+  margin. Only T3S5's 95% upper bound is below zero; T3S3's sits just above it.
+- **Consistency.** On validation the method was slightly worse than the base rate in all six
+  scenarios. That alone rules out support everywhere, T3S5 included.
+- **Calibration.** Every scenario passes both calibration limits. The cells' errors are not
+  random, though. On test, both high-RSI cells and the rare `low/positive` cell were
+  under-predicted in all six scenarios, and `low/nonPositive` was over-predicted in all six. The
+  two mid cells were over-predicted at targets of 3 and 5 v and within 0.003 at 8 v. In T3S5, for
+  example, `high/nonPositive` was predicted at 0.366 and observed at 0.437 (597 observations), and
+  `mid/nonPositive` at 0.332 against 0.299 (6,248).
+- **Expectancy.** In the confirmatory fit (train and validation), no scenario-cell had a positive
+  mean realized net return, so the selection rule selected no test observation in any scenario.
+  The mean net return per trade, across all cells, was negative everywhere: −0.37% to −0.44% on
+  test and −0.36% to −0.39% on validation. Assumed costs alone take about 0.25% (target exit) to 0.30% (stop or timeout) per round trip.
+
+### AMBIGUOUS bars
+
+| Scenario | Validation (21,620) | Test (21,980) |
+| -------- | ------------------- | ------------- |
+| T3S3     | 4 (0.019%)          | 6 (0.027%)    |
+| T5S3     | 3 (0.014%)          | 5 (0.023%)    |
+| T8S3     | 2 (0.009%)          | 4 (0.018%)    |
+| T3S5     | 0                   | 2 (0.009%)    |
+| T5S5     | 0                   | 1 (0.005%)    |
+| T8S5     | 0                   | 1 (0.005%)    |
+
+An AMBIGUOUS bar touched both levels within one hour, so 1h data cannot say which came first. The
+protocol counts it as a failure and books its net return as a stop. The probability is therefore a
+conservative operational estimate: the chance that the target is confirmed first, not the chance
+that it was first. Here the choice barely matters. Counting every AMBIGUOUS bar as a success would
+raise a test rate by at most 0.027 percentage points. The result file does not hold train-period
+counts.
+
+### The current evaluation, 2026-11-22T00:00Z
+
+**Verdict: insufficient evidence. Shortlist: empty.** All 120 candidates (20 pairs × 6 scenarios)
+had a complete window. Each fails three rules: the scenario's probability is not supported, its
+expectancy is not supported, and the current fit's mean realized net return for its cell is not
+positive. Nineteen pairs were in `mid/positive` and one in `high/positive`.
+
+One in-sample figure is disclosed so it is not misread later. In the current fit, which includes
+the test period, the rare `high/nonPositive` cell (2,223 observations) has a positive mean net
+return in four scenarios, from +0.03% to +0.19%. These point estimates were never tested out of
+sample, no pair is in that cell now, and the protocol gives them no standing. They are not a
+finding.
+
+### Reading the result
+
+- **Pooled, not per coin.** Each probability is the frequency of one scenario and indicator cell,
+  pooled across all 20 pairs. Every pair in the same cell gets the same number. It is not an
+  individual forecast for any coin. Pair differences enter only through the ATR-scaled levels.
+- **Per-scenario, no multiplicity adjustment.** Each scenario has its own 95% interval and its own
+  gates, and nothing corrects for having six. Had one scenario passed, the chance of at least one
+  pass arising by luck would have been higher than one test's 5%. T3S5's lone skill pass, which
+  failed consistency anyway, should be read in that light.
+- **Gates are not validation of a shortlist.** The gates are predeclared tests of the method and
+  of the selection rule on the test split. A shortlist would be chosen with the current fit, which
+  includes the test period, so it would not itself be validated by them. Validating a shortlist
+  needs outcomes it never saw: a later period, under a protocol frozen before that period starts.
+- **The random-walk control is a diagnostic.** It showed that, on synthetic i.i.d. data, these
+  gates found nothing, and that a one-hour look-ahead makes it fail. It does not prove independence
+  of the real observations, the absence of every kind of leakage, or statistical significance of
+  any result.
+
+### Is probability estimation supported?
+
+**No, not under protocol v1.** The pooled cell frequencies are reasonably calibrated in the large,
+but they do not beat the base rate consistently: they lost to it on validation in all six
+scenarios, and beat it on test by under 1% of the Brier score. Expectancy was negative in every
+scenario. This is a measured negative for this method on this data, not evidence that no method
+could work.
+
+### What remains before a real trade can be considered
+
+This study proposes no trade. Before one could be considered:
+
+1. **A new protocol (v2), frozen before its evaluation period.** This v1 file stays as it is; any
+   new features, cells, scenarios or thresholds belong in v2.
+2. **Untouched data.** A prospective period after v2 is frozen, not a re-split of this history,
+   which has now been seen.
+3. **Both gates passed,** including positive out-of-sample expectancy after costs. The
+   probability gate alone is not enough.
+4. **Independent validation of the selected shortlist** on outcomes it never saw, as above.
+5. **Execution checked rather than assumed:** the account's actual fee tier, measured slippage and
+   spread, lot-size and minimum-notional rounding at about 43.92 USDT, and how a resting target and
+   a stop would actually be placed.
+6. **The owner's own decision,** recorded as a new Manual Spot experiment. The closed TRX record
+   stays untouched.
 
 ## Limitations known in advance
 
