@@ -1,0 +1,123 @@
+{
+  "specificationId": "popup-spot-24h-breadth-filter-dev-1",
+  "status": "Development feasibility on previously examined data. Recorded and committed before any filtered result was computed; that records the choice, it does not make the v1 history unseen. Not an independent validation, not a trading rule and not a change to protocol v1.",
+  "question": "Does one causal market-breadth state, known at the decision time, separate protocol v1's decisions by their 24-hour outcome strongly and consistently enough to merit a separately designed future validation?",
+  "basis": {
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359"
+    },
+    "diagnostic": {
+      "path": ".zerochart-reports/spot-24h-v1-diagnostic-b3aa90fb8912.json",
+      "sha256": "6d6df8f1b6a712189f532e9e364df72c15159e1478f510facc8fe3dac14a06c7",
+      "report": "docs/SPOT_24H_V1_DIAGNOSTIC.md"
+    },
+    "observations": "Protocol v1's own observations, rebuilt by the run commit's code from a git archive of 2d848fb and reconciled with the recorded split sizes, current fit and every validation and test aggregate, as in the diagnosis. No candle is downloaded.",
+    "dataStatus": "The whole v1 history has been examined by v1 and by the diagnosis. Every figure computed here is development evidence."
+  },
+  "filter": {
+    "members": "All 20 protocol v1 members, in every decision",
+    "returnFormula": "r(pair, T) = close(T - 1h) / close(T - 25h) - 1, where close(X) is the close of the 1h candle opening at X",
+    "lastOpenOffsetHours": 1,
+    "firstOpenOffsetHours": 25,
+    "information": "Only those two 1h candles per pair, both closed by T. A candle is valid exactly as in protocol v1 (indexHourly: hour-aligned, close-time convention, no duplicate timestamp, valid prices). No candle opening at or after T is read.",
+    "breadth": "Number of members whose r is strictly greater than 0, divided by 20",
+    "threshold": 0.5,
+    "permitted": "breadth > 0.50, that is 11 or more of 20: a long decision is permitted",
+    "excluded": "breadth <= 0.50, that is 10 or fewer of 20, exactly 10 included",
+    "unavailable": "If any member's required candle is missing or invalid, or its r is not finite, the state at T is UNAVAILABLE for every observation at T. Those observations belong to neither state and are counted; the denominator is never reduced below 20.",
+    "notTuned": "Lookback, threshold and direction are fixed here and are not changed after results are seen. No other filter is added."
+  },
+  "keptFixed": "Protocol v1's universe, decision grid and times, features and cells, six scenarios, entry, levels, outcome scan, AMBIGUOUS rule, costs, 24-hour horizon and the original split boundaries with their purge. v1's estimation, gates, ranking and qualification are neither re-run nor changed.",
+  "analysis": {
+    "periods": ["train", "validation", "test"],
+    "periodRule": "Protocol v1's splitOf. A purged observation belongs to no period and is not analysed.",
+    "groups": {
+      "permitted": "Observations whose state at T is permitted",
+      "excluded": "Observations whose state at T is excluded",
+      "unavailable": "Observations whose state at T is unavailable: counted, never compared",
+      "all": "Every observation of the period, unavailable included"
+    },
+    "perGroup": [
+      "observations",
+      "distinct UTC decision days",
+      "coverage: the group's observations divided by all observations of the period",
+      "TARGET, STOP, TIMEOUT and AMBIGUOUS shares",
+      "mean gross return (exit / entry - 1 for v1's fill)",
+      "mean net return (v1's netReturn)"
+    ],
+    "differences": "Permitted minus excluded and permitted minus all, for the TARGET share, mean gross and mean net",
+    "targetRates": "A group's TARGET share is a descriptive historical frequency of target before stop. It is not a validated probability for any current candidate.",
+    "months": {
+      "key": "Period and UTC calendar month of the decision; a month cut by a boundary appears once in each period",
+      "minimumObservationsPerState": 30,
+      "eligible": "Both states have at least 30 observations in the month",
+      "reported": "Per scenario: each state's observations, TARGET share, mean gross and mean net, and whether permitted mean gross exceeds excluded"
+    }
+  },
+  "uncertainty": {
+    "method": "Moving block bootstrap over UTC decision days. A position is a whole day with every pair and decision hour together, so the dependence between co-moving pairs and between overlapping labels inside a block is kept. Rows are never resampled individually.",
+    "blockDays": 7,
+    "replicates": 2000,
+    "positions": "Every day the set can hold (protocol v1 splitDays); pooled uses splitDays('all')",
+    "random": {
+      "seed": "popup-spot-24h-breadth-filter-dev-1",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|a={attempt}"
+    },
+    "draws": "bootstrapOrders in scripts/swingStructureEvaluation.ts, with grid set to the set's name",
+    "sets": ["train", "validation", "test", "pooled"],
+    "pooled": "Train, validation and test observations together",
+    "statistics": {
+      "permittedMeanNet": "Sum of permitted net returns divided by permitted observations over the resampled days",
+      "grossDifference": "Permitted mean gross minus excluded mean gross over the resampled days"
+    },
+    "undefined": "A replicate in which a state the statistic needs has no observation is undefined and counted",
+    "familyAlpha": 0.05,
+    "comparisons": 6,
+    "interval": "Two-sided, Bonferroni over the six scenarios: percentiles alpha / (2 x 6) and 1 - alpha / (2 x 6), that is 0.4167 and 99.5833, type 7 quantiles",
+    "assumptions": "Dependence longer than 7 days, such as regimes lasting months, is not reproduced; if it exists, the intervals are too narrow. Periods, the two statistics and the monthly breakdown are further comparisons that the adjustment does not cover. The intervals describe this examined history; they are not a validation."
+  },
+  "decision": {
+    "scope": "The filter as a whole. No scenario is selected: every criterion must hold in all six scenarios.",
+    "evidence": {
+      "rule": "In each period, permitted and excluded each have at least 300 observations on at least 30 distinct days",
+      "minimumObservations": 300,
+      "minimumDays": 30
+    },
+    "separation": {
+      "periods": "Permitted mean gross > excluded mean gross in train, validation and test",
+      "bound": "The pooled interval's lower bound of permitted minus excluded mean gross > 0",
+      "months": "Permitted mean gross > excluded mean gross in at least two-thirds of the eligible months, and at least one month is eligible",
+      "monthShare": [2, 3]
+    },
+    "netReturn": "Permitted mean net > 0 in train, validation and test",
+    "verdicts": [
+      { "verdict": "INSUFFICIENT_EVIDENCE", "when": "The evidence rule fails" },
+      {
+        "verdict": "NO_CONSISTENT_SEPARATION",
+        "when": "Otherwise, a separation criterion fails in any scenario"
+      },
+      {
+        "verdict": "IMPROVES_BUT_LOSES_MONEY",
+        "when": "Otherwise, the net-return criterion fails in any scenario: permitted decisions did better than excluded ones but still lost after costs"
+      },
+      {
+        "verdict": "MERITS_SEPARATE_VALIDATION",
+        "when": "Every criterion holds in all six scenarios"
+      }
+    ],
+    "meaning": "Only MERITS_SEPARATE_VALIDATION recommends designing a separate validation, frozen before a new untouched period. No verdict is a pass for live use, a trading rule or a change to v1's gates. Any other verdict ends this line of work: report it and stop, without searching for another rule."
+  },
+  "output": {
+    "results": ".zerochart-reports/spot-24h-breadth-filter-<specification sha256, 12 hex>.json, written once; a rerun reports UNCHANGED or CONFLICT and never overwrites",
+    "identity": "The result records the specification's SHA-256 (stableSerialize, as protocol v1), the code commit and blobs, the recorded result, the diagnostic output, the universe and every candle file's SHA-256",
+    "preserved": "Protocol v1, its result, the diagnostic output and the saved market data are read, never written"
+  },
+  "notExecutionReady": "Research only. No order, alert, account read, experiment record, schedule, download, deployment or production change."
+}
