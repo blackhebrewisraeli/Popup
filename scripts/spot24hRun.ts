@@ -45,9 +45,10 @@ export async function collectUniverse(dir = DATA_DIR, now = Date.now) {
     { fetch, now, sleep: (ms) => new Promise((done) => setTimeout(done, ms)) },
   );
   const firstOpenTimes: Record<string, number> = {};
+  const firstCandle = { interval: '1h', limit: 1, startTime: 0 };
   for (const { symbol, reason } of universeCandidates(evidence)) {
     if (reason) continue;
-    const [first] = await fetchSymbolCandles(symbol, { interval: '1h', limit: 1, startTime: 0 });
+    const first = (await fetchSymbolCandles(symbol, firstCandle))[0]; // NOSONAR(S9382): one at a time
     if (first) firstOpenTimes[symbol] = first.timestamp;
   }
   const file: UniverseFile = { protocolId: PROTOCOL.protocolId, evidence, firstOpenTimes };
@@ -128,7 +129,7 @@ export async function fetchHistory(
     const last = page.at(-1);
     if (!last || page.length < limit) break;
     from = last.timestamp + HOUR_MS;
-    await new Promise((done) => setTimeout(done, pauseMs));
+    await new Promise((done) => setTimeout(done, pauseMs)); // NOSONAR(S9382): pacing
   }
   return candles;
 }
@@ -149,13 +150,15 @@ export async function collectHistory(
   for (const symbol of PROTOCOL.universe.members) {
     const path = candleFile(dir, symbol);
     try {
-      const saved = JSON.parse(await readFile(path, 'utf8')) as CandleFile;
+      const text = await readFile(path, 'utf8'); // NOSONAR(S9382): pairs in order
+      const saved = JSON.parse(text) as CandleFile;
       report.push({ symbol, status: 'KEPT', candles: saved.candles.length });
       continue;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    const candles = await fetchHistory(symbol, fetchCandles, start, cutoff, limit, pauseMs);
+    // One pair at a time keeps Binance's request weight low.
+    const candles = await fetchHistory(symbol, fetchCandles, start, cutoff, limit, pauseMs); // NOSONAR(S9382)
     const file: CandleFile = {
       symbol,
       interval: '1h',
@@ -167,7 +170,7 @@ export async function collectHistory(
       retrievedAt: new Date(now()).toISOString(),
       candles,
     };
-    await writeOnce(path, `${JSON.stringify(file)}\n`);
+    await writeOnce(path, `${JSON.stringify(file)}\n`); // NOSONAR(S9382): pairs in order
     report.push({ symbol, status: 'CREATED', candles: candles.length });
   }
   return report;
@@ -199,7 +202,9 @@ export async function codeIdentity(run: Git = git) {
     throw new Error(`Tracked files differ from HEAD; commit before running:\n${changed}`);
   }
   const sourceBlobs: Record<string, string> = {};
-  for (const file of SOURCE_FILES) sourceBlobs[file] = await run('hash-object', file);
+  for (const file of SOURCE_FILES) {
+    sourceBlobs[file] = await run('hash-object', file); // NOSONAR(S9382): files in order
+  }
   return { repositoryCommit: await run('rev-parse', 'HEAD'), sourceBlobs };
 }
 
@@ -213,7 +218,7 @@ export async function runEvaluation(
   const files: Record<string, { sha256: string; candles: number; retrievedAt: string }> = {};
   const candles: Record<string, HourCandle[]> = {};
   for (const symbol of PROTOCOL.universe.members) {
-    const bytes = await readFile(candleFile(dir, symbol));
+    const bytes = await readFile(candleFile(dir, symbol)); // NOSONAR(S9382): pairs in order
     const file = JSON.parse(bytes.toString('utf8')) as CandleFile;
     if (file.symbol !== symbol) throw new Error(`${candleFile(dir, symbol)} holds ${file.symbol}`);
     files[symbol] = {

@@ -168,6 +168,13 @@ files: the command reports `UNCHANGED`, or `CREATED` with the same SHA-256 where
 At any other commit it reports `CONFLICT` and overwrites nothing. No reproduction rerun was made,
 so the evaluation ran exactly once.
 
+**Code after the run.** Later commits changed `scripts/spot24h.ts` and `scripts/spot24hRun.ts`
+only to resolve SonarCloud findings: `evaluateFit` split into helpers, named strict-comparison
+helpers in place of `!(x < 0)`, and comments on sequential awaits. No rule, threshold or protocol
+changed. On three synthetic datasets of 20 pairs over the protocol's dates, one of which yields a
+shortlist, the run commit's evaluator and the changed one give byte-identical results. The
+recorded blobs are the run commit's; reproduce there.
+
 ### Coverage
 
 No candle issue of any kind, no missing hour, no unavailable feature window and no missing outcome:

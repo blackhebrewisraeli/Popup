@@ -522,107 +522,156 @@ export function evaluateFit(
   protocol: Protocol = PROTOCOL,
 ): ScenarioEvaluation[] {
   const [firstDay, lastDay] = splitDays(split, protocol);
-  const positions = lastDay - firstDay + 1;
-  const orders = dayOrders(split, positions, protocol);
-  return fits.map((fit, s) => {
-    const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
-    const deltaByDay = new Float64Array(positions);
-    const nByDay = new Float64Array(positions);
-    const selectedNet = new Float64Array(positions);
-    const selectedN = new Float64Array(positions);
-    const selectedDays = new Set<number>();
-    let selectedSum = 0;
-    let selectedCount = 0;
-    const days = new Set<number>();
-    const byCell = new Map<string, { n: number; wins: number }>();
-    let net = 0;
-    let evaluated = 0;
-    let wins = 0;
-    let predictedSum = 0;
-    let methodSum = 0;
-    let baseSum = 0;
-    const base = fit.base.p;
-    for (const o of observations) {
-      const outcome = o.outcomes[s]!;
-      counts[outcome.category] += 1;
-      net += outcome.net;
-      const fitCell = fit.cells[o.cell];
-      if (fitCell && fitCell.p !== null && fitCell.meanNet !== null && fitCell.meanNet > 0) {
-        selectedNet[o.day - firstDay]! += outcome.net;
-        selectedN[o.day - firstDay]! += 1;
-        selectedDays.add(o.day);
-        selectedSum += outcome.net;
-        selectedCount += 1;
-      }
-      const p = fitCell?.p ?? null;
-      if (p === null || base === null) continue;
-      const y = outcome.category === 'TARGET' ? 1 : 0;
-      const method = (p - y) ** 2;
-      const benchmark = (base - y) ** 2;
-      evaluated += 1;
-      wins += y;
-      predictedSum += p;
-      methodSum += method;
-      baseSum += benchmark;
-      days.add(o.day);
-      deltaByDay[o.day - firstDay]! += method - benchmark;
-      nByDay[o.day - firstDay]! += 1;
-      const cell = byCell.get(o.cell) ?? { n: 0, wins: 0 };
-      byCell.set(o.cell, { n: cell.n + 1, wins: cell.wins + y });
-    }
-    const cells = CELLS.map((cell) => {
-      const c = byCell.get(cell);
-      return {
-        cell,
-        n: c?.n ?? 0,
-        predicted: fit.cells[cell]?.p ?? null,
-        observed: c ? c.wins / c.n : null,
-      };
-    });
-    const methodBrier = evaluated ? methodSum / evaluated : null;
-    const baseBrier = evaluated ? baseSum / evaluated : null;
+  const days: DayAxis = { firstDay, positions: lastDay - firstDay + 1 };
+  const orders = dayOrders(split, days.positions, protocol);
+  return fits.map((fit, s) => ({
+    ...scoreFit(fit, s, observations, days, orders),
+    selected: selectedOutcomes(fit, s, observations, days, orders),
+  }));
+}
+
+interface DayAxis {
+  firstDay: number;
+  positions: number;
+}
+type Orders = ReturnType<typeof dayOrders>;
+
+/** expectancy.selection: a cell with a probability and a positive fit-set mean net return. */
+const isSelected = (cell: CellFit | undefined) => (cell?.meanNet ?? 0) > 0 && cell?.p !== null;
+
+/** Outcome counts, Brier scores and calibration of one scenario's fit on held-out observations. */
+function scoreFit(
+  fit: ScenarioFit,
+  s: number,
+  observations: readonly Observation[],
+  { firstDay, positions }: DayAxis,
+  orders: Orders,
+): Omit<ScenarioEvaluation, 'selected'> {
+  const counts = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
+  const deltaByDay = new Float64Array(positions);
+  const nByDay = new Float64Array(positions);
+  const days = new Set<number>();
+  const byCell = new Map<string, { n: number; wins: number }>();
+  const sums = { net: 0, evaluated: 0, wins: 0, predicted: 0, method: 0, base: 0 };
+  const base = fit.base.p;
+  for (const o of observations) {
+    const outcome = o.outcomes[s]!;
+    counts[outcome.category] += 1;
+    sums.net += outcome.net;
+    const p = fit.cells[o.cell]?.p ?? null;
+    if (p === null || base === null) continue;
+    const y = outcome.category === 'TARGET' ? 1 : 0;
+    const method = (p - y) ** 2;
+    const benchmark = (base - y) ** 2;
+    sums.evaluated += 1;
+    sums.wins += y;
+    sums.predicted += p;
+    sums.method += method;
+    sums.base += benchmark;
+    days.add(o.day);
+    deltaByDay[o.day - firstDay]! += method - benchmark;
+    nByDay[o.day - firstDay]! += 1;
+    const cell = byCell.get(o.cell) ?? { n: 0, wins: 0 };
+    byCell.set(o.cell, { n: cell.n + 1, wins: cell.wins + y });
+  }
+  const { evaluated } = sums;
+  return {
+    scenario: fit.scenario,
+    observations: observations.length,
+    counts,
+    evaluated,
+    days: days.size,
+    coverage: observations.length ? evaluated / observations.length : null,
+    brier: brierOf(sums, orders, deltaByDay, nByDay),
+    calibration: calibrationOf(fit, byCell, sums),
+    meanNetReturn: observations.length ? sums.net / observations.length : null,
+  };
+}
+
+function brierOf(
+  sums: { evaluated: number; method: number; base: number },
+  orders: Orders,
+  deltaByDay: Float64Array,
+  nByDay: Float64Array,
+): ScenarioEvaluation['brier'] {
+  if (!sums.evaluated) {
+    return { method: null, base: null, delta: null, skillScore: null, interval95: null };
+  }
+  const method = sums.method / sums.evaluated;
+  const base = sums.base / sums.evaluated;
+  return {
+    method,
+    base,
+    delta: method - base,
+    skillScore: base ? 1 - method / base : null,
+    interval95: ratioInterval(orders, deltaByDay, nByDay, [0.025, 0.975]),
+  };
+}
+
+function calibrationOf(
+  fit: ScenarioFit,
+  byCell: ReadonlyMap<string, { n: number; wins: number }>,
+  sums: { evaluated: number; predicted: number; wins: number },
+): ScenarioEvaluation['calibration'] {
+  const cells = CELLS.map((cell) => {
+    const c = byCell.get(cell);
     return {
-      scenario: fit.scenario,
-      observations: observations.length,
-      counts,
-      evaluated,
-      days: days.size,
-      coverage: observations.length ? evaluated / observations.length : null,
-      brier: {
-        method: methodBrier,
-        base: baseBrier,
-        delta: methodBrier === null || baseBrier === null ? null : methodBrier - baseBrier,
-        skillScore: methodBrier === null || !baseBrier ? null : 1 - methodBrier / baseBrier,
-        interval95: evaluated ? ratioInterval(orders, deltaByDay, nByDay, [0.025, 0.975]) : null,
-      },
-      calibration: {
-        inTheLarge: evaluated ? Math.abs(predictedSum / evaluated - wins / evaluated) : null,
-        weightedCellError: evaluated
-          ? cells.reduce(
-              (sum, c) =>
-                c.observed === null || c.predicted === null
-                  ? sum
-                  : sum + c.n * Math.abs(c.predicted - c.observed),
-              0,
-            ) / evaluated
-          : null,
-        cells,
-      },
-      meanNetReturn: observations.length ? net / observations.length : null,
-      selected: {
-        observations: selectedCount,
-        days: selectedDays.size,
-        meanNet: selectedCount ? selectedSum / selectedCount : null,
-        interval95: selectedCount
-          ? ratioInterval(orders, selectedNet, selectedN, [0.025, 0.975])
-          : null,
-      },
+      cell,
+      n: c?.n ?? 0,
+      predicted: fit.cells[cell]?.p ?? null,
+      observed: c ? c.wins / c.n : null,
     };
   });
+  if (!sums.evaluated) return { inTheLarge: null, weightedCellError: null, cells };
+  let error = 0;
+  for (const c of cells) {
+    if (c.observed !== null && c.predicted !== null) {
+      error += c.n * Math.abs(c.predicted - c.observed);
+    }
+  }
+  return {
+    inTheLarge: Math.abs(sums.predicted / sums.evaluated - sums.wins / sums.evaluated),
+    weightedCellError: error / sums.evaluated,
+    cells,
+  };
+}
+
+/** Test observations the confirmatory fit would select, and their realized net return. */
+function selectedOutcomes(
+  fit: ScenarioFit,
+  s: number,
+  observations: readonly Observation[],
+  { firstDay, positions }: DayAxis,
+  orders: Orders,
+): ScenarioEvaluation['selected'] {
+  const netByDay = new Float64Array(positions);
+  const nByDay = new Float64Array(positions);
+  const days = new Set<number>();
+  let sum = 0;
+  let count = 0;
+  for (const o of observations) {
+    if (!isSelected(fit.cells[o.cell])) continue;
+    const { net } = o.outcomes[s]!;
+    netByDay[o.day - firstDay]! += net;
+    nByDay[o.day - firstDay]! += 1;
+    days.add(o.day);
+    sum += net;
+    count += 1;
+  }
+  return {
+    observations: count,
+    days: days.size,
+    meanNet: count ? sum / count : null,
+    interval95: count ? ratioInterval(orders, netByDay, nByDay, [0.025, 0.975]) : null,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
 // Support: decided on test only
+
+/** Strict comparisons: NaN satisfies neither, so a gate written as !below(x, 0) fails on NaN. */
+const below = (value: number, limit: number) => value < limit;
+const above = (value: number, limit: number) => value > limit;
 
 export type SupportCriterion = 'EVIDENCE' | 'SKILL' | 'CALIBRATION' | 'CONSISTENCY';
 export type ExpectancyCriterion = 'EXPECTANCY_EVIDENCE' | 'EXPECTANCY';
@@ -639,9 +688,9 @@ export function expectancyOf(
     failing.push('EXPECTANCY_EVIDENCE');
   if (
     selected.meanNet === null ||
-    !(selected.meanNet > 0) ||
+    !above(selected.meanNet, 0) ||
     selected.interval95 === null ||
-    !(selected.interval95.low > 0)
+    !above(selected.interval95.low, 0)
   )
     failing.push('EXPECTANCY');
   return { status: failing.length ? 'NOT_SUPPORTED' : 'SUPPORTED', failing };
@@ -659,7 +708,7 @@ export function supportOf(
   )
     failing.push('EVIDENCE');
   const { delta, interval95 } = test.brier;
-  if (delta === null || !(delta < 0) || interval95 === null || !(interval95.high < 0))
+  if (delta === null || !below(delta, 0) || interval95 === null || !below(interval95.high, 0))
     failing.push('SKILL');
   const { inTheLarge, weightedCellError } = test.calibration;
   if (
@@ -669,7 +718,8 @@ export function supportOf(
     weightedCellError > RULES.maxWeightedCellError
   )
     failing.push('CALIBRATION');
-  if (validation.brier.delta === null || !(validation.brier.delta < 0)) failing.push('CONSISTENCY');
+  if (validation.brier.delta === null || !below(validation.brier.delta, 0))
+    failing.push('CONSISTENCY');
   return { status: failing.length ? 'NOT_SUPPORTED' : 'SUPPORTED', failing };
 }
 
@@ -722,7 +772,11 @@ export function compareCandidates(a: Candidate, b: Candidate): number {
 export function rankCandidates(candidates: readonly Candidate[]): Candidate[] {
   const ordered = [...candidates].sort(compareCandidates);
   let rank = 0;
-  return ordered.map((c) => ({ ...c, rank: c.reasons.length ? null : (rank += 1) }));
+  return ordered.map((c) => {
+    if (c.reasons.length) return { ...c, rank: null };
+    rank += 1;
+    return { ...c, rank };
+  });
 }
 
 export function currentCandidates(
@@ -760,8 +814,9 @@ export function currentCandidates(
       const cell = fits[s]!.cells[features.cell]!;
       const gain = potentialNetGain(features.v, targetV, protocol);
       if (cell.p === null) reasons.push('INSUFFICIENT_EVIDENCE');
-      if (!(gain > 0)) reasons.push('NO_NET_GAIN');
-      if (cell.meanNet === null || !(cell.meanNet > 0)) reasons.push('NON_POSITIVE_HISTORICAL_NET');
+      if (!above(gain, 0)) reasons.push('NO_NET_GAIN');
+      if (cell.meanNet === null || !above(cell.meanNet, 0))
+        reasons.push('NON_POSITIVE_HISTORICAL_NET');
       const interval = intervals(s, features.cell);
       return {
         symbol,
