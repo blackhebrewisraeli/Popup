@@ -1,0 +1,255 @@
+{
+  "specificationId": "popup-quantile-forecast-24h-dev-v1",
+  "status": "Development research on previously examined data. Committed on its own, with its pinned Python requirements, before any feature, label, model fit or metric of this study was computed on real data; that fixes the design, it does not make the history unseen. Not a trading strategy, not a target-before-stop probability, not a recovery forecast and not an approval for live use. No earlier study, protocol or result is changed.",
+  "question": "Does one established quantile model (scikit-learn HistGradientBoostingRegressor with quantile loss) on a small fixed set of causal hourly features forecast the next 24 hours' terminal return, maximum upward excursion and maximum downward excursion better than a volatility-scaled empirical-quantile baseline?",
+  "notEvaluated": "Profitability, trading rules, costs, position sizing, event order inside the window, target-before-stop probabilities, recovery after a loss and live use. A terminal-return interval is not a whole-path prediction band, and separate excursion quantiles say nothing about which excursion comes first.",
+  "designChoices": "Features, targets, model settings, baseline, periods, metrics, bootstrap settings and interpretation thresholds are fixed here, not fitted. None is changed after any result is seen. No tuning, feature selection, extra model, extra feature, calendar filter or coin-specific fit.",
+  "basis": {
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359",
+      "use": "Read only for its manifest: the universe evidence's SHA-256 and each candle file's SHA-256"
+    },
+    "dataStatus": "The whole v1 history has been examined by protocol v1, its diagnosis (PR #216), the breadth filter (PR #217), the channel-breakout wallet (PR #218) and the structure-entry comparison (PR #219). Both evaluation periods here are examined historical development data, not untouched validation or independent confirmation."
+  },
+  "data": {
+    "universe": "Protocol v1's 20 members, unchanged: BTC, ETH, SOL, ZEC, XRP, NEAR, BNB, UNI, DOGE, SUI, ENA, PEPE, ADA, TRX, LINK, TAO, LTC, WLD, AVAX, AAVE (all USDT), pooled",
+    "candles": ".zerochart-market-data/spot-24h-v1/klines/<SYMBOL>-1h.json: Binance Spot public 1h klines saved by protocol v1, first opening 2024-11-13T16:00Z, last opening 2026-11-21T23:00Z",
+    "verification": "Before anything is computed: protocol v1's SHA-256 must equal basis.protocol.sha256, and the recorded v1 result's, universe.json's and every candle file's SHA-256 must equal the recorded values. Any mismatch or missing file stops the export and names the input. Nothing is downloaded, repaired, replaced or omitted.",
+    "validity": "Protocol v1's indexHourly, unchanged: candles closed before 2026-11-22T00:00Z, hour-aligned, v1's close-time convention (open + 3,599,999 ms), no duplicate timestamp, valid prices. An invalid or missing hour is absent. Nothing is filled, interpolated, deduplicated or repaired."
+  },
+  "decisions": {
+    "grid": "Protocol v1's decisions: every T at 00, 04, 08, 12, 16 and 20 UTC from 2024-11-22T00:00:00.000Z with T + 24h <= 2026-11-22T00:00:00.000Z (the last is 2026-11-21T00:00Z): 4,375 per pair, 87,500 in all",
+    "information": "Features use only the 200 1h candles closed by T (the last opens at T - 1h). The open at T is not a feature."
+  },
+  "features": {
+    "windowCandles": 200,
+    "window": "w[0..199]: the 200 consecutive valid 1h candles opening T - 200h ... T - 1h (protocol v1's window, so RSI, ATR and MACD keep v1's seeds). c = w[199].close, the last closed price.",
+    "implementation": "A TypeScript exporter (scripts/quantileForecast.ts) computes every feature with rsi, macd, atr and sma from src/lib/indicators.ts, unchanged, over the whole window, each read at index 199. A test compares its RSI, MACD histogram, ATR and v with protocol v1's featuresAt on the same windows.",
+    "order": [
+      "ret1h",
+      "ret4h",
+      "ret24h",
+      "ret72h",
+      "atr14OverClose",
+      "logReturnStd24h",
+      "rsi14Over100",
+      "macdHistogramOverClose",
+      "closeOverSma24Minus1",
+      "high24OverCloseMinus1",
+      "closeOverLow24Minus1"
+    ],
+    "definitions": {
+      "ret1h": "c / w[198].close - 1",
+      "ret4h": "c / w[195].close - 1",
+      "ret24h": "c / w[175].close - 1",
+      "ret72h": "c / w[127].close - 1",
+      "atr14OverClose": "atr(high, low, close, 14)[199] / c",
+      "logReturnStd24h": "Population standard deviation (ddof = 0) of the 24 log returns ln(w[i].close / w[i-1].close), i = 176 ... 199: sqrt(sum((x - mean)^2) / 24)",
+      "rsi14Over100": "rsi(close, 14)[199] / 100",
+      "macdHistogramOverClose": "macd(close, 12, 26, 9).histogram[199] / c",
+      "closeOverSma24Minus1": "c / sma(close, 24)[199] - 1",
+      "high24OverCloseMinus1": "max(w[176..199].high) / c - 1",
+      "closeOverLow24Minus1": "c / min(w[176..199].low) - 1"
+    },
+    "excluded": "The entry reference O, symbol or coin identity, volume, news, calendar or time-of-day variables, and any other indicator. No feature selection or transformation beyond these definitions.",
+    "dtype": "float64, columns in features.order"
+  },
+  "volatilityUnit": {
+    "definition": "v = atr14OverClose = ATR14 / c, the same value as the feature",
+    "requirement": "v must be finite and > 0"
+  },
+  "labels": {
+    "entryReference": "O = open of the 1h candle opening at T. It defines the labels only and is not exported as a column.",
+    "window": "f[0..23]: the 24 consecutive valid 1h candles opening T ... T + 23h",
+    "terminalReturn": "f[23].close / O - 1",
+    "upExcursion": "max(0, max(f[0..23].high) / O - 1)",
+    "downExcursion": "max(0, 1 - min(f[0..23].low) / O)",
+    "meaning": "Full-window excursions over the 24 candles, not excursions before reaching a target, and not ordered in time"
+  },
+  "normalization": {
+    "target": "Each label divided by the observation's v",
+    "forecast": "A forecast of the normalized target multiplied by the same observation's v gives an ordinary fractional return or excursion (x 100 for percent)",
+    "scope": "Both the model and the baseline are fitted on normalized targets and scored on the ordinary scale"
+  },
+  "exclusions": {
+    "order": [
+      "FEATURE_WINDOW_UNAVAILABLE",
+      "FEATURES_NOT_FINITE",
+      "VOLATILITY_NOT_POSITIVE",
+      "LABEL_WINDOW_UNAVAILABLE"
+    ],
+    "meanings": {
+      "FEATURE_WINDOW_UNAVAILABLE": "Any of the 200 window candles is missing or invalid",
+      "FEATURES_NOT_FINITE": "Any feature is not finite",
+      "VOLATILITY_NOT_POSITIVE": "v <= 0",
+      "LABEL_WINDOW_UNAVAILABLE": "Any of the 24 label candles is missing or invalid"
+    },
+    "rule": "Each grid decision gets the first reason that applies; a decision with none is an observation. Every reason is counted per pair and in total, together with v1's candle issues. No interpolation, deduplication or outcome-dependent exclusion."
+  },
+  "periods": {
+    "list": [
+      { "id": "train", "start": "2024-11-22T00:00:00.000Z", "end": "2025-11-22T00:00:00.000Z" },
+      {
+        "id": "validation",
+        "start": "2025-11-22T00:00:00.000Z",
+        "end": "2026-05-22T00:00:00.000Z"
+      },
+      { "id": "final", "start": "2026-05-22T00:00:00.000Z", "end": "2026-11-22T00:00:00.000Z" }
+    ],
+    "membership": "An observation belongs to the period with start <= T and T + 24h <= end. One whose label crosses a boundary belongs to none: purged, counted per period boundary. Membership depends on T only, never on a label.",
+    "names": "Protocol v1's boundaries. Validation and final are both examined historical development data."
+  },
+  "evaluations": [
+    { "id": "development", "fit": ["train"], "evaluate": "validation" },
+    { "id": "final", "fit": ["train", "validation"], "evaluate": "final" }
+  ],
+  "evaluationRule": "Both evaluations run in one invocation with the settings below. Nothing is altered between them or after either is read. The purged observations around the train/validation boundary stay out of the combined fit as well.",
+  "model": {
+    "library": "scikit-learn",
+    "version": "1.9.1",
+    "estimator": "sklearn.ensemble.HistGradientBoostingRegressor",
+    "targets": ["terminalReturn", "upExcursion", "downExcursion"],
+    "quantiles": [0.1, 0.5, 0.9],
+    "fits": "One estimator per target and quantile: 9 per evaluation, 18 in all, fitted in the order evaluation, then target, then quantile. Each is fitted on all fitting observations of all 20 pairs pooled, with no sample weights.",
+    "settings": {
+      "loss": "quantile",
+      "learning_rate": 0.05,
+      "max_iter": 100,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 100,
+      "l2_regularization": 1.0,
+      "early_stopping": false,
+      "random_state": 17
+    },
+    "verifiedParams": {
+      "note": "get_params() of scikit-learn 1.9.1 (latest stable on PyPI, 2026-11-25) with the settings above and quantile 0.1; every listed setting is accepted. The others are the installed defaults and are fixed as listed.",
+      "categorical_features": "from_dtype",
+      "early_stopping": false,
+      "interaction_cst": null,
+      "l2_regularization": 1.0,
+      "learning_rate": 0.05,
+      "loss": "quantile",
+      "max_bins": 255,
+      "max_depth": null,
+      "max_features": 1.0,
+      "max_iter": 100,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 100,
+      "monotonic_cst": null,
+      "n_iter_no_change": 10,
+      "quantile": 0.1,
+      "random_state": 17,
+      "scoring": "loss",
+      "tol": 1e-7,
+      "validation_fraction": 0.1,
+      "verbose": 0,
+      "warm_start": false
+    },
+    "randomness": "With early_stopping false there is no internal validation split; with max_features 1.0 no feature is subsampled; bin thresholds are subsampled only above 200,000 rows, and no fitting set here is that large. random_state is fixed anyway. Threads are OpenMP defaults and are recorded.",
+    "noTuning": "No other value of any setting is tried. No early stopping, internal validation split, cross-validation or refit after a result."
+  },
+  "baseline": {
+    "definition": "For each target and quantile q: b(q) = numpy.quantile(normalized targets of the same fitting observations, q, method='linear') (type 7). The forecast for an observation is b(q) x its v.",
+    "meaning": "The baseline already scales with recent volatility through v; it ignores every other feature. It is not a zero forecast."
+  },
+  "forecastTreatment": "Forecasts are scored exactly as produced. No sorting, rearrangement, clipping at zero, isotonic repair or other treatment of crossed quantiles or negative excursion forecasts; any such treatment would be a separately specified later change. A non-finite forecast stops the run.",
+  "metrics": {
+    "scale": "Primary: the ordinary scale (fractional returns and excursions, forecasts already multiplied by v). Pinball loss on the ordinary scale equals v times the normalized-scale loss, so high-volatility observations weigh more; normalized-scale losses are reported too.",
+    "pinball": "rho_q(y - f) = max(q (y - f), (q - 1)(y - f)); mean over observations",
+    "difference": "Per observation, model loss minus baseline loss on the same observation; negative favours the model. Relative difference = model mean / baseline mean - 1, descriptive only.",
+    "interval": "[f(0.1), f(0.9)] per target. covered: f(0.1) <= y <= f(0.9); belowQ10: y < f(0.1); aboveQ90: y > f(0.9); width: f(0.9) - f(0.1) as produced (negative when crossed, and then never covered). Mean and median width are reported. intervalScore = (rho_0.1 + rho_0.9) / 0.1, the interval score of the nominal 80% interval.",
+    "median": "For q = 0.5: median absolute error median(|y - f(0.5)|) on the ordinary scale, and the share of y < f(0.5)",
+    "crossings": "Per target: counts of f(0.1) > f(0.5), f(0.5) > f(0.9) and f(0.1) > f(0.9)",
+    "negativeExcursions": "For upExcursion and downExcursion: count of forecasts < 0 at each quantile",
+    "counts": "Observations, distinct UTC days of T, purged decisions and every exclusion reason",
+    "groups": "Each evaluation period; within it each target, each quantile and each of the 20 pairs (pairs: point figures only)"
+  },
+  "primary": {
+    "definition": "For each observation i: d_i = (1/9) x sum over the 3 targets and 3 quantiles of [rho_q(y - f_model) - rho_q(y - f_baseline)], ordinary scale. The primary metric of a period is the mean of d_i over its observations, with each method's equally weighted mean loss over the 9 combinations on the same observations.",
+    "perTarget": "The same with the 3 quantiles of one target (1/3 each), for the target consistency labels"
+  },
+  "uncertainty": {
+    "method": "Moving block bootstrap over whole UTC decision days of the evaluation period: every observation of every pair on a day moves together. The fitted models and baseline are held fixed: the interval reflects evaluation-sample variation only, not refitting.",
+    "positions": "Every UTC day from the day of the period's start to the day of (its end - 24h) inclusive, days without an observation included (validation 181, final 184)",
+    "blockDays": 7,
+    "replicates": 10000,
+    "draws": "rng = numpy.random.default_rng(20261125), created anew for each evaluation period. One call starts = rng.integers(0, P - 7 + 1, size=(10000, ceil(P / 7)), dtype=numpy.int64), P the number of positions; row r gives replicate r: the blocks [s, s + 6] for its starts in order, concatenated and cut to P positions. Blocks never wrap. The same draws serve every quantity of the period.",
+    "statistic": "Per replicate: the sum of d_i over the resampled days divided by the number of observations on them",
+    "undefined": "A replicate with no observation is undefined, excluded and counted. With fewer than 9,900 defined replicates the interval is unavailable.",
+    "minimumDefinedReplicates": 9900,
+    "levels": [0.025, 0.975],
+    "quantile": "numpy.quantile(method='linear'), type 7",
+    "limits": "Seven-day blocks keep dependence within about a week only. Decisions four hours apart share 20 of 24 label hours, the 20 pairs co-move, and regimes longer than a week are not captured. The history was examined by five earlier studies. The intervals are optimistic screening figures, not proof."
+  },
+  "interpretation": {
+    "minimumEvidence": {
+      "observations": 2000,
+      "distinctDays": 90,
+      "rule": "Per evaluation period; otherwise INSUFFICIENT_EVIDENCE"
+    },
+    "periodLabel": {
+      "BETTER": "upper 97.5% bound of the primary difference < 0",
+      "WORSE": "lower 2.5% bound > 0",
+      "NO_CLEAR_DIFFERENCE": "otherwise"
+    },
+    "verdict": [
+      {
+        "verdict": "INSUFFICIENT_EVIDENCE",
+        "when": "Either period is below the minimum evidence or has no interval"
+      },
+      { "verdict": "IMPROVEMENT_IN_BOTH_PERIODS", "when": "Otherwise, BETTER in both periods" },
+      {
+        "verdict": "NO_IMPROVEMENT",
+        "when": "Otherwise, WORSE in either period, or the primary point difference >= 0 in both"
+      },
+      { "verdict": "INCONCLUSIVE", "when": "Any other outcome" }
+    ],
+    "targetConsistency": {
+      "CONSISTENT_IMPROVEMENT": "The per-target difference's upper 97.5% bound < 0 in both periods",
+      "CONSISTENT_DETERIORATION": "The lower 2.5% bound > 0 in both periods",
+      "NOT_CONSISTENT": "Otherwise",
+      "alsoReported": "The sign of each target and quantile's point difference in each period",
+      "multiplicity": "Three targets, no adjustment; read a lone consistent target in that light"
+    },
+    "calibration": {
+      "CALIBRATED": "Interval coverage in [0.75, 0.85] and both belowQ10 and aboveQ90 in [0.07, 0.13]",
+      "NOT_CALIBRATED": "Otherwise",
+      "scope": "Per method, target and period. The tolerances are design choices, not statistical tests."
+    },
+    "informative": {
+      "INFORMATIVE_RELATIVE_TO_BASELINE": "The model's interval is CALIBRATED, its mean width is below the baseline's, and its mean interval score is below the baseline's, in that target and period",
+      "NOT_SHOWN": "Otherwise"
+    },
+    "nextStep": "Only IMPROVEMENT_IN_BOTH_PERIODS would justify a separately designed next step: a new specification frozen before untouched data, never live use and never this history again. NO_IMPROVEMENT, INCONCLUSIVE or INSUFFICIENT_EVIDENCE ends this task: no tuning, other model, feature change or new hypothesis follows automatically.",
+    "distinctions": "Forecasting improvement (pinball loss), interval calibration and usefulness (coverage, tails, width, interval score) and profitability are separate questions. This study answers the first two on examined data and does not evaluate the third."
+  },
+  "verification": {
+    "synthetic": "Tests on synthetic data only: exact label horizons and excursion definitions; future candles cannot change earlier features; label changes cannot alter an earlier fitting set or its fits; boundary purging; training-only baseline estimates; normalization and its inverse; feature parity with Popup's indicator functions and v1's featuresAt; metric arithmetic, counts and artifact identities; and a learnable synthetic example on which the model must beat the baseline, an integration check that is not evidence of financial skill",
+    "checks": "Python unit tests, the repository's typecheck, lint, tests and build"
+  },
+  "environment": {
+    "requirements": "scripts/quantile-forecast-requirements.txt: exact versions with SHA-256 hashes, wheels only (scikit-learn 1.9.1, numpy 2.5.5, scipy 1.18.1, joblib 1.6.0, threadpoolctl 3.8.0, narwhals 2.29.0, cloudpickle 3.1.3). The run refuses an installed version that differs.",
+    "python": "3.12 (the local run used CPython 3.12.14 on macOS arm64)",
+    "recorded": "Python version, platform, every pinned package's installed version, threadpoolctl's thread-pool information, the full get_params() of every fitted estimator and each one's n_iter_"
+  },
+  "pipeline": {
+    "export": "npm run evaluate -- quantile-forecast-export: verifies the inputs and writes the dataset (no fit, no metric)",
+    "fit": ".venv/bin/python scripts/quantile_forecast.py: verifies the dataset, environment and code identity, fits, evaluates and writes the result",
+    "identity": "Both refuse to run while a tracked file differs from HEAD. The fit refuses a dataset exported at another commit, or one whose specification file hash differs from this file's."
+  },
+  "output": {
+    "dataset": ".zerochart-reports/quantile-forecast-24h-dev-v1-dataset-<specification sha256, 12 hex>-<commit, 12 hex>.json: manifest, per-pair coverage and exclusions, columns and one row per observation (symbol, T, the 11 features, the 3 raw labels)",
+    "results": ".zerochart-reports/quantile-forecast-24h-dev-v1-<specification sha256, 12 hex>.json",
+    "identity": "The specification's SHA-256 (stableSerialize, as protocol v1) and file SHA-256, the code commit and each source file's git blob, the recorded v1 result's, universe.json's and every candle file's SHA-256, the dataset's SHA-256, the requirements file's SHA-256, the model configuration and the environment",
+    "writeOnce": "Each file is written once; a rerun reports UNCHANGED for identical bytes or CONFLICT and never overwrites",
+    "preserved": "Protocol v1, its result, the diagnosis, the breadth, breakout and structure-entry studies and the saved market data are read, never written"
+  },
+  "notExecutionReady": "Research only. No UI, order, alert, account read, experiment record, migration, deployment, secret, schedule, download or prospective collection."
+}
