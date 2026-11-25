@@ -1,0 +1,214 @@
+{
+  "specificationId": "popup-structure-entry-1h-dev-v1",
+  "status": "Development research on previously examined data. Committed on its own before any source opportunity, entry, return or interval of this study was computed; that fixes the design, it does not make the history unseen. Not a live strategy, not a probability, not an approval for real money, and no change to protocol v1, the swing-structure candidate or any earlier study.",
+  "question": "On identical source opportunities (a confirmed bullish sweep of an hourly pivot low while the 4h structure is up), does waiting for a bullish structure break, a confirmed bullish fair-value gap and its first return earn more net return per source opportunity than entering at once, under one identical exit policy and nominal stake?",
+  "scopeOfComparison": "Arm B tests the complete waiting package against arm A. It does not separate the contribution of the structure break from that of the gap, and no arm with only one of them is computed.",
+  "designChoices": "Pivot bars, windows, deadlines, ATR multiples, the holding limit, bootstrap settings and decision thresholds are design choices fixed here, not fitted values. None is changed after a result is seen. No parameter search, added indicator, session window, VWAP, news or macro filter.",
+  "basis": {
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359",
+      "use": "Read only for its manifest: the universe evidence's SHA-256 and each candle file's SHA-256"
+    },
+    "swingCandidate": {
+      "path": "scripts/swingStructure.ts",
+      "id": "swing-structure-direction",
+      "version": "0.1.0",
+      "use": "evaluateSwingStructure, imported unchanged, for both the 4h bias and the 1h pivots. Neither it nor its dependency src/lib/candleValidation.ts is edited."
+    },
+    "dataStatus": "The whole v1 history has been examined by protocol v1, its diagnosis (PR #216), the breadth filter (PR #217) and the channel-breakout wallet (PR #218). Every figure computed here is development evidence on examined data."
+  },
+  "data": {
+    "universe": "Protocol v1's 20 members, unchanged: BTC, ETH, SOL, ZEC, XRP, NEAR, BNB, UNI, DOGE, SUI, ENA, PEPE, ADA, TRX, LINK, TAO, LTC, WLD, AVAX, AAVE (all USDT)",
+    "candles": ".zerochart-market-data/spot-24h-v1/klines/<SYMBOL>-1h.json: Binance Spot public 1h klines saved by protocol v1, first opening 2024-11-13T16:00Z, last opening 2026-11-21T23:00Z",
+    "verification": "Before anything is computed: the recorded v1 result's SHA-256, universe.json's SHA-256 and every candle file's SHA-256 must equal the recorded values, and the protocol's SHA-256 must equal basis.protocol.sha256. Any mismatch or missing file stops the run and names the input. Nothing is downloaded or substituted.",
+    "validity": "Protocol v1's indexHourly, unchanged: candles closed before 2026-11-22T00:00Z, hour-aligned, v1's close-time convention, no duplicate timestamp, valid prices. An invalid or missing hour is absent. Nothing is filled, interpolated, deduplicated or repaired."
+  },
+  "timing": {
+    "units": "Epoch milliseconds, UTC. A 1h candle opening at t closes at t + 3,599,999 ms (v1's convention). Offsets are whole hours from the source candle S: S+k is the candle opening at open(S) + k x 3,600,000 ms, S-k the one opening k hours before.",
+    "sourceDecision": "D = open(S) + 3,600,000 ms: the instant after S has closed, which is also the open of S+1. Every frozen source quantity uses only candles closed by D.",
+    "closedOnly": "Every rule reads closed candles only, except an entry, which reads the open of its entry candle and nothing else of it.",
+    "firstDecision": "2024-11-22T00:00:00.000Z",
+    "lastCandleClose": "2026-11-22T00:00:00.000Z",
+    "scan": "For each pair, every hour S with firstDecision <= D <= lastCandleClose, in chronological order"
+  },
+  "bias": {
+    "timeframe": "4h",
+    "intervalMs": 14400000,
+    "aggregation": "UTC-aligned 4h bars. The bar opening at b (b a multiple of 14,400,000 ms) is built from the four 1h candles opening b, b + 1h, b + 2h and b + 3h: open of the first, highest high, lowest low, close of the last; timestamp b, closeTime b + 14,399,999. A bar exists only if all four candles are valid; there is no partial bar.",
+    "bars": 50,
+    "window": "The 50 consecutive 4h bars ending with the latest bar whose closeTime <= D - 1. The bar containing S is used only when S is its fourth hour (it has then closed at D); otherwise it is still forming and is excluded. If any of the 50 bars does not exist, the bias is unavailable; no older bar is substituted.",
+    "leftBars": 2,
+    "rightBars": 2,
+    "evaluation": "evaluateSwingStructure({ candles: the 50 bars, timeframe: { label: '4h', intervalMs: 14400000 }, config: { leftBars: 2, rightBars: 2 }, cutoff: D - 1 })",
+    "require": "status EVALUATED and direction Up",
+    "unavailable": "A missing bar, status INVALID_INPUT or status INSUFFICIENT: BIAS_UNAVAILABLE, counted",
+    "notUp": "Status EVALUATED with direction Down or Unclear: BIAS_NOT_UP, counted"
+  },
+  "structure": {
+    "windowCandles": 200,
+    "window": "The 200 consecutive 1h candles S-200 ... S-1, all closed before S opens. If any of them, or S itself, is missing or invalid: INPUT_UNAVAILABLE.",
+    "leftBars": 2,
+    "rightBars": 2,
+    "pivots": "evaluateSwingStructure({ candles: that window, timeframe: { label: '1h', intervalMs: 3600000 }, config: { leftBars: 2, rightBars: 2 }, cutoff: open(S) - 1 }), unchanged: strict on the left, inclusive on the right (a plateau's first bar is the pivot), availableAt = close time of the second right bar. Only its pivot lists are used; its direction and status are not, except that INVALID_INPUT is INPUT_UNAVAILABLE.",
+    "anchors": "L = the last element of supportingLows (the confirmed pivot low whose own candle is latest) and H = the last element of supportingHighs. If none: NO_CONFIRMED_LOW or NO_CONFIRMED_HIGH. H is not required to be newer than L, nor unbroken.",
+    "unbreached": "L is breached when any candle opening after L.availableAt and before S has low < L.price. A breached L gives no source (LOW_ALREADY_BREACHED), and no older or other pivot is tried in its place.",
+    "sweep": "low(S) < L.price, close(S) > L.price and close(S) < H.price, all strict",
+    "oneSourcePerPivot": "A pivot low is identified by its pair and L.candleOpenTime. Once it has produced a detected source it produces no other (PIVOT_ALREADY_USED, counted). The breach rule already implies this; the check is kept as a guard.",
+    "atrPeriod": 14,
+    "atr": "atr(high, low, close, 14) from src/lib/indicators.ts, unchanged, over the 200 consecutive candles S-199 ... S, read at S. Must be finite and positive, else ATR_UNAVAILABLE.",
+    "frozen": "At D the source records the bias, L and H (price, candleOpenTime, availableAt), sweepLow = low(S) and ATR14. Both arms use exactly these values; nothing is replaced by a newer pivot or volatility value."
+  },
+  "screening": {
+    "order": [
+      "INPUT_UNAVAILABLE",
+      "NO_CONFIRMED_LOW",
+      "NO_CONFIRMED_HIGH",
+      "LOW_ALREADY_BREACHED",
+      "NO_SWEEP",
+      "NOT_RECLAIMED",
+      "CLOSE_NOT_BELOW_HIGH",
+      "BIAS_UNAVAILABLE",
+      "BIAS_NOT_UP",
+      "ATR_UNAVAILABLE",
+      "PIVOT_ALREADY_USED",
+      "BOUNDARY"
+    ],
+    "meanings": {
+      "NO_SWEEP": "low(S) >= L.price",
+      "NOT_RECLAIMED": "close(S) <= L.price",
+      "CLOSE_NOT_BELOW_HIGH": "close(S) >= H.price",
+      "BOUNDARY": "Detected source whose follow-up does not lie inside one reporting period"
+    },
+    "rule": "Each scanned hour gets the first reason in this order that applies; an hour with none is an admitted source. Hours that pass NO_SWEEP are sweep candidates; those that also pass PIVOT_ALREADY_USED are detected sources and consume their pivot low. Every count is reported."
+  },
+  "periods": {
+    "list": [
+      { "id": "train", "start": "2024-11-22T00:00:00.000Z", "end": "2025-11-22T00:00:00.000Z" },
+      {
+        "id": "validation",
+        "start": "2025-11-22T00:00:00.000Z",
+        "end": "2026-05-22T00:00:00.000Z"
+      },
+      { "id": "test", "start": "2026-05-22T00:00:00.000Z", "end": "2026-11-22T00:00:00.000Z" }
+    ],
+    "names": "Protocol v1's chronological boundaries, used only as reporting periods; nothing is fitted on any of them",
+    "followUpHours": 36,
+    "admission": "A detected source is admitted to the period with start <= D and D + 36h <= end: candles S+1 ... S+36, the longest follow-up either arm can read (B's latest entry is S+13, holding through S+36), lie inside it. Otherwise BOUNDARY, counted. This is decided before either arm is evaluated."
+  },
+  "armA": {
+    "id": "IMMEDIATE",
+    "entry": "Market entry at the open of S+1, at time D. No other condition."
+  },
+  "armB": {
+    "id": "WAIT_FOR_RETURN",
+    "structureBreakLastOffset": 6,
+    "returnLastOffset": 12,
+    "read": "Candles S+1, S+2, ... are read one at a time, each only after the previous one decided nothing. On every candle the cancellation test comes first; a cancelled, expired or refused opportunity reads nothing further.",
+    "cancellation": "From S+1 through J inclusive (M and C included), the first candle with low <= sweepLow cancels: CANCELLED_SWEEP_LOW_BROKEN. It takes priority over every other condition met by the same candle.",
+    "structureBreak": "M = the first of S+1 ... S+6 whose close > H.price, strictly. If no candle up to S+6 qualifies: NO_STRUCTURE_BREAK (expiry). If close(M) <= open(M): STRUCTURE_BREAK_NOT_BULLISH; no later candle is tried as M.",
+    "gap": "Only the triplet A = M-1 (S itself when M = S+1), B = M, C = M+1 is examined. A bullish fair-value gap exists only if high(A) < low(C), strictly; then G_low = high(A) and G_high = low(C). It becomes available when C closes. Otherwise NO_FVG; no later gap is searched.",
+    "return": "J = the first candle after C, and no later than S+12, with low(J) <= G_high. It consumes the first return. If open(J) < G_low or close(J) < G_low: RETURN_BELOW_GAP, no entry. If no candle up to S+12 qualifies: NO_RETURN (expiry).",
+    "entry": "Otherwise market entry at the open of E = J+1. If open(E) <= sweepLow: ENTRY_OPEN_AT_OR_BELOW_SWEEP_LOW; else if open(E) < G_low: ENTRY_OPEN_BELOW_GAP; both are no entry. Nothing of E but its open is read before entering.",
+    "noSecondChance": "No second return, replacement gap, renewed setup or fallback entry.",
+    "meaning": "A close-confirmed return followed by a MARKET entry at the next open. It does not claim that a resting limit order inside the gap would have filled within an hourly candle.",
+    "noEntryReasons": [
+      "CANCELLED_SWEEP_LOW_BROKEN",
+      "NO_STRUCTURE_BREAK",
+      "STRUCTURE_BREAK_NOT_BULLISH",
+      "NO_FVG",
+      "NO_RETURN",
+      "RETURN_BELOW_GAP",
+      "ENTRY_OPEN_AT_OR_BELOW_SWEEP_LOW",
+      "ENTRY_OPEN_BELOW_GAP"
+    ],
+    "waiting": "For an entry: hours from D to the open of E, (open(E) - D) / 1h, between 3 and 12. The offsets of M, C, J and E are recorded."
+  },
+  "exits": {
+    "policy": "Identical for both arms: the same rule from each arm's own entry, so absolute levels, exit prices and exit times may differ.",
+    "entryReference": "O = the unadjusted open of the arm's actual entry candle",
+    "stopAtrMultiple": 2,
+    "targetAtrMultiple": 4,
+    "holdingCandles": 24,
+    "levels": "stop = O - 2 x ATR14 and target = O + 4 x ATR14, with the source's frozen ATR14, fixed at entry. If stop <= 0 the arm does not enter: INVALID_LEVELS, counted.",
+    "scan": "Protocol v1's resolveOutcome applied one holding candle at a time in order (the channel-breakout study's scanTrade): a candle opening at or below the stop exits STOP at that open (a gap stop); one opening at or above the target exits TARGET at the target; one touching both levels is AMBIGUOUS, exited as a stop at the stop price; one touching only the stop exits STOP at the stop; one touching only the target exits TARGET at the target. No exit within the 24 candles E ... E+23 (entry candle first): TIMEOUT at the 24th candle's close. Nothing after the exit candle is read.",
+    "notModelled": "No trailing stop, partial exit, Efficient Range target, re-entry or leverage."
+  },
+  "costs": {
+    "source": "Protocol v1's costs, unchanged",
+    "feePerFill": 0.001,
+    "slippagePerMarketFill": 0.0005,
+    "marketFills": "Entry, STOP, AMBIGUOUS and TIMEOUT exits pay slippage; a TARGET exit is a resting limit and pays none",
+    "net": "Protocol v1's netReturn(O, X, category) = (1 - fee)^2 x X x (1 - exitSlippage) / (O x (1 + slippage)) - 1, X the exit reference price",
+    "gross": "X / O - 1, before fees and slippage"
+  },
+  "stake": "A hypothetical fixed spend of 1 USDT per admitted source and arm, so net P&L in USDT equals the net return. This normalizes the comparison; it is not an exchange-executable order, and no lot size, minimum notional or wallet is applied.",
+  "pairing": {
+    "row": "Every admitted source has exactly one paired row holding both arms' gross and net return per source. An arm that does not enter, for any no-entry reason or INVALID_LEVELS, has gross and net 0: uninvested cash. No row is dropped and no comparison is restricted to filled opportunities.",
+    "primary": "Mean over admitted sources of (B net - A net), which equals B's mean net per source minus A's",
+    "integrity": "If a candle an arm must read is missing or invalid (S+1 up to B's resolution, E, or a holding candle up to the exit), the source is an INTEGRITY_FAILURE naming the pair, D and the missing hour. Any such source makes the study verdict INTEGRITY_FAILURE: failures are listed and no return statistic is reported. No fill is invented and no trade is deleted."
+  },
+  "reporting": {
+    "groups": "All admitted sources; each period; each UTC month of D; each pair",
+    "perGroup": "Sources and distinct source days; for each arm: entries, fill rate, mean gross and net per source, mean gross and net per executed trade, TARGET / STOP / TIMEOUT / AMBIGUOUS counts, gap stops, INVALID_LEVELS and every no-entry reason; paired: mean net and gross difference, and how many sources B did better, worse or equal",
+    "screening": "Counts of every screening reason, per pair and in total",
+    "waiting": "Distribution of B's waiting hours (count per hour, mean, median) and the offsets of M, C and J",
+    "concentration": "Sum of paired differences; the same without the best pair and without the largest 1, 5 and 10 single differences (arithmetic, not a re-run); pairs with a positive mean difference; the share of the positive differences held by the 10 largest",
+    "caveats": "Sources overlap across hours and pairs and are not achievable portfolio returns: no wallet, equity curve, drawdown or compounded return is computed. Historical target shares are frequencies, not calibrated probabilities."
+  },
+  "uncertainty": {
+    "method": "Paired moving block bootstrap over whole UTC source days (the UTC day of D): all sources of all pairs on a day move together, with both arms of each row. Blocks of 7 consecutive days, never wrapped.",
+    "blockDays": 7,
+    "replicates": 10000,
+    "positions": "Every UTC day from the day of a window's start to the day of (its end - 36h) inclusive, days without a source included. Windows: all (firstDecision to lastCandleClose, every admitted source) and each period.",
+    "random": {
+      "seed": "popup-structure-entry-1h-dev-v1",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|a={attempt}",
+      "draws": "bootstrapOrders in scripts/swingStructureEvaluation.ts (SHA-256 counter with rejection), as protocol v1; grid is the window id",
+      "common": "The same draws serve every quantity of a window"
+    },
+    "statistic": "Per replicate: the sum of the quantity over the resampled days divided by the number of sources on them (a mean per source). Quantities: the paired difference (B net - A net), B net, A net.",
+    "missingReplicates": "A replicate with no source is undefined: excluded from the quantiles and counted. With fewer than 9,900 defined replicates the interval is unavailable.",
+    "minimumDefinedReplicates": 9900,
+    "levels": [0.025, 0.975],
+    "quantile": "Linear interpolation between order statistics (type 7), protocol v1's quantile",
+    "limits": "Seven-day blocks keep dependence within about a week only. Longer market regimes, overlap of sources across pairs and hours, and the earlier examination of this history by four studies all make these intervals optimistic. They screen; they do not prove."
+  },
+  "decision": {
+    "minimumSources": 300,
+    "minimumSourceDays": 60,
+    "minimumBEntries": 100,
+    "minimumBEntryDays": 30,
+    "counting": "Admitted sources over all periods, their distinct UTC days of D; B entries and the distinct UTC days of D of the sources B entered",
+    "rules": [
+      { "verdict": "INTEGRITY_FAILURE", "when": "Any admitted source is an integrity failure" },
+      {
+        "verdict": "INSUFFICIENT_EVIDENCE",
+        "when": "Otherwise, fewer than 300 admitted sources or fewer than 60 source days, or fewer than 100 B entries or fewer than 30 B-entry days"
+      },
+      {
+        "verdict": "CANDIDATE_FOR_INDEPENDENT_VALIDATION",
+        "when": "Otherwise, both pooled intervals (all window) are available, the lower 2.5% bound of the paired difference > 0 and of B's net per source > 0, and in each of the validation and test periods both point estimates (mean paired difference and B's mean net per source) > 0"
+      },
+      {
+        "verdict": "NEGATIVE",
+        "when": "Otherwise, the pooled upper 97.5% bound of the paired difference < 0 or that of B's net per source < 0 (whichever is available); the result names which"
+      },
+      { "verdict": "INCONCLUSIVE", "when": "Any other outcome" }
+    ],
+    "pointCharacter": "Descriptive label of the pooled point estimates, never the verdict: NO_IMPROVEMENT (mean difference <= 0), LOSS_REDUCED_ONLY (difference > 0 and B's mean net per source <= 0), POSITIVE_NET (difference > 0 and B's mean net per source > 0)",
+    "meaning": "Development screening on examined data, not proof of profitability. CANDIDATE_FOR_INDEPENDENT_VALIDATION would only justify a separately specified test frozen before untouched data, never live use. An improvement is never called profitable while B's mean net per source is negative. A negative or inconclusive verdict ends this task: no tuning, no other package and no automatic follow-up."
+  },
+  "output": {
+    "results": ".zerochart-reports/structure-entry-1h-dev-v1-<specification sha256, 12 hex>.json, written once; a rerun reports UNCHANGED or CONFLICT and never overwrites",
+    "identity": "The result records the specification's SHA-256 (stableSerialize, as protocol v1), the code commit and each source file's git blob, the recorded v1 result's SHA-256, universe.json's SHA-256 and every candle file's SHA-256",
+    "preserved": "Protocol v1, its result, the diagnosis, the breadth and breakout studies, the swing-structure candidate and study, and the saved market data are read, never written"
+  },
+  "notExecutionReady": "Research only. No UI, order, alert, account read, experiment record, migration, deployment, secret, schedule, download or prospective collection."
+}
