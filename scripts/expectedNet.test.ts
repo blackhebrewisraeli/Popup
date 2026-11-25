@@ -76,6 +76,8 @@ const [B1] = PROTOCOL.splits.boundaries.map((t) => Date.parse(t)) as [number, nu
 const sha256 = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
 const FAST: Protocol = { ...STUDY, uncertainty: { ...STUDY.uncertainty, replicates: 200 } };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+/** Full-history tests: 1.4–6.5 s each on CI with coverage, above vitest's 5 s default. */
+const HEAVY = 60_000;
 
 const candle = (timestamp: number, open: number, high: number, low: number, close: number) =>
   ({ timestamp, closeTime: timestamp + H - 1, open, high, low, close }) as HourCandle;
@@ -273,7 +275,7 @@ describe('outcomes', () => {
   });
 });
 
-describe('joined rows', () => {
+describe('joined rows', { timeout: HEAVY }, () => {
   const candles = walk(3);
   const { rows } = pairRows('BTCUSDT', candles);
   const at = (rs: readonly Row[], time: number) => rs.find((r) => r.time === time)!;
@@ -369,7 +371,7 @@ function recordedFor(candles: Record<string, HourCandle[]>, members: readonly st
   };
 }
 
-describe('v1 parity', () => {
+describe('v1 parity', { timeout: HEAVY }, () => {
   const members = ['BTCUSDT', 'ETHUSDT'];
   const candles = { BTCUSDT: walk(5), ETHUSDT: walk(6) };
   const { rows } = exportRows(candles, members);
@@ -459,7 +461,7 @@ describe('forecasters', () => {
   });
 });
 
-describe('the fixed comparison', () => {
+describe('the fixed comparison', { timeout: HEAVY }, () => {
   const dev = learnable.evaluations.development!;
   const fin = learnable.evaluations.final!;
 
