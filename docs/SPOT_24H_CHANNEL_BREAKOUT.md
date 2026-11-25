@@ -62,6 +62,14 @@ q × close × 0.9995 × 0.999.
 | Coverage      | 350,400 pair-hours, no candle issue, no unavailable input, no missing outcome, no integrity failure                                                                                                                                 |
 | Output        | `.zerochart-reports/spot-24h-channel-breakout-e807743e77b4.json` (git-ignored), SHA-256 `e4e734a3f811869fdfb0dc262def1fba69742c078b35bd8f68147b31ea8da6e5`, `CREATED`. Run once; no rerun was made                                  |
 
+**Code after the run.** A later commit changed `scripts/spot24hBreakout.ts` only to resolve two
+SonarCloud findings: a negated comparison written as `close <= channelHigh` (prices there are
+validated, never NaN), and the wallet's entry step moved into a helper to cut cognitive complexity.
+No rule, threshold or specification changed. On four synthetic 20-pair markets (plain, two with
+missing candles that stop wallets on integrity failures, and one with no cash), the run commit's
+code from `git archive afd15bc` and the changed code give byte-identical study output. The recorded
+blobs are the run commit's; reproduce there.
+
 ## B. The wallets
 
 Each period wallet started at 44 USDT. All four completed without an integrity failure.

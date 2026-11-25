@@ -92,8 +92,8 @@ export function pairEvents(
     const previousClose = index.valid.get(t - HOUR_MS)?.close ?? Number.NaN;
     const channelHigh = highest(index, t - c * HOUR_MS, c);
     const previousChannelHigh = highest(index, t - (c + 1) * HOUR_MS, c);
-    // Strict: equal prices are not a breakout.
-    if (!(close > channelHigh) || previousClose > previousChannelHigh) continue;
+    // Strict: equal prices are not a breakout. Prices here are validated, so never NaN.
+    if (close <= channelHigh || previousClose > previousChannelHigh) continue;
     const window = consecutive(index, time - n * HOUR_MS, n) ?? [];
     const a = atr(
       window.map((x) => x.high),
@@ -341,7 +341,6 @@ export function simulateWallet(
   spec: Spec = SPEC,
 ): WalletRun {
   const { start, end } = window;
-  const { initialCash, riskFraction, maxSpendFraction } = spec.portfolio;
   const horizon = spec.trade.holdingCandles * HOUR_MS;
   const run: WalletRun = {
     window,
@@ -353,7 +352,7 @@ export function simulateWallet(
     marks: [],
     endingEquity: null,
   };
-  let cash = initialCash;
+  let cash = spec.portfolio.initialCash;
   let freeAt = start;
   let held = new Map<number, number>();
   const equityAt = (time: number) => (time < freeAt ? (held.get(time) ?? Number.NaN) : cash);
@@ -374,73 +373,91 @@ export function simulateWallet(
     const [chosen, ...others] = [...events].sort(compareEvents);
     run.skipped.NOT_SELECTED += others.length;
     if (!chosen) continue;
-    const index = indexes[chosen.symbol];
-    const entryCandle = index?.valid.get(time);
-    if (!index || !entryCandle) {
+    const entered = enter(chosen, time, cash, indexes[chosen.symbol], spec);
+    if (entered.kind === 'FAILURE') {
       run.status = 'INTEGRITY_FAILURE';
-      run.failure = { symbol: chosen.symbol, entryTime: time, missingOpen: time };
+      run.failure = { symbol: chosen.symbol, entryTime: time, missingOpen: entered.missingOpen };
       return run;
     }
-    const entry = entryCandle.open;
-    const { stop, target } = levels(entry, chosen.atr, spec);
-    if (stop <= 0) {
-      run.skipped.INVALID_LEVELS += 1;
+    if (entered.kind === 'SKIPPED') {
+      run.skipped[entered.reason] += 1;
       continue;
     }
-    const lossFraction = plannedLossFraction(entry, stop, spec);
-    // Flat at every entry, so equity is cash.
-    const spend = Math.min((riskFraction * cash) / lossFraction, maxSpendFraction * cash);
-    if (!(spend > 0 && Number.isFinite(spend))) {
-      run.skipped.INSUFFICIENT_CASH += 1;
-      continue;
-    }
-    const scan = scanTrade(index, time, stop, target, spec.trade.holdingCandles);
-    if (scan.status === 'MISSING') {
-      run.status = 'INTEGRITY_FAILURE';
-      run.failure = { symbol: chosen.symbol, entryTime: time, missingOpen: scan.missingOpen };
-      return run;
-    }
-    const f = fill(spend, entry, scan.exit, scan.category, spec);
-    const rest = cash - spend;
-    const exitTime = time + scan.candles.length * HOUR_MS;
-    held = new Map(
-      scan.candles.map((c, k) => [
-        time + (k + 1) * HOUR_MS,
-        rest + liquidationValue(f.quantity, c.close, spec),
-      ]),
-    );
-    held.set(exitTime, rest + f.proceeds);
-    run.trades.push({
-      symbol: chosen.symbol,
-      entryTime: time,
-      exitTime,
-      strength: chosen.strength,
-      atr: chosen.atr,
-      entry,
-      stop,
-      target,
-      category: scan.category,
-      exit: scan.exit,
-      holdingCandles: scan.candles.length,
-      gapStop: scan.gapStop,
-      equityBefore: cash,
-      plannedLossFraction: lossFraction,
-      spend,
-      quantity: f.quantity,
-      exitValue: f.exitValue,
-      proceeds: f.proceeds,
-      netPnl: f.netPnl,
-      netReturn: f.proceeds / spend - 1,
-      grossPnl: f.grossPnl,
-      fees: f.fees,
-      slippage: f.slippage,
-    });
-    cash = rest + f.proceeds;
-    freeAt = exitTime;
+    run.trades.push(entered.trade);
+    held = entered.held;
+    cash = entered.cash;
+    freeAt = entered.trade.exitTime;
   }
   run.marks.push({ time: end, equity: equityAt(end) });
   run.endingEquity = cash;
   return run;
+}
+
+type Entry =
+  | { kind: 'FAILURE'; missingOpen: number }
+  | { kind: 'SKIPPED'; reason: 'INVALID_LEVELS' | 'INSUFFICIENT_CASH' }
+  | { kind: 'TRADE'; trade: Trade; held: Map<number, number>; cash: number };
+
+/**
+ * The chosen event entered at `time` from a flat wallet holding `cash`: the trade, the equity
+ * marks while it is held and the cash after its exit, or why it was not entered.
+ */
+function enter(
+  chosen: BreakoutEvent,
+  time: number,
+  cash: number,
+  index: HourlyIndex | undefined,
+  spec: Spec,
+): Entry {
+  const entryCandle = index?.valid.get(time);
+  if (!index || !entryCandle) return { kind: 'FAILURE', missingOpen: time };
+  const entry = entryCandle.open;
+  const { stop, target } = levels(entry, chosen.atr, spec);
+  if (stop <= 0) return { kind: 'SKIPPED', reason: 'INVALID_LEVELS' };
+  const { riskFraction, maxSpendFraction } = spec.portfolio;
+  const lossFraction = plannedLossFraction(entry, stop, spec);
+  // Flat at every entry, so equity is cash.
+  const spend = Math.min((riskFraction * cash) / lossFraction, maxSpendFraction * cash);
+  if (!(spend > 0 && Number.isFinite(spend)))
+    return { kind: 'SKIPPED', reason: 'INSUFFICIENT_CASH' };
+  const scan = scanTrade(index, time, stop, target, spec.trade.holdingCandles);
+  if (scan.status === 'MISSING') return { kind: 'FAILURE', missingOpen: scan.missingOpen };
+  const f = fill(spend, entry, scan.exit, scan.category, spec);
+  const rest = cash - spend;
+  const exitTime = time + scan.candles.length * HOUR_MS;
+  const held = new Map(
+    scan.candles.map((c, k) => [
+      time + (k + 1) * HOUR_MS,
+      rest + liquidationValue(f.quantity, c.close, spec),
+    ]),
+  );
+  held.set(exitTime, rest + f.proceeds);
+  const trade: Trade = {
+    symbol: chosen.symbol,
+    entryTime: time,
+    exitTime,
+    strength: chosen.strength,
+    atr: chosen.atr,
+    entry,
+    stop,
+    target,
+    category: scan.category,
+    exit: scan.exit,
+    holdingCandles: scan.candles.length,
+    gapStop: scan.gapStop,
+    equityBefore: cash,
+    plannedLossFraction: lossFraction,
+    spend,
+    quantity: f.quantity,
+    exitValue: f.exitValue,
+    proceeds: f.proceeds,
+    netPnl: f.netPnl,
+    netReturn: f.proceeds / spend - 1,
+    grossPnl: f.grossPnl,
+    fees: f.fees,
+    slippage: f.slippage,
+  };
+  return { kind: 'TRADE', trade, held, cash: rest + f.proceeds };
 }
 
 // ---------------------------------------------------------------------------------------------
