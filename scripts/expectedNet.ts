@@ -318,7 +318,7 @@ export function v1Parity(
   const v1 = new Map(observations.map((o) => [`${o.symbol}|${o.time}`, o.outcomes[0]!]));
   const unmatched = rows.filter((r) => {
     const o = v1.get(`${r.symbol}|${r.time}`);
-    return !o || o.category !== r.outcome.category || o.net !== r.outcome.net;
+    return o?.category !== r.outcome.category || o.net !== r.outcome.net;
   }).length;
   const inSplit = (split: Split) => observations.filter((o) => splitOf(o.time) === split);
   const [train, validation, test] = (['train', 'validation', 'test'] as const).map(inSplit);
@@ -609,6 +609,7 @@ function expectedNetCalibration(axis: Axis, items: readonly Scored[], name: Fore
 export type ExpectedNetCalibration = ReturnType<typeof expectedNetCalibration>;
 
 const monthOf = (time: number) => new Date(time).toISOString().slice(0, 7);
+const byText = (a: string, b: string) => a.localeCompare(b);
 
 const categoryCounts = (outcomes: readonly Outcome[]) => {
   const counts: Record<Category, number> = { TARGET: 0, STOP: 0, TIMEOUT: 0, AMBIGUOUS: 0 };
@@ -665,7 +666,7 @@ function periodOf(split: Split): Period {
 function economics(axis: Axis, scored: readonly Scored[], name: Forecaster, period: Period) {
   const d = (s: Scored) => (s[name].enter ? 1 : 0);
   const entered = scored.filter((s) => s[name].enter);
-  const months = [...new Set(scored.map((s) => monthOf(s.row.time)))].sort();
+  const months = [...new Set(scored.map((s) => monthOf(s.row.time)))].sort(byText);
   const perMonth = months.map((month) => {
     const inMonth = scored.filter((s) => monthOf(s.row.time) === month);
     return {
@@ -693,7 +694,7 @@ function economics(axis: Axis, scored: readonly Scored[], name: Forecaster, peri
     entries: entered.length,
     entryRate: scored.length ? entered.length / scored.length : null,
     days: new Set(entered.map((s) => dayOf(s.row.time))).size,
-    entryMonths: [...new Set(entered.map((s) => monthOf(s.row.time)))].sort(),
+    entryMonths: [...new Set(entered.map((s) => monthOf(s.row.time)))].sort(byText),
     perOpportunity: estimate(axis, scored, (s) => d(s) * s.row.outcome.net),
     perTrade: estimate(axis, entered, (s) => s.row.outcome.net),
     enteredOutcomes: categoryCounts(entered.map((s) => s.row.outcome)),
@@ -904,69 +905,79 @@ const clearlyBelowZero = (e: Estimate) =>
   e.mean !== null && e.mean < 0 && e.interval95 !== null && e.interval95.high < 0;
 const within = (x: number | null, limit: number) => x !== null && x <= limit;
 
-/** gate and verdict.order. Every check is evaluated whatever the verdict. */
-export function conclude(evaluations: Readonly<Record<string, PeriodResult>>) {
-  const checks: Check[] = [];
-  const labels: { label: 'ORDERING_SENSITIVE' | 'FILL_SENSITIVE'; evaluation: string | null }[] =
-    [];
-  const add = (id: string, evaluation: string | null, kind: Check['kind'], holds: boolean) =>
-    checks.push({ id, evaluation, kind, holds });
-  let entries = 0;
-  let days = 0;
-  const months = new Set<string>();
-  for (const [id, e] of Object.entries(evaluations)) {
-    const c = e.economics.C;
-    const enter = e.expectedNetCalibration.C.ENTER;
-    add('coverage', id, 'insufficientEvidence', (e.coverage.coverage ?? 0) >= RULES.minCoverage);
-    add(
+/** gate.insufficientEvidence and gate.conditions for one evaluation, in specification order. */
+function periodChecks(evaluation: string, e: PeriodResult): Check[] {
+  const c = e.economics.C;
+  const enter = e.expectedNetCalibration.C.ENTER.label;
+  const check = (id: string, kind: Check['kind'], holds: boolean): Check => ({
+    id,
+    evaluation,
+    kind,
+    holds,
+  });
+  return [
+    check('coverage', 'insufficientEvidence', (e.coverage.coverage ?? 0) >= RULES.minCoverage),
+    check(
       'enterSubset',
-      id,
       'insufficientEvidence',
-      enter.label !== 'NO_ENTRIES' && enter.label !== 'INSUFFICIENT_SELECTED',
-    );
-    add('brierVsU', id, 'condition', clearlyBelowZero(e.brier.CminusU));
-    add('brierVsV1', id, 'condition', clearlyBelowZero(e.brier.CminusV1));
-    for (const k of CLASSES) {
+      enter !== 'NO_ENTRIES' && enter !== 'INSUFFICIENT_SELECTED',
+    ),
+    check('brierVsU', 'condition', clearlyBelowZero(e.brier.CminusU)),
+    check('brierVsV1', 'condition', clearlyBelowZero(e.brier.CminusV1)),
+    ...CLASSES.map((k) => {
       const p = e.probabilityCalibration.C[k];
-      add(
+      return check(
         `probabilityCalibration.${k}`,
-        id,
         'condition',
         within(p.inTheLarge, RULES.maxInTheLarge) &&
           within(p.weightedDecileError, RULES.maxDecileError),
       );
-    }
-    add(
+    }),
+    check(
       'expectedNetCalibration',
-      id,
       'condition',
-      enter.label === 'WITHIN_TOLERANCE' || enter.label === 'UNDERPREDICTED',
-    );
-    add('perOpportunity', id, 'condition', positive(c.perOpportunity.mean));
-    add('perTrade', id, 'condition', positive(c.perTrade.mean));
-    add(
+      enter === 'WITHIN_TOLERANCE' || enter === 'UNDERPREDICTED',
+    ),
+    check('perOpportunity', 'condition', positive(c.perOpportunity.mean)),
+    check('perTrade', 'condition', positive(c.perTrade.mean)),
+    check(
       'leaveOneMonthOut',
-      id,
       'condition',
       c.leaveOneMonthOut.months.length > 0 &&
         c.leaveOneMonthOut.months.every((m) => positive(m.perOpportunity)),
-    );
-    add('targetOvershoot', id, 'condition', positive(c.overshoot.perOpportunity.mean));
-    const conservative = c.perOpportunity.mean;
-    if (conservative !== null && conservative <= 0 && positive(c.ordering.perOpportunity.mean)) {
-      labels.push({ label: 'ORDERING_SENSITIVE', evaluation: id });
-    }
-    entries += c.entries;
-    // Evaluation periods never share a decision day (v1's purge), so days add up.
-    days += c.days;
-    for (const month of c.entryMonths) months.add(month);
-  }
-  add(
-    'entryFloor',
-    null,
-    'insufficientEvidence',
-    entries >= RULES.floor.entries && days >= RULES.floor.days && months.size >= RULES.floor.months,
-  );
+    ),
+    check('targetOvershoot', 'condition', positive(c.overshoot.perOpportunity.mean)),
+  ];
+}
+
+/** gate.labels.ORDERING_SENSITIVE: a conservative loss that optimistic ordering would rescue. */
+const orderingSensitive = ({ economics: { C } }: PeriodResult) =>
+  C.perOpportunity.mean !== null &&
+  C.perOpportunity.mean <= 0 &&
+  positive(C.ordering.perOpportunity.mean);
+
+/** gate and verdict.order. Every check is evaluated whatever the verdict. */
+export function conclude(evaluations: Readonly<Record<string, PeriodResult>>) {
+  const periods = Object.entries(evaluations);
+  const checks = periods.flatMap(([id, e]) => periodChecks(id, e));
+  const labels: { label: 'ORDERING_SENSITIVE' | 'FILL_SENSITIVE'; evaluation: string | null }[] =
+    periods
+      .filter(([, e]) => orderingSensitive(e))
+      .map(([id]) => ({ label: 'ORDERING_SENSITIVE', evaluation: id }));
+  const entered = periods.map(([, e]) => e.economics.C);
+  const entries = sumOf(entered.map((c) => c.entries));
+  // Evaluation periods never share a decision day (v1's purge), so days add up.
+  const days = sumOf(entered.map((c) => c.days));
+  const months = new Set(entered.flatMap((c) => c.entryMonths));
+  checks.push({
+    id: 'entryFloor',
+    evaluation: null,
+    kind: 'insufficientEvidence',
+    holds:
+      entries >= RULES.floor.entries &&
+      days >= RULES.floor.days &&
+      months.size >= RULES.floor.months,
+  });
   const failing = checks.filter((c) => !c.holds);
   if (failing.length > 0 && failing.every((c) => c.id === 'targetOvershoot')) {
     labels.push({ label: 'FILL_SENSITIVE', evaluation: null });
@@ -978,7 +989,7 @@ export function conclude(evaluations: Readonly<Record<string, PeriodResult>>) {
     verdict,
     failing: failing.map((c) => (c.evaluation ? `${c.evaluation}.${c.id}` : c.id)),
     labels,
-    entryFloor: { entries, days, months: [...months].sort() },
+    entryFloor: { entries, days, months: [...months].sort(byText) },
     checks,
   };
 }
