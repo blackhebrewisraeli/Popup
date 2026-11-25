@@ -355,6 +355,65 @@ function reader(index: HourlyIndex, source: Source) {
   };
 }
 
+type Read = ReturnType<typeof reader>;
+interface Stop {
+  stop: Arm;
+  at: number;
+}
+
+/** armB.structureBreak: M and the candle before it, or the arm's end by S+6. */
+function structureBreak(
+  index: HourlyIndex,
+  source: Source,
+  read: Read,
+  last: number,
+): { m: number; beforeM: HourCandle } | Stop {
+  let beforeM = index.valid.get(source.sourceOpen);
+  if (!beforeM) throw new Error('A source needs its own candle S');
+  for (let k = 1; k <= last; k += 1) {
+    const candle = read(k);
+    if ('status' in candle) return { stop: candle, at: k };
+    if (candle.close > source.high.price) {
+      if (candle.close <= candle.open) {
+        return { stop: notEntered('STRUCTURE_BREAK_NOT_BULLISH'), at: k };
+      }
+      return { m: k, beforeM };
+    }
+    beforeM = candle;
+  }
+  return { stop: notEntered('NO_STRUCTURE_BREAK'), at: last };
+}
+
+/** armB.return: the first candle after C touching G_high is the only return. */
+function firstReturn(
+  read: Read,
+  gap: Gap,
+  from: number,
+  last: number,
+): { j: number; stop: null } | { j: number | null; stop: Arm; at: number } {
+  for (let k = from; k <= last; k += 1) {
+    const candle = read(k);
+    if ('status' in candle) return { j: null, stop: candle, at: k };
+    if (candle.low <= gap.high) {
+      if (candle.open < gap.low || candle.close < gap.low) {
+        return { j: k, stop: notEntered('RETURN_BELOW_GAP'), at: k };
+      }
+      return { j: k, stop: null };
+    }
+  }
+  return { j: null, stop: notEntered('NO_RETURN'), at: last };
+}
+
+/** armB.entry: only E's open decides, then the shared exit policy. */
+function entryAt(index: HourlyIndex, source: Source, gap: Gap, e: number, spec: Spec): Arm {
+  const open = source.sourceOpen + e * HOUR_MS;
+  const candle = index.valid.get(open);
+  if (!candle) return notEntered('INTEGRITY_FAILURE', open);
+  if (candle.open <= source.sweepLow) return notEntered('ENTRY_OPEN_AT_OR_BELOW_SWEEP_LOW');
+  if (candle.open < gap.low) return notEntered('ENTRY_OPEN_BELOW_GAP');
+  return enter(index, candle, source.atr, spec);
+}
+
 /** armB: structure break, then the one triplet's gap, then its first return and the next open. */
 export function armB(index: HourlyIndex, source: Source, spec: Spec = SPEC): ArmB {
   const read = reader(index, source);
@@ -368,20 +427,10 @@ export function armB(index: HourlyIndex, source: Source, spec: Spec = SPEC): Arm
     waitingHours,
   });
 
-  let beforeM = index.valid.get(source.sourceOpen);
-  if (!beforeM) throw new Error('A source needs its own candle S');
-  for (let k = 1; k <= spec.armB.structureBreakLastOffset; k += 1) {
-    const candle = read(k);
-    if ('status' in candle) return done(candle, k);
-    if (candle.close > source.high.price) {
-      if (candle.close <= candle.open) return done(notEntered('STRUCTURE_BREAK_NOT_BULLISH'), k);
-      offsets.m = k;
-      break;
-    }
-    beforeM = candle;
-  }
-  const m = offsets.m;
-  if (m === null) return done(notEntered('NO_STRUCTURE_BREAK'), spec.armB.structureBreakLastOffset);
+  const found = structureBreak(index, source, read, spec.armB.structureBreakLastOffset);
+  if ('stop' in found) return done(found.stop, found.at);
+  const { m, beforeM } = found;
+  offsets.m = m;
 
   const c = read(m + 1);
   offsets.c = m + 1;
@@ -389,24 +438,13 @@ export function armB(index: HourlyIndex, source: Source, spec: Spec = SPEC): Arm
   if (beforeM.high >= c.low) return done(notEntered('NO_FVG'), m + 1);
   gap = { low: beforeM.high, high: c.low, availableAt: c.closeTime };
 
-  for (let k = m + 2; k <= spec.armB.returnLastOffset; k += 1) {
-    const j = read(k);
-    if ('status' in j) return done(j, k);
-    if (j.low > gap.high) continue;
-    offsets.j = k;
-    if (j.open < gap.low || j.close < gap.low) return done(notEntered('RETURN_BELOW_GAP'), k);
-    offsets.e = k + 1;
-    const open = source.sourceOpen + (k + 1) * HOUR_MS;
-    const e = index.valid.get(open);
-    if (!e) return done(notEntered('INTEGRITY_FAILURE', open), k + 1);
-    if (e.open <= source.sweepLow) {
-      return done(notEntered('ENTRY_OPEN_AT_OR_BELOW_SWEEP_LOW'), k + 1);
-    }
-    if (e.open < gap.low) return done(notEntered('ENTRY_OPEN_BELOW_GAP'), k + 1);
-    const arm = enter(index, e, source.atr, spec);
-    return done(arm, k + 1, arm.status === 'ENTERED' ? k : null);
-  }
-  return done(notEntered('NO_RETURN'), spec.armB.returnLastOffset);
+  const returned = firstReturn(read, gap, m + 2, spec.armB.returnLastOffset);
+  offsets.j = returned.j;
+  if (returned.stop) return done(returned.stop, returned.at);
+  const e = returned.j + 1;
+  offsets.e = e;
+  const arm = entryAt(index, source, gap, e, spec);
+  return done(arm, e, arm.status === 'ENTERED' ? returned.j : null);
 }
 
 // ---------------------------------------------------------------------------------------------

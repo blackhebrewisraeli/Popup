@@ -180,10 +180,18 @@ the time. It is not evidence that B's own entries are good.
 
 Reproduce with `npm run evaluate -- structure-entry-1h-dev-v1` at `22b33fd`.
 
-**Tests after the run.** A later commit changed only `scripts/structureEntry.test.ts`: the
-future-candle test timed out under the full suite's load, and as written it let the index drop the
-changed candles. It now keeps them, compares every row whose 36-hour follow-up ends before them,
-and fails if arm B reads past S+12. No study code, rule or specification changed.
+**Changes after the run.** No rule, threshold or specification changed, and the recorded blobs
+remain the run commit's; reproduce there.
+
+- Tests: the future-candle test timed out under the full suite's load, and as written it let the
+  index drop the changed candles. It now keeps them, compares every row whose 36-hour follow-up
+  ends before them, and fails if arm B reads past S+12.
+- SonarCloud: arm B's single function (cognitive complexity 27, limit 15) was split into a
+  structure-break, a first-return and an entry helper. On four synthetic 20-pair markets (rising,
+  flat, falling, and one with missing candles that ends in `INTEGRITY_FAILURE`) the run commit's
+  code, checked out from `22b33fd`, and the changed code give byte-identical study output. On v1's
+  saved candles the changed code's results equal the recorded `results` exactly, computed in
+  memory; nothing was written.
 
 **Not done:** no UI, order, alert, account read, experiment record, migration, deployment,
 schedule, download or prospective collection.
