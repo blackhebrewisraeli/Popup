@@ -1,0 +1,65 @@
+{
+  "specificationId": "popup-spot-24h-expected-net-error-decomposition-dev-v1",
+  "status": "Descriptive diagnostic of stage D's one recorded run (#222, merged as a5e48e3, verdict STOP). Committed on its own before any diagnostic code exists and before any diagnostic figure is computed on real data. It reads #222's recorded files only: no fit, no revised forecast, no new payoff estimate, no new selection, no new data. #222's result is never edited or relabelled, and its STOP stands.",
+  "question": "For C's expected-net forecast in each of #222's evaluation periods, how much of the realized-minus-forecast error is (A) outcome-probability error weighted by the plug-in's assumed payoffs, and how much is (B) error of the plug-in's payoff approximation (pooled stop and timeout payoffs, the target level), on all scored observations and on the original ENTER subset?",
+  "notClaimed": "The components are accounting, not causes. Neither shows that changing a probability model or a payoff estimate would have changed a decision or would improve future ones. Both evaluation periods are examined development data. Every return is simulated research on historical candles with v1's assumed costs, never the owner's balance or a realized trade.",
+  "inputs": {
+    "specification": {
+      "path": "docs/spot-24h-expected-net-t3s3-dev-v1.json",
+      "sha256": "0f67666dc4f8f2e0dd8eb0faef6f125a180b14d49d4c8d8f254965c1ad43ee63",
+      "fileSha256": "b9fe596a8b9f0fd91cef483e952b0704eb1e8136a9cfcd5d680f56a013f5d8b0"
+    },
+    "dataset": {
+      "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-dataset-0f67666dc4f8-4d536534e79d.json",
+      "sha256": "477946a0698aa6b92ff8c00d9d442904c6745b5328021f0c2996a45985a08d3e"
+    },
+    "predictions": {
+      "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-predictions-0f67666dc4f8-4d536534e79d.json",
+      "sha256": "23a18828c4b1f7d41188df3785134ef2b2469f7d706eb0bd9720a37197aa2071"
+    },
+    "result": {
+      "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-0f67666dc4f8.json",
+      "sha256": "1f291c94353bb57dcf377d2ba1204b08f879e0439a3d3cae233bb09b4d2b658a"
+    },
+    "runCommit": "4d536534e79d92a2ede1d17ed1c269b89b6f9403",
+    "verification": "Before any figure: the specification's stable and file SHA-256, and the dataset's, predictions' and result's file SHA-256 must equal the values above; the result's manifest must name the run commit, that specification, that dataset and those predictions; the dataset and predictions must pass #222's verifySteps at the run commit; every code blob the result's manifest records must equal git's blob of that path at the run commit. A missing file or any mismatch stops the run, names the input and writes nothing. Nothing is downloaded, repaired, refitted or regenerated.",
+    "reproduction": "scripts/expectedNet.ts changed after the run (#222's Sonar commit, stated output-neutral). #222's evaluateStudy at this diagnostic's commit, on the recorded dataset and predictions with #222's configuration, must serialize byte for byte to the recorded result's results field; otherwise the run stops. Only then are its fitBaseline and expectedNet reused below."
+  },
+  "heldFixed": "From #222, unchanged: its two evaluations (development: fit train, evaluate validation; final: fit train and validation, evaluate test), each row's split, outcome, class and net, C's recorded probabilities as produced, each evaluation's pooled payoffs gStop and gTimeout from its fit set (fitBaseline), C's forecast E (expectedNet) and its decision ENTER if E > 0. Nothing is refitted, re-estimated from evaluation outcomes, recalibrated, reselected or filtered.",
+  "decomposition": {
+    "classes": "k in TARGET, STOP (AMBIGUOUS included), TIMEOUT. I_k = 1 if the row's class is k, else 0.",
+    "payoffs": "The plug-in's own observation-specific terms, with v the row's own and gStop, gTimeout the evaluation's: nHat_TARGET = netReturn(1, 1 + 3 v, TARGET); nHat_STOP = netReturn(1, 1 + gStop v, STOP); nHat_TIMEOUT = netReturn(1, 1 + gTimeout v, TIMEOUT). E = sum_k pHat_k nHat_k.",
+    "identity": "r - E = sum_k (I_k - pHat_k) nHat_k + sum_k I_k (r - nHat_k), with r the row's recorded net",
+    "probabilityComponent": "A = sum_k A_k, A_k = (I_k - pHat_k) nHat_k",
+    "payoffComponent": "B = sum_k B_k, B_k = I_k (r - nHat_k): nonzero only for the row's own class",
+    "readingNotes": "A is probability error weighted by the assumed payoffs. Because sum_k (I_k - pHat_k) = 1 - sum_k pHat_k, close to 0, A is nearly unchanged by adding one constant to all three payoffs, but its split across classes is not: the A_k are bookkeeping shares of A, not separate errors. nHat_TARGET is the scenario's exact target level, so B_TARGET is zero up to rounding; B_STOP measures gaps through the stop against gStop; B_TIMEOUT measures timeout exits against gTimeout.",
+    "tolerance": "Per observation and for every subset mean: |A + B - (r - E)|, |sum_k A_k - A| and |sum_k B_k - B| at most 1e-12 (#222's parity tolerance), and E equal to sum_k pHat_k nHat_k within the same tolerance. A breach stops the run as an implementation fault and writes nothing."
+  },
+  "subsets": {
+    "ALL": "Every scored observation of the evaluation (#222's scoring.scored)",
+    "ENTER": "#222's ENTER subset of C: scored observations with E > 0, decided from forecasts only",
+    "noOther": "No subset by pair, month, threshold, forecast decile, outcome or anything else"
+  },
+  "figures": "Per evaluation and subset: observations and distinct UTC days; per class the count, the observed share and the mean pHat_k (AMBIGUOUS also counted on its own inside STOP); the means of r - E, A, B, each A_k and each B_k, each with its 95% interval",
+  "uncertainty": "#222's, unchanged: v1's dayOrders with #222's study configuration (7-day blocks of whole UTC decision days, never wrapped, 10,000 replicates, seed popup-spot-24h-expected-net-t3s3-dev-v1, grid label the evaluated split) and v1's ratioInterval, 2.5 and 97.5 type-7 percentiles. One set of day orders per evaluation serves every quantity and both subsets (paired). Forecasts, payoffs and selections are held fixed: the intervals reflect evaluation-day variation only.",
+  "reconciliation": {
+    "totals": "For each evaluation and subset: observations, distinct days, mean E, mean r, mean (r - E) and its 95% interval must equal #222's recorded expectedNetCalibration.C.ALL and .ENTER exactly",
+    "selection": "The ENTER count and its outcome counts by category must equal #222's recorded economics.C entries and enteredOutcomes; the payoffs must equal its recorded fit.payoffs exactly",
+    "onDifference": "Every difference is listed in the output before any reading; with any difference the readings below are not produced (status NOT_RECONCILED)"
+  },
+  "reading": {
+    "sign": "For each component and subset: NEGATIVE if its 95% upper bound < 0, POSITIVE if its lower bound > 0, otherwise UNRESOLVED",
+    "accountsFor": "For each evaluation's ENTER subset: the components among A and B labelled NEGATIVE; if neither is, NOT_RESOLVED. Point shares (component mean / total mean) are reported beside them; they are not bounded by 0 and 1 when the components offset each other",
+    "consistency": "CONSISTENT if both evaluations' ENTER readings name the same components, NOT_CONSISTENT otherwise",
+    "noForcing": "No single explanation is chosen when the readings are mixed or unresolved; the report says so"
+  },
+  "after": "The report ends this diagnostic. #222's STOP stands. Nothing here permits tuning, refitting, a revised forecast, a payoff model, a strategy, new data or prospective collection. A further investigation, if any, would be a separate proposal for the owner.",
+  "verification": "Synthetic tests only: the identity per observation and in aggregate; a pure probability-error example (exits exactly at the assumed payoffs, so B = 0); a pure payoff-error example (one-hot probabilities, so A = 0); cancellation between A and B; selection and fit inputs unchanged when evaluation outcomes change; reconciliation with #222's evaluateStudy and listing of differences; artifact integrity (hashes, manifest, recorded blobs, reproduction, write-once). Plus the repository's typecheck, lint, tests and build.",
+  "pipeline": "npm run evaluate -- expected-net-decomposition: refuses a tracked file that differs from HEAD, verifies every input, reproduces #222's result, computes the figures and writes the output once",
+  "output": {
+    "path": ".zerochart-reports/spot-24h-expected-net-error-decomposition-dev-v1-<specification sha256, 12 hex>.json",
+    "identity": "This specification's stable and file SHA-256, the code commit and the git blob of each file used, every input's SHA-256, #222's run commit and recorded blobs, and the reproduction check",
+    "writeOnce": "Written once; a rerun reports UNCHANGED for identical bytes or CONFLICT and never overwrites. #222's files are only read.",
+    "report": "Aggregates only; every return figure labelled simulated research"
+  }
+}
