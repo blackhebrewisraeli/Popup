@@ -13,17 +13,21 @@ not achievable portfolio returns.
 - **Waiting improved net return per source opportunity**: +0.395 percentage points per source,
   95% interval +0.160 to +0.614 (paired 7-day block bootstrap over source days). The point estimate
   is positive in every period; test's interval spans zero.
-- **It did not produce positive net expectancy. It reduced a loss.** Immediate entry (A) lost
-  −0.403% per source. Waiting (B) lost −0.008% per source, interval −0.039% to +0.018%, because it
-  traded on only 4.5% of sources. Its 147 trades averaged **−0.178% net** (+0.111% gross). B's mean
-  net per source was negative in train, validation and test.
+- **It did not produce positive net expectancy. It reduced a loss.** The zero-return reference is
+  cash: no entry earns 0%. Immediate entry (A) lost −0.403% per source. Waiting (B) lost −0.008%
+  per source: its point estimate stays below zero, and its interval (−0.039% to +0.018%) spans
+  zero. It traded on only 4.5% of sources, and its 147 trades averaged **−0.178% net** (+0.111%
+  gross). B's mean net per source was negative in train, validation and test. Improving on a losing
+  arm A does not establish profitable selection.
 - **3,093 of 3,240 sources (95.5%) never entered**: 2,208 cancelled because the sweep low broke
   first, 627 without a structure break within six hours, 171 without a gap in the one triplet, 65
   without a return by S+12 and 22 whose first return closed or opened below the gap.
-- **The improvement is avoidance, not better trades.** In arithmetic on the recorded rows (a
-  decomposition, not a specified test), the 3,093 sources B skipped contribute +0.517 points: A lost
-  −0.542% on them. The 147 sources B entered contribute −0.122 points: A earned +2.52% per trade
-  there and B −0.18%, because B's entry comes after the rally above H that A already held.
+- **The improvement is avoidance, not better trades.** This is a post-hoc decomposition of the
+  recorded rows, not a specified test and not an ex-ante executable selection rule: whether B
+  enters is known only hours after D, so no one could have chosen at D to hold A on exactly these
+  sources. The 3,093 sources B skipped contribute +0.517 points: A lost −0.542% on them. The 147
+  sources B entered contribute −0.122 points: A earned +2.52% per trade there and B −0.18%. That is
+  consistent with B entering after a rally above H that A already held; the study did not test it.
 - **Not enough to justify independent validation.** The frozen rule needs B's net per source to
   have a positive lower bound and positive point estimates in validation and test. It has neither.
   Neither upper bound is below zero, so the verdict is `INCONCLUSIVE`, not `NEGATIVE`.
@@ -138,9 +142,10 @@ the time. It is not evidence that B's own entries are good.
 
 1. **Did waiting improve net return per source opportunity?** Yes: +0.395 points per source, with a
    positive pooled lower bound and a positive point estimate in each period.
-2. **Positive net expectancy, or a smaller loss?** A smaller loss (`LOSS_REDUCED_ONLY`). B's net per
-   source is −0.008% with an interval across zero, and its trades lost −0.178% each after costs. It
-   is not called profitable.
+2. **Positive net expectancy, or a smaller loss?** A smaller loss (`LOSS_REDUCED_ONLY`). Against cash
+   (no entry, 0%), B's net per source is −0.008%: below zero as a point estimate, with an interval
+   (−0.039% to +0.018%) that spans zero. Its trades lost −0.178% each after costs. Improving on a
+   losing arm A does not establish profitable selection, and B is not called profitable.
 3. **How many sources never entered?** 3,093 of 3,240 (95.5%).
 4. **Consistent enough for independent validation?** No. B's net per source has a negative lower
    bound and negative point estimates in validation and test, and only 24 test entries. Per the
@@ -149,9 +154,11 @@ the time. It is not evidence that B's own entries are good.
    - Order inside an hour: whether a return touched the gap before the sweep low broke in the same
      candle (cancellation was given priority), and whether stop or target came first (no ambiguous
      candle occurred here).
-   - Limit fills: a resting order at G_high would fill at the first touch, mid-candle and at a
-     better price, and also on the 22 returns that closed below the gap. This study measured a
-     close-confirmed return followed by a market entry only.
+   - Limit fills: a resting buy order at G_high might have filled at the first touch inside a
+     candle, including on the 22 returns that closed below the gap. This study did not simulate
+     such an order. Hourly OHLC cannot establish whether it would have executed, the order of
+     events inside the candle, or whether its price would have beaten the actual next-open entry.
+     The study measured only a close-confirmed return followed by a market entry.
    - Lower timeframes: breaks, gaps and returns inside an hour are invisible. A return during C
      itself is excluded by construction.
    - Spread, queue position and slippage at the actual moments: modelled as v1's flat 0.05%.
