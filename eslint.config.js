@@ -17,6 +17,7 @@ export default tseslint.config(
       '.zerochart-campaigns',
       '.zerochart-evaluations',
       '.zerochart-reports',
+      '.venv',
     ],
   },
   {

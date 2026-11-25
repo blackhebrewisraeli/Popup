@@ -96,6 +96,7 @@ import { runDiagnostic } from './spot24hDiagnosticRun';
 import { runBreadthFilter } from './spot24hBreadthRun';
 import { runChannelBreakout } from './spot24hBreakoutRun';
 import { runStructureEntry } from './structureEntryRun';
+import { runQuantileForecastExport } from './quantileForecastRun';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -137,7 +138,8 @@ const USAGE = `Usage:
   npm run evaluate -- spot-24h-diagnose            (diagnosis of v1's recorded run, offline; never rewrites it)
   npm run evaluate -- spot-24h-breadth             (one fixed breadth filter on v1's history, offline; development only)
   npm run evaluate -- spot-24h-breakout            (one fixed channel-breakout wallet on v1's candles, offline; development only)
-  npm run evaluate -- structure-entry-1h-dev-v1    (immediate vs waiting structure entry on v1's candles, offline; development only)`;
+  npm run evaluate -- structure-entry-1h-dev-v1    (immediate vs waiting structure entry on v1's candles, offline; development only)
+  npm run evaluate -- quantile-forecast-export     (24h quantile forecast dataset from v1's candles, offline; then scripts/quantile_forecast.py)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -701,6 +703,17 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runStructureEntry();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/quantile-forecast-24h-dev-v1.json: features and labels on v1's candles, writes one file.
+  'quantile-forecast-export': async (value, args) => {
+    assertOptions(
+      'quantile-forecast-export',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runQuantileForecastExport();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
