@@ -1,0 +1,172 @@
+{
+  "specificationId": "popup-spot-24h-channel-breakout-dev-1",
+  "status": "Development research on previously examined data. Recorded and committed before any breakout event, trade or portfolio figure was computed; that records the design, it does not make the v1 history unseen. Not a live strategy, not a validated probability, not an approval for real money and not a change to protocol v1 or to the owner's settings.",
+  "question": "Does one fixed, event-driven, long-only Binance Spot 24-hour channel-breakout rule produce useful net trading performance under a finite 44-USDT wallet and one open position at a time?",
+  "designChoices": "Channel length, ATR multiples, holding limit, sizing and selection are design choices fixed here, not estimates of optimal values. They are not changed after any result is seen. No parameter grid, reversed rule, added filter or post-hoc subset.",
+  "basis": {
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359",
+      "use": "Read only for its manifest: the universe evidence's SHA-256 and each candle file's SHA-256"
+    },
+    "dataStatus": "The whole v1 history has been examined by protocol v1, its diagnosis (PR #216) and the breadth filter (PR #217). Every figure computed here is development evidence."
+  },
+  "data": {
+    "universe": "Protocol v1's 20 members, unchanged: BTC, ETH, SOL, ZEC, XRP, NEAR, BNB, UNI, DOGE, SUI, ENA, PEPE, ADA, TRX, LINK, TAO, LTC, WLD, AVAX, AAVE (all USDT)",
+    "candles": ".zerochart-market-data/spot-24h-v1/klines/<SYMBOL>-1h.json, Binance Spot public 1h klines saved by protocol v1, 2024-11-13T16:00Z to the last candle opening 2026-11-21T23:00Z",
+    "verification": "Before anything is computed: the recorded v1 result's SHA-256, universe.json's SHA-256 and every candle file's SHA-256 must equal the recorded values, and the protocol's SHA-256 must equal basis.protocol.sha256. Any mismatch stops the run.",
+    "validity": "Protocol v1's indexHourly, unchanged: candles closed before 2026-11-22T00:00Z, hour-aligned, close-time convention, no duplicate timestamp, valid prices. An invalid or missing hour is absent. Nothing is filled, interpolated, deduplicated or repaired.",
+    "downloads": "None. Universe membership does not change."
+  },
+  "timing": {
+    "convention": "As protocol v1: a decision time T is the close of the 1h candle opening at T - 1h (the signal candle t) and the open of the candle opening at T. Decisions are evaluated every hour, not on v1's 4-hour grid.",
+    "firstDecision": "2024-11-22T00:00:00.000Z",
+    "lastCandleClose": "2026-11-22T00:00:00.000Z",
+    "information": "A decision at T reads only candles opening at or before T - 1h. The entry candle's open is the fill, not an input to the signal or the selection."
+  },
+  "signal": {
+    "inputWindowCandles": 200,
+    "inputWindow": "The 200 consecutive valid 1h candles whose last opens at T - 1h (candle t). If any is missing or invalid, the pair has no signal at T (SIGNAL_INPUT_UNAVAILABLE, counted). It covers the channel of t, the channel of t - 1 and the ATR.",
+    "channelCandles": 24,
+    "channelHigh": "channelHigh(t) = highest high of the 24 candles t - 24 to t - 1, excluding candle t",
+    "breakout": "breakout(t) = close(t) > channelHigh(t), strictly; equal prices are not a breakout",
+    "previous": "breakout(t - 1) = close(t - 1) > highest high of candles t - 25 to t - 2, its own preceding window",
+    "event": "A breakout event at T for a pair: breakout(t) is true and breakout(t - 1) is false",
+    "atr": "atr(high, low, close, 14) from src/lib/indicators.ts, unchanged, over the 200-candle input window, read at its last index (candle t). It must be finite and positive, otherwise SIGNAL_INPUT_UNAVAILABLE.",
+    "atrPeriod": 14,
+    "strength": "(close(t) - channelHigh(t)) / ATR14(t); used only to choose between simultaneous events"
+  },
+  "trade": {
+    "entryReference": "O = the unadjusted open of the 1h candle opening at T (the entry candle). Levels, sizing and gross P&L all use O.",
+    "entryFill": "O x (1 + 0.0005): protocol v1's entry slippage",
+    "stopAtrMultiple": 2,
+    "targetAtrMultiple": 4,
+    "levels": "stop = O - 2 x ATR14(t); target = O + 4 x ATR14(t); both frozen at entry. If stop <= 0 the event is not entered (INVALID_LEVELS, counted).",
+    "holdingCandles": 24,
+    "holding": "The 24 candles opening T, T + 1h, ..., T + 23h. The entry candle is the first holding candle.",
+    "scan": "Protocol v1's resolveOutcome, unchanged, applied one holding candle at a time in order: a candle opening at or below the stop exits STOP at that open; one opening at or above the target exits TARGET at the target; one touching both levels is AMBIGUOUS, exited as a stop at the stop price; one touching only the stop exits STOP at the stop; one touching only the target exits TARGET at the target. No exit in 24 candles: TIMEOUT at the 24th candle's close.",
+    "exitTime": "The close of the candle in which the exit occurred (T + k hours for the k-th holding candle). The position occupies the wallet's one slot until then.",
+    "notModelled": "No trailing stop, averaging down, partial exit, re-entry inside a position or leverage. A gap through the stop can lose more than planned; that loss is booked as it occurred."
+  },
+  "costs": {
+    "source": "Protocol v1's costs, unchanged",
+    "feePerFill": 0.001,
+    "slippagePerMarketFill": 0.0005,
+    "marketFills": "Entry, STOP, AMBIGUOUS and TIMEOUT exits pay slippage; a TARGET exit is a resting limit and pays none",
+    "accounting": {
+      "spend": "S USDT is spent on the entry, fee included",
+      "quantity": "q = S x (1 - fee) / (O x (1 + slippage)): the fee is withheld from the asset received, as v1's netReturn implies",
+      "proceeds": "q x X x (1 - exitSlippage) x (1 - fee), where X is the exit reference price (target, stop, gap open or timeout close)",
+      "netPnl": "proceeds - S. proceeds / S - 1 equals v1's netReturn(O, X, category).",
+      "grossPnl": "q x (X - O): the price move on the quantity actually held",
+      "fees": "S x fee + q x X x (1 - exitSlippage) x fee",
+      "slippage": "q x O x slippage + q x X x exitSlippage",
+      "identity": "netPnl = grossPnl - fees - slippage, exactly. Gross is a decomposition of each trade, not a separate cost-free simulation."
+    },
+    "markToMarket": "An open position is valued at liquidation: q x close x (1 - slippage) x (1 - fee). Equity = cash + that value."
+  },
+  "portfolio": {
+    "initialCash": 44,
+    "currency": "USDT",
+    "maxOpenPositions": 1,
+    "riskFraction": 0.01,
+    "maxSpendFraction": 0.95,
+    "assumptions": "Hypothetical wallet. These are simulation assumptions, not changes to the owner's settings or account.",
+    "sizing": "At an entry the wallet is flat, so equity = cash. plannedLossFraction = -netReturn(O, stop, STOP), the loss per USDT spent if the stop fills exactly at the stop with its slippage and both fees. S = min(0.01 x equity / plannedLossFraction, 0.95 x cash).",
+    "insufficientCash": "If S is not positive and finite, the selected event is not entered (INSUFFICIENT_CASH, counted)",
+    "selection": "At a decision time with the slot free, among the pairs with an event whose holding window fits the wallet's window: the largest strength, then symbol ascending. A fixed convention, not a validated ranking. Only the chosen event is attempted; there is no fallback to the next one.",
+    "skipReasons": {
+      "BOUNDARY": "The event's 24 holding candles would end after the wallet's window end",
+      "POSITION_OPEN": "The slot is occupied at T",
+      "NOT_SELECTED": "Another simultaneous event was chosen",
+      "INSUFFICIENT_CASH": "The chosen event could not be funded",
+      "INVALID_LEVELS": "The chosen event's stop is not positive"
+    },
+    "precedence": "BOUNDARY, then POSITION_OPEN, then NOT_SELECTED; INSUFFICIENT_CASH and INVALID_LEVELS apply only to the chosen event",
+    "causality": "Selection and sizing use nothing after the entry candle's open. A trade's outcome is never read before it is entered, and an event is never skipped for a reason found in its future candles.",
+    "integrity": "If the entry candle or any holding candle up to the exit is missing or invalid, the wallet stops with INTEGRITY_FAILURE naming the pair, the entry time and the missing hour. No fill is invented, no trade is dropped and no performance figure is reported for that wallet.",
+    "sizingModel": "Ideal fractional sizing: any positive quantity and notional. Authoritative historical Binance filters (lot size, minimum notional, tick size) for 2024-2026 are not among the saved inputs, and none is assumed. The 44-USDT portfolio is therefore EXECUTION_UNVERIFIED: it does not claim that every simulated order could have been placed. Spend per trade is reported so the order sizes can be judged."
+  },
+  "wallets": {
+    "full": {
+      "start": "2024-11-22T00:00:00.000Z",
+      "end": "2026-11-22T00:00:00.000Z",
+      "note": "One chronological wallet. A trade may span an internal period boundary; the number that do is reported."
+    },
+    "periods": [
+      { "id": "train", "start": "2024-11-22T00:00:00.000Z", "end": "2025-11-22T00:00:00.000Z" },
+      {
+        "id": "validation",
+        "start": "2025-11-22T00:00:00.000Z",
+        "end": "2026-05-22T00:00:00.000Z"
+      },
+      { "id": "test", "start": "2026-05-22T00:00:00.000Z", "end": "2026-11-22T00:00:00.000Z" }
+    ],
+    "periodNames": "Protocol v1's boundaries, used only as reporting periods here; nothing is fitted on any of them",
+    "boundaryRule": "Each wallet starts with 44 USDT and its own empty slot. It may enter only at decision times T with start <= T and T + 24h <= end, so every trade it holds ends by its window end. Events at later decision times are counted as BOUNDARY. Signal inputs may use candles before start: they were known at T.",
+    "equityMarks": "Equity at every hour close from start to end inclusive"
+  },
+  "events": {
+    "set": "A: every breakout event of every pair at decision times from 2024-11-22T00:00Z with T + 24h <= 2026-11-22T00:00Z, each given the trade rule's outcome as if entered alone",
+    "outcomeMissing": "If a holding candle up to the exit is missing or invalid, the event's outcome is OUTCOME_MISSING: counted, kept out of outcome statistics",
+    "periods": "An event belongs to a period when start <= T and T + 24h <= end; one whose holding window crosses a boundary belongs to none and is counted",
+    "reported": "Per period and all: events, events per pair, distinct days, TARGET / STOP / TIMEOUT / AMBIGUOUS counts and shares, gap stops, mean holding candles, mean gross (X / O - 1) and mean net (v1's netReturn) per event",
+    "caveat": "Events overlap in time and across pairs and cannot all be held by one wallet. Their statistics are descriptive. Historical target shares are not calibrated probabilities for any current candidate."
+  },
+  "metrics": {
+    "perWallet": [
+      "signals: events at decision times inside the window, and skipped signals by reason",
+      "executed trades and trades crossing an internal period boundary (full wallet)",
+      "ending equity and net return; gross P&L and gross return; fees and slippage in USDT",
+      "maximum mark-to-market drawdown from the hourly equity marks, in percent of the running peak and in USDT",
+      "TARGET, STOP (of which gap stops), TIMEOUT and AMBIGUOUS counts",
+      "win rate (net P&L > 0), mean win and mean loss in USDT and per USDT spent, mean net P&L per trade, profit factor (sum of wins / |sum of losses|)",
+      "exposure: hours holding a position / hours in the window",
+      "turnover: sum of entry spend and exit proceeds before the exit fee, in USDT and as a multiple of 44 USDT",
+      "longest run of consecutive losing trades",
+      "spend per trade: minimum, median and maximum",
+      "monthly results per UTC month: equity at the month's first mark (or the wallet's start) and at the next month's first mark (or the wallet's end), return, trades exited and their net P&L",
+      "concentration: net P&L and trades by pair; the largest 1, 5 and 10 winning trades' net P&L against the total, and the total without them (arithmetic, not a re-simulation)"
+    ],
+    "references": {
+      "cash": "44 USDT held, 0% return",
+      "buyAndHold": "BTCUSDT and ETHUSDT: the full 44 USDT bought at the open of the candle opening at the wallet's start, with v1's entry slippage and fee, marked hourly at liquidation value, sold at the close of the candle opening at end - 1h with slippage and fee. Same dates as each wallet. A missing candle is an INTEGRITY_FAILURE of that reference.",
+      "meaning": "References, not evidence that the strategy is better or worse than anything"
+    }
+  },
+  "conclusion": {
+    "inputs": "Net return of the full wallet and of the three period wallets, and each period wallet's executed trades",
+    "madeMoney": "The full wallet's ending equity > 44 USDT after modelled costs",
+    "consistency": "CONSISTENT_POSITIVE if all three period wallets' net returns are > 0; CONSISTENT_NEGATIVE if all are <= 0; MIXED otherwise",
+    "minimumTradesPerPeriod": 30,
+    "verdicts": [
+      { "verdict": "INTEGRITY_FAILURE", "when": "Any wallet stopped on missing data" },
+      {
+        "verdict": "INCONCLUSIVE",
+        "when": "Otherwise, any period wallet executed fewer than 30 trades"
+      },
+      {
+        "verdict": "JUSTIFIES_INDEPENDENT_VALIDATION",
+        "when": "Otherwise, the full wallet's net return > 0 and the consistency is CONSISTENT_POSITIVE"
+      },
+      {
+        "verdict": "STOP_THIS_DESIGN",
+        "when": "Otherwise, the full wallet's net return <= 0 and at most one period wallet's net return > 0"
+      },
+      { "verdict": "INCONCLUSIVE", "when": "Any other combination" }
+    ],
+    "meaning": "A point-estimate rule on examined development data. JUSTIFIES_INDEPENDENT_VALIDATION would only justify a separately specified test frozen before untouched data, never live use. STOP_THIS_DESIGN ends this design: no tuning, no reversed rule, no filter and no new hypothesis follow automatically. INCONCLUSIVE is reported as such."
+  },
+  "output": {
+    "results": ".zerochart-reports/spot-24h-channel-breakout-<specification sha256, 12 hex>.json, written once; a rerun reports UNCHANGED or CONFLICT and never overwrites",
+    "identity": "The result records the specification's SHA-256 (stableSerialize, as protocol v1), the code commit and each source file's git blob, the recorded v1 result's SHA-256, universe.json's SHA-256 and every candle file's SHA-256",
+    "preserved": "Protocol v1, its result, the diagnosis, the breadth study and the saved market data are read, never written"
+  },
+  "notExecutionReady": "Research only. No UI, order, alert, account read, experiment record, migration, deployment, secret, schedule or download."
+}
