@@ -55,6 +55,8 @@ const SPEC_FILE = 'docs/spot-24h-expected-net-error-decomposition-dev-v1.json';
 const PREFIX = 'spot-24h-expected-net-error-decomposition-dev-v1';
 /** decomposition.tolerance: #222's parity tolerance. */
 export const TOLERANCE = 1e-12;
+/** A residual breaches the tolerance when it is not finite or exceeds it. */
+const breaches = (x: number) => !Number.isFinite(x) || Math.abs(x) > TOLERANCE;
 const LEVELS: [number, number] = [STAGE_D.uncertainty.levels[0]!, STAGE_D.uncertainty.levels[1]!];
 const TARGET_V = STAGE_D.outcome.scenario.targetV;
 
@@ -102,7 +104,7 @@ export function decompose(
     E - (p[0] * nHat[0] + p[1] * nHat[1] + p[2] * nHat[2]),
     terms.A + terms.B - terms.total,
   ];
-  if (residuals.some((x) => !(Math.abs(x) <= TOLERANCE))) {
+  if (residuals.some(breaches)) {
     throw new Error(`Identity breached: residuals ${residuals.join(', ')}`);
   }
   return terms;
@@ -184,7 +186,7 @@ function subset(axis: Axis, items: readonly Item[]) {
       sumOf(CLASSES.map((k) => m(figures.probabilityByClass[k]))) - m(figures.probability),
       sumOf(CLASSES.map((k) => m(figures.payoffByClass[k]))) - m(figures.payoff),
     ];
-    if (residuals.some((x) => !(Math.abs(x) <= TOLERANCE))) {
+    if (residuals.some(breaches)) {
       throw new Error(`Aggregate identity breached: residuals ${residuals.join(', ')}`);
     }
   }
@@ -260,8 +262,11 @@ function reconcile(
 
 export type Sign = 'NEGATIVE' | 'POSITIVE' | 'UNRESOLVED';
 /** reading.sign */
-export const signOf = ({ interval95: i }: Estimate): Sign =>
-  i && i.high < 0 ? 'NEGATIVE' : i && i.low > 0 ? 'POSITIVE' : 'UNRESOLVED';
+export function signOf({ interval95: i }: Estimate): Sign {
+  if (i && i.high < 0) return 'NEGATIVE';
+  if (i && i.low > 0) return 'POSITIVE';
+  return 'UNRESOLVED';
+}
 
 const COMPONENTS = ['probability', 'payoff'] as const;
 type Component = (typeof COMPONENTS)[number];
@@ -421,10 +426,12 @@ export async function verifiedInputs(inputs: Inputs = SPEC.inputs, git: Git = de
   verifySteps(dataset, predictions, inputs.runCommit, spec.fileSha256, inputs.dataset.sha256);
   const blobs = Object.entries(m.codeBlobs);
   if (blobs.length === 0) throw integrityFailure('result records no code blobs');
-  for (const [file, blob] of blobs) {
-    const atRun = await git('rev-parse', `${inputs.runCommit}:${file}`).catch(() => '');
-    if (atRun !== blob) throw integrityFailure(`${file} at the run commit is not blob ${blob}`);
-  }
+  const atRun = await Promise.all(
+    blobs.map(([file]) => git('rev-parse', `${inputs.runCommit}:${file}`).catch(() => '')),
+  );
+  blobs.forEach(([file, blob], i) => {
+    if (atRun[i] !== blob) throw integrityFailure(`${file} at the run commit is not blob ${blob}`);
+  });
   const rows = dataset.rows.map(fromColumns);
   const pairs = Object.keys(dataset.coverage.pairs).length;
   const reproduced = evaluateStudy(rows, predictions.evaluations, pairs);
