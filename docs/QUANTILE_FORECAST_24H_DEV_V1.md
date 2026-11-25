@@ -195,6 +195,10 @@ For scale, the training fit's baseline put the terminal return's 10%, 50% and 90
 | Preserved     | Every earlier result in `.zerochart-reports/` kept its recorded SHA-256 (v1 `662c5d7d`, diagnosis `6d6df8f1`, breadth `54183e97`, breakout `e4e734a3`, structure entry `aab7284c`); the market data was only read                                                                                                                                                                                                              |
 | Checks        | 13 TypeScript tests (`scripts/quantileForecast.test.ts`) and 21 Python tests (`scripts/test_quantile_forecast.py`), synthetic data only; 11 single-rule mutations (window offset, label offset, SD convention, return lag, purge, fit set, inverse scaling, baseline quantile method, coverage, verdict rule, block range) each failed at least one test. Full suite 149 files and 2,528 tests, typecheck, lint, build         |
 
+**Changes after the run.** One comment only: the estimator call in `scripts/quantile_forecast.py` is
+marked `NOSONAR`, because SonarCloud cannot see that `learning_rate` and `random_state` arrive
+through `**settings`. No code, setting or figure changed; the recorded blobs are the run commit's.
+
 **The synthetic checks are not evidence of skill.** On a learnable synthetic dataset the model
 beats the baseline in both periods, as an integration check must. On features unrelated to the
 targets it does not, and a dry run of the TypeScript export into the Python study on i.i.d. random

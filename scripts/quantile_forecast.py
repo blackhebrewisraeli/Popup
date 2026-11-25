@@ -131,7 +131,9 @@ def fit_models(x: np.ndarray, normalized: np.ndarray, spec: dict) -> list:
     for t in range(normalized.shape[1]):
         row = []
         for q in spec["model"]["quantiles"]:
-            estimator = HistGradientBoostingRegressor(quantile=q, **settings)
+            # learning_rate and random_state are set: they come from model.settings via **settings,
+            # and a test checks every estimator's get_params() against the specification.
+            estimator = HistGradientBoostingRegressor(quantile=q, **settings)  # NOSONAR
             row.append(estimator.fit(x, normalized[:, t]))
         models.append(row)
     return models
