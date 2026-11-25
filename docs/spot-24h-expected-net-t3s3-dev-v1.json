@@ -1,0 +1,377 @@
+{
+  "specificationId": "popup-spot-24h-expected-net-t3s3-dev-v1",
+  "status": "Stage D of docs/SPOT_24H_DECISION_CONTRACT.md, approved by the owner with the contract's recommended defaults. Development research on previously examined data. Committed on its own before any study code existed and before any figure of this study was computed on real data; that fixes the design, it does not make the history unseen. Not a trading strategy, not a wallet, not untouched evidence and not an approval for live use, collection or orders. No earlier specification, protocol, study or result is changed.",
+  "question": "On v1's examined hourly history, does one three-class HistGradientBoostingClassifier on #220's eleven causal features forecast v1's T3S3 outcome better than an unconditional baseline and v1's own cell estimator, are its restricted expected-net forecasts calibrated on the entries it selects, and do those entries earn more than cash after v1's assumed costs, in both development periods?",
+  "notEvaluated": "A complete conditional expected-return model (stop and timeout payoffs are pooled, not conditional), a capital-limited wallet, time to exit as a constraint, selection among simultaneous signals, minimum-notional rounding, measured costs or fills, whether a resting limit at the target would fill, untouched or prospective data, other scenarios, other models and live use.",
+  "designChoices": "Every rule below is fixed here, before any result. Nothing is tuned, selected, refitted, reweighted or relabelled after a figure is seen. The run happens once. Defaults are the contract's recommended defaults, which the owner accepted.",
+  "basis": {
+    "contract": {
+      "path": "docs/SPOT_24H_DECISION_CONTRACT.md",
+      "mergedIn": "c1097c678d2b07d5a389fb25f3c1485d44a64d73",
+      "fileSha256": "e1373f4ffdbe43fcbc64a417eea880492a7715f335f0b3c6bf55879cb9391094",
+      "scope": "Stage D only. No prospective collection, six-month test, account access, order, alert, UI, production change or deployment."
+    },
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359",
+      "use": "Its manifest gives the universe evidence's and every candle file's SHA-256; its T3S3 split sizes and development and confirmatory evaluations are the v1 parity reference"
+    },
+    "featureSource": {
+      "id": "popup-quantile-forecast-24h-dev-v1",
+      "path": "docs/quantile-forecast-24h-dev-v1.json",
+      "sha256": "a0d7ad9b57d1e3002a4dc8d63d45298fe6b72234486ed16865baf7f2b098c93c",
+      "fileSha256": "42cb7f4c306524f55ebaac048028456abfe5c0ae0e056e586414f3a411e0a389",
+      "use": "Its eleven features (featuresOf and decisionAt in scripts/quantileForecast.ts, unchanged), its estimator settings and its pinned environment"
+    },
+    "dataStatus": "2024-11-22 to 2026-11-22 has been examined by protocol v1, its diagnosis (#216), the breadth filter (#217), the channel-breakout wallet (#218), the structure-entry comparison (#219) and the quantile forecast (#220). This is a seventh look. Both evaluation periods are examined development data, never untouched evidence."
+  },
+  "data": {
+    "universe": "Protocol v1's 20 members in v1's order: BTC, ETH, SOL, ZEC, XRP, NEAR, BNB, UNI, DOGE, SUI, ENA, PEPE, ADA, TRX, LINK, TAO, LTC, WLD, AVAX, AAVE (all USDT), pooled",
+    "candles": ".zerochart-market-data/spot-24h-v1/klines/<SYMBOL>-1h.json, saved by protocol v1",
+    "verification": "Before anything is computed: protocol v1's SHA-256 must equal basis.protocol.sha256; the recorded v1 result's SHA-256 must equal basis.recordedResult.sha256 and its manifest must name basis.recordedResult.runCommit; universe.json's and every candle file's SHA-256 must equal the recorded manifest's. A missing file or any mismatch stops the export and names the input. Nothing is downloaded, repaired, replaced or omitted.",
+    "validity": "Protocol v1's indexHourly, unchanged: candles closed before 2026-11-22T00:00Z, hour-aligned, v1's close-time convention, no duplicate timestamp, valid prices. An invalid or missing hour is absent; nothing is filled, interpolated, deduplicated or repaired."
+  },
+  "decisions": {
+    "grid": "Protocol v1's: every T at 00, 04, 08, 12, 16 and 20 UTC from 2024-11-22T00:00:00.000Z with T + 24h <= 2026-11-22T00:00:00.000Z (decisionTimes in scripts/quantileForecast.ts): 4,375 per pair",
+    "information": "Only the 1h candles closed by T: the 200-candle window whose last candle opens at T - 1h. The open at T is never a feature.",
+    "order": "Rows are exported by T, then by v1's member order"
+  },
+  "features": {
+    "candidate": {
+      "source": "#220's featuresOf on v1's 200-candle window, unchanged",
+      "order": [
+        "ret1h",
+        "ret4h",
+        "ret24h",
+        "ret72h",
+        "atr14OverClose",
+        "logReturnStd24h",
+        "rsi14Over100",
+        "macdHistogramOverClose",
+        "closeOverSma24Minus1",
+        "high24OverCloseMinus1",
+        "closeOverLow24Minus1"
+      ],
+      "excluded": "The entry open O, coin identity, volume, calendar or time-of-day variables and any other feature. No selection or transformation."
+    },
+    "v1Cell": "Protocol v1's featuresAt cell (RSI band x MACD histogram sign) on the same window, unchanged",
+    "volatilityUnit": "v = ATR14 / close at T from v1's featuresAt. It must equal #220's atr14OverClose exactly; any difference stops the export as an implementation fault."
+  },
+  "outcome": {
+    "scenario": {
+      "id": "T3S3",
+      "targetV": 3,
+      "stopV": 3
+    },
+    "levels": "With O the open of the candle opening at T: target O x (1 + 3 v), stop O x (1 - 3 v)",
+    "resolver": "Protocol v1's resolveOutcome over the 24 consecutive valid candles opening T ... T + 23h, unchanged. It returns the category (TARGET, STOP, AMBIGUOUS, TIMEOUT), the booked exit and the deciding bar (1 to 24; 24 for TIMEOUT).",
+    "gross": "exit / O - 1 (the gross of decompose in scripts/spot24hDiagnostic.ts)",
+    "net": "Protocol v1's netReturn(O, exit, category), unchanged: 0.10% fee per fill, 0.05% slippage on the entry and on every exit except a TARGET",
+    "classes": {
+      "order": ["TARGET", "STOP", "TIMEOUT"],
+      "mapping": "TARGET -> TARGET; STOP -> STOP; AMBIGUOUS -> STOP; TIMEOUT -> TIMEOUT",
+      "ambiguous": "AMBIGUOUS keeps its own category in the exported outcome column and is counted separately everywhere outcomes are counted; only its classifier class is STOP"
+    },
+    "notObserved": "Hourly candles do not order two touches inside one bar (AMBIGUOUS is booked as a STOP at the stop), cannot show whether a resting limit at the target fills, and cannot show the stop's true fill. These are assumptions; the sensitivities below bound two of them."
+  },
+  "exclusions": {
+    "order": [
+      "FEATURE_WINDOW_UNAVAILABLE",
+      "FEATURES_NOT_FINITE",
+      "VOLATILITY_NOT_POSITIVE",
+      "LABEL_WINDOW_UNAVAILABLE",
+      "V1_FEATURES_UNAVAILABLE"
+    ],
+    "rule": "A grid decision gets the first reason that applies: #220's decisionAt reasons in its order, then V1_FEATURES_UNAVAILABLE if v1's featuresAt returns null. A decision with none is an observation. Every reason is counted per pair and in total, with v1's candle issues. An excluded decision stays in its period's coverage denominator."
+  },
+  "parity": {
+    "observations": "Every exported observation's T3S3 outcome category and net return must equal those of v1's pairObservations, run with a v1-shaped configuration (protocol v1 with scenarios = [T3S3]), for the same pair and decision. A v1 observation that is not exported must hold an exclusion reason.",
+    "splits": "v1's observations per split and purged must equal the recorded result's splits",
+    "evaluations": "v1's fitFrequencies and evaluateFit, unchanged, on v1's own T3S3 observations in v1's order (member, then T), with the v1-shaped configuration and protocol v1's own uncertainty settings, must reproduce the recorded T3S3 development evaluation and the recorded T3S3 confirmatory evaluation without its support and expectancy fields",
+    "tolerance": "Integers and nulls exactly; other numbers within 1e-12 (the diagnosis's tolerance)",
+    "failure": "Any parity difference stops the export before anything is written: INTEGRITY_FAILURE"
+  },
+  "periods": {
+    "membership": "Protocol v1's splitOf, unchanged: train (T >= 2024-11-22T00:00Z, T + 24h <= 2025-11-22T00:00Z), validation (T >= 2025-11-22T00:00Z, T + 24h <= 2026-05-22T00:00Z), test (T >= 2026-05-22T00:00Z, T + 24h <= 2026-11-22T00:00Z). A decision whose label crosses a boundary belongs to none (purged) and is used in no fit and no evaluation. Membership depends on T only.",
+    "evaluations": [
+      {
+        "id": "development",
+        "fit": ["train"],
+        "evaluate": "validation"
+      },
+      {
+        "id": "final",
+        "fit": ["train", "validation"],
+        "evaluate": "test"
+      }
+    ],
+    "names": "v1 calls the last split test. Here it is the final development period: examined data, not a test of untouched data.",
+    "rule": "Each forecaster is fitted only on its evaluation's fit splits. Both evaluations run in one invocation of each step. Nothing is changed between them or after either is read."
+  },
+  "forecasters": {
+    "fitSetRequirement": "An evaluation's fit set must hold at least one observation of each class. Otherwise that evaluation is MISSING_CLASS: U and C give no forecast for any of its observations (its coverage becomes 0).",
+    "payoffs": {
+      "gStop": "Mean of gross / v over the fit set's observations of class STOP (STOP and AMBIGUOUS together)",
+      "gTimeout": "Mean of gross / v over the fit set's TIMEOUT observations",
+      "scope": "One number each per evaluation, pooled over pairs, from the fit set only. Used by U and C alike. Not conditional on features."
+    },
+    "expectedNet": {
+      "formula": "E(x) = pT(x) x netReturn(1, 1 + 3 v, TARGET) + pS(x) x netReturn(1, 1 + gStop x v, STOP) + pTO(x) x netReturn(1, 1 + gTimeout x v, TIMEOUT), with protocol v1's netReturn and costs",
+      "meaning": "A restricted plug-in approximation: class probabilities conditional on the features, stop and timeout payoffs pooled. It equals the conditional expected net return only if those payoffs, in units of v, do not depend on the features. Never described as a complete conditional return model."
+    },
+    "U": {
+      "name": "Unconditional baseline",
+      "probabilities": "Fit-set class frequencies: count of the class / fit-set observations",
+      "expectedNet": "expectedNet.formula with those constant probabilities",
+      "decision": "ENTER if E > 0, else ABSTAIN"
+    },
+    "V1": {
+      "name": "v1's cell estimator, unchanged",
+      "fit": "Protocol v1's fitFrequencies with the v1-shaped configuration on the fit set: per RSI x MACD cell n, TARGET wins, distinct days, meanNet and p (null below protocol v1's minimumFitEvidence of 300 observations and 30 distinct days)",
+      "probabilities": "pT = fitFrequencies' p, unchanged. pS = (STOP + AMBIGUOUS count) / n and pTO = TIMEOUT count / n over the same cell's fit observations. All three exist exactly when p is not null.",
+      "insufficientSupport": "An observation whose cell has p = null has no V1 forecast and is not scored",
+      "expectedNet": "The cell's fit-set meanNet (realized mean net, conditional on the cell). Reported for calibration only.",
+      "decision": "Protocol v1's expectancy.selection: ENTER if the cell has p not null and meanNet > 0, else ABSTAIN"
+    },
+    "C": {
+      "name": "Candidate classifier",
+      "library": "scikit-learn 1.9.1",
+      "estimator": "sklearn.ensemble.HistGradientBoostingClassifier",
+      "settings": {
+        "loss": "log_loss",
+        "learning_rate": 0.05,
+        "max_iter": 100,
+        "max_leaf_nodes": 15,
+        "min_samples_leaf": 100,
+        "l2_regularization": 1.0,
+        "early_stopping": false,
+        "random_state": 17
+      },
+      "verifiedParams": {
+        "note": "get_params() of the unfitted estimator under the pinned environment with the settings above; the run checks every fitted estimator's get_params() against this list",
+        "categorical_features": "from_dtype",
+        "class_weight": null,
+        "early_stopping": false,
+        "interaction_cst": null,
+        "l2_regularization": 1.0,
+        "learning_rate": 0.05,
+        "loss": "log_loss",
+        "max_bins": 255,
+        "max_depth": null,
+        "max_features": 1.0,
+        "max_iter": 100,
+        "max_leaf_nodes": 15,
+        "min_samples_leaf": 100,
+        "monotonic_cst": null,
+        "n_iter_no_change": 10,
+        "random_state": 17,
+        "scoring": "loss",
+        "tol": 1e-7,
+        "validation_fraction": 0.1,
+        "verbose": 0,
+        "warm_start": false
+      },
+      "fit": "One estimator per evaluation, two in all, in evaluation order. X: the eleven features in features.candidate.order as float64. y: the class name. All fit-set observations of all 20 pairs pooled, no sample weights, no class weights, no coin identity.",
+      "probabilities": "predict_proba on the evaluation set, columns reordered from classes_ to outcome.classes.order. Used as produced: no recalibration, clipping or renormalization. A non-finite probability stops the run.",
+      "expectedNet": "expectedNet.formula with these probabilities",
+      "decision": "ENTER if E > 0, else ABSTAIN",
+      "randomness": "With early_stopping false there is no internal validation split, with max_features 1.0 no feature subsampling, and bin thresholds are subsampled only above 200,000 rows (no fit set here is that large). random_state is fixed anyway. Thread pools are recorded.",
+      "noTuning": "No other setting, feature, class weight, calibration or model is tried."
+    }
+  },
+  "scoring": {
+    "eligible": "Every grid decision whose label lies inside the evaluation period (splitOf equals its split)",
+    "scored": "An observation of the period for which U, V1 and C all have a forecast. Every metric below is over scored observations or a subset of them.",
+    "coverage": "scored / eligible per evaluation. Below 0.95: insufficient evidence.",
+    "selection": "ENTER decisions use forecasts only, never outcomes. An abstention contributes exactly 0."
+  },
+  "accounting": {
+    "unit": "Unit stake per scored observation; d = 1 for ENTER, 0 for ABSTAIN",
+    "perOpportunity": "Sum of d x net / scored observations",
+    "perTrade": "Sum of d x net / sum of d; undefined with no entry",
+    "entryRate": "Sum of d / scored observations",
+    "overlap": "Positions may overlap, across pairs and across decision times of one pair. No capital limit, compounding, sizing, selection order or minimum notional. No wallet is simulated.",
+    "concurrency": "For each forecaster's ENTER positions in a period: a position is open in hours T, T + 1h, ..., T + (bar - 1)h with bar its primary deciding bar. Over every hour from the period's start to its end - 1h: the maximum and the median (type 7) of open positions, zeros included. Over every grid decision time of the period: the maximum, median and mean number of ENTER pairs, and the count of decision times with at least one ENTER.",
+    "figures": "Every return figure is simulated research on historical candles with assumed costs. None is the owner's Binance balance or a realized trade."
+  },
+  "metrics": {
+    "brier": {
+      "threeClass": "Per observation sum over the three classes of (p_k - y_k)^2, y one-hot of the class; mean over scored observations, per forecaster",
+      "differences": "Per observation C minus U and C minus V1; negative favours C; mean with interval",
+      "binaryTarget": "For continuity: v1's evaluateFit, unchanged, on the period's v1 observations with the v1-shaped configuration and this study's uncertainty settings (V1's TARGET p against the fit-set base rate, its interval and v1's selected subset), and C's binary TARGET Brier (pT - [TARGET])^2 on scored observations as a point figure"
+    },
+    "probabilityCalibration": {
+      "scope": "Per forecaster, class and evaluation, on scored observations",
+      "inTheLarge": "|mean predicted p_k - observed share of class k|",
+      "deciles": "Boundaries b1 ... b9 are the type-7 quantiles (v1's quantile) at 0.1, 0.2, ..., 0.9 of the predicted p_k over the scored observations of that forecaster, class and evaluation, computed from predictions only. An observation's bin is the number of boundaries strictly below its p_k (0 to 9), so equal predictions always share a bin and a prediction equal to a boundary goes to the lower bin. Bins may be empty or unequal and are never merged.",
+      "weightedDecileError": "Sum over non-empty bins of n_bin x |mean predicted p_k - observed share of class k| / scored observations; empty bins contribute nothing and are listed with n = 0",
+      "limits": "inTheLarge <= 0.03 and weightedDecileError <= 0.05: protocol v1's pre-declared limits, reused as design choices with deciles in place of cells; not empirically established"
+    },
+    "expectedNetCalibration": {
+      "subsets": {
+        "ALL": "Every scored observation. Reported, not a gate.",
+        "ENTER": "Scored observations the forecaster entered, selected from forecasts only. The gate reads C's ENTER subset."
+      },
+      "figures": "Observations, distinct UTC days of T, mean E, mean realized net, difference = mean realized net - mean E with its interval, and the same by decile of E within the subset (deciles rule of probabilityCalibration applied to E)",
+      "labels": {
+        "NO_ENTRIES": "The subset has no observation; no mean or difference",
+        "INSUFFICIENT_SELECTED": "Fewer than 300 observations or fewer than 30 distinct days; figures descriptive, no tolerance label",
+        "WITHIN_TOLERANCE": "Otherwise, |difference| <= tolerance",
+        "OVERPREDICTED": "Otherwise, difference < -tolerance",
+        "UNDERPREDICTED": "Otherwise, difference > +tolerance"
+      },
+      "tolerance": 0.001,
+      "toleranceMeaning": "0.10 percentage points of return: a proposed design value, a third of v1's ~0.30% round-trip cost; not empirical",
+      "labelBasis": "The point difference; its interval is reported beside it",
+      "scope": "Computed for U, V1 (E = cell meanNet) and C; only C's ENTER label enters the gate"
+    },
+    "economic": {
+      "perForecaster": "Entries, entry rate, distinct days and calendar months with an entry, per-opportunity mean with interval, per-trade mean with interval, ENTER outcome counts by category (AMBIGUOUS separate)",
+      "paired": "Per observation d_C x net minus d_U x net, and minus d_V1 x net: mean with interval",
+      "months": "Per UTC calendar month of T: scored observations, entries and per-opportunity mean per forecaster",
+      "leaveOneMonthOut": "For each calendar month holding scored observations of the period: C's per-opportunity mean over the period's other scored observations; the minimum is reported with its month. A removal that leaves no scored observation gives an undefined mean, which fails."
+    },
+    "sensitivities": {
+      "targetOvershoot": "Execution assumption. resolveOutcome is called on the same 24 bars with the detection level O x (1 + 3 v) x 1.0005 (v1's slippage figure used as an arbitrary overshoot) and the same stop; a TARGET is then booked at O x (1 + 3 v), every other outcome as resolved; net by netReturn. Per forecaster: per-opportunity and per-trade mean and outcome counts, with the primary forecasts, fits, payoffs and ENTER decisions held fixed. Passing it does not show that a resting limit would fill.",
+      "ordering": "Optimistic bound. Each entered AMBIGUOUS trade is booked as a TARGET at O x (1 + 3 v) (netReturn with category TARGET); every other outcome as primary. Per forecaster: per-opportunity mean, with decisions held fixed.",
+      "heldFixed": "No sensitivity refits, re-estimates a payoff, reselects an entry or alters the primary outcome record"
+    },
+    "groups": "Each evaluation; within it each forecaster, each class, each subset, each calendar month and, for counts and point figures only, each of the 20 pairs"
+  },
+  "uncertainty": {
+    "method": "Protocol v1's dayOrders, unchanged, with a configuration that differs from protocol v1 only in replicates and seed: moving block bootstrap over whole UTC decision days (every pair and decision hour of a day together), blocks of 7 consecutive days, never wrapped",
+    "replicates": 10000,
+    "random": {
+      "seed": "popup-spot-24h-expected-net-t3s3-dev-v1",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|a={attempt}",
+      "draws": "blockStarts in scripts/swingStructureEvaluation.ts (SHA-256 counter with rejection), through dayOrders"
+    },
+    "grids": "The grid label is the evaluated v1 split's name (validation, test). Positions are v1's splitDays: every UTC day from the period's start to its end - 24h, days without a scored observation included",
+    "pairing": "One set of day orders per evaluation serves every quantity of that evaluation, so all differences and subsets are paired",
+    "statistic": "v1's ratioInterval: per replicate, the sum of the quantity over the resampled days divided by the sum of its denominator (observations of the subset). A replicate with a zero denominator is undefined, excluded and counted; with no defined replicate the interval is null.",
+    "levels": [0.025, 0.975],
+    "quantile": "Type 7 (v1's quantile)",
+    "heldFixed": "Fits, payoffs, forecasts and decisions are held fixed: intervals reflect evaluation-day variation only, not refitting",
+    "limits": "Seven-day blocks cover label overlap and same-day co-movement, not regimes longer than a week; v1's diagnosis found calendar months explain more outcome variance than cells or pairs, hence the month floor and leave-one-month-out. The evidence is roughly days, not rows, and the history was examined six times before."
+  },
+  "gate": {
+    "insufficientEvidence": [
+      {
+        "id": "coverage",
+        "per": "evaluation",
+        "holds": "coverage >= 0.95"
+      },
+      {
+        "id": "enterSubset",
+        "per": "evaluation",
+        "holds": "C's ENTER expected-net calibration label is not NO_ENTRIES or INSUFFICIENT_SELECTED"
+      },
+      {
+        "id": "entryFloor",
+        "per": "both evaluations together",
+        "holds": "C entered at least 300 scored observations, on at least 30 distinct UTC days, in at least 3 distinct calendar months"
+      }
+    ],
+    "conditions": [
+      {
+        "id": "brierVsU",
+        "per": "evaluation",
+        "holds": "C's three-class Brier minus U's: point < 0 and interval upper bound < 0"
+      },
+      {
+        "id": "brierVsV1",
+        "per": "evaluation",
+        "holds": "C's three-class Brier minus V1's: point < 0 and interval upper bound < 0"
+      },
+      {
+        "id": "probabilityCalibration",
+        "per": "evaluation and class",
+        "holds": "For C: inTheLarge <= 0.03 and weightedDecileError <= 0.05"
+      },
+      {
+        "id": "expectedNetCalibration",
+        "per": "evaluation",
+        "holds": "C's ENTER label is WITHIN_TOLERANCE or UNDERPREDICTED"
+      },
+      {
+        "id": "perOpportunity",
+        "per": "evaluation",
+        "holds": "C's per-opportunity mean net > 0 (its 95% lower bound reported, not gated)"
+      },
+      {
+        "id": "perTrade",
+        "per": "evaluation",
+        "holds": "C's mean net per trade > 0"
+      },
+      {
+        "id": "leaveOneMonthOut",
+        "per": "evaluation",
+        "holds": "C's per-opportunity mean > 0 with each calendar month left out in turn"
+      },
+      {
+        "id": "targetOvershoot",
+        "per": "evaluation",
+        "holds": "C's per-opportunity mean under the target-overshoot sensitivity > 0"
+      }
+    ],
+    "comparisons": "Strict where the contract says below or above; a null or undefined figure fails its condition",
+    "labels": {
+      "ORDERING_SENSITIVE": "In an evaluation, C's conservative per-opportunity mean <= 0 and its ordering-optimistic per-opportunity mean > 0: neither a pass nor a clean negative; finer candles would be needed",
+      "FILL_SENSITIVE": "targetOvershoot fails in at least one evaluation while every other condition and every insufficientEvidence check holds"
+    },
+    "allDevelopment": "Every gate is a development gate on examined data, not untouched evidence"
+  },
+  "verdict": {
+    "order": [
+      {
+        "verdict": "INTEGRITY_FAILURE",
+        "when": "An input hash, the protocol hash, v1 parity, the dataset or predictions identity, or the environment differs. The step that finds it stops, writes nothing and names the cause; no figure is reported."
+      },
+      {
+        "verdict": "INSUFFICIENT_EVIDENCE",
+        "when": "Otherwise, any gate.insufficientEvidence check fails"
+      },
+      {
+        "verdict": "GATE_PASSED",
+        "when": "Otherwise, every gate.conditions entry holds in both evaluations"
+      },
+      {
+        "verdict": "STOP",
+        "when": "Otherwise; each failing condition is named with its evaluation, and ORDERING_SENSITIVE or FILL_SENSITIVE is named when it applies (both are STOP)"
+      }
+    ],
+    "reporting": "Every condition and label is evaluated and reported whatever the verdict",
+    "after": "STOP and INSUFFICIENT_EVIDENCE end the approach: no tuning, feature, setting, scenario, payoff or plug-in change, no second model, no new scenario and no automatic follow-up. GATE_PASSED is development evidence only and permits only writing a separate prospective proposal for review. None authorizes collection, a prospective test, an alert or an order."
+  },
+  "verification": {
+    "synthetic": "Tests on synthetic data only: causal features (future candles cannot change features), exact labels, deciding bars and class mapping; chronological fitting and boundary purging (outcomes outside the fit set cannot change a fit); training-only class frequencies and payoffs; v1 parity; plug-in arithmetic; abstention as 0 and per-opportunity accounting; zero entries, missing classes and insufficient cell support; calibration bins, ties and sparse bins; bootstrap pairing; every verdict branch; sensitivities with decisions held fixed; write-once identities. A learnable integration example and a null control for the classifier; neither is financial evidence. Mutations of important lines must make a test fail.",
+    "checks": "Python unit tests, the repository's typecheck, lint, tests and build"
+  },
+  "environment": {
+    "requirements": "scripts/quantile-forecast-requirements.txt, unchanged (#220's pins: scikit-learn 1.9.1, numpy 2.5.5, scipy 1.18.1, joblib 1.6.0, threadpoolctl 3.8.0, narwhals 2.29.0, cloudpickle 3.1.3), file SHA-256 b49283929f342a7dc486886a5ede3bdf97927e66911896555e7370865843e719. The fit refuses an installed version that differs from its pin (check_environment of scripts/quantile_forecast.py).",
+    "python": "3.12",
+    "recorded": "Python version, platform, every pinned package's installed version, thread pools, each estimator's get_params(), classes_ and n_iter_"
+  },
+  "pipeline": {
+    "export": "npm run evaluate -- expected-net-export: verifies the inputs and v1 parity and writes the joined observations (no fit, no forecast, no metric)",
+    "fit": ".venv/bin/python scripts/expected_net_classifier.py: verifies the environment, code identity and dataset, fits C for both evaluations and writes its probabilities (no metric)",
+    "evaluate": "npm run evaluate -- expected-net-evaluate: verifies the dataset and the probabilities, fits U and V1, computes every metric, interval, gate and the verdict, and writes the result",
+    "identity": "Each step refuses to run while a tracked file differs from HEAD. The fit and the evaluation refuse a dataset or probabilities written at another commit or under another specification file hash."
+  },
+  "output": {
+    "dataset": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-dataset-<specification sha256, 12 hex>-<commit, 12 hex>.json: manifest, per-pair coverage and exclusions, columns and one row per observation: symbol, T, split (null when purged), the eleven features, v1 cell, v, outcome (v1 category, AMBIGUOUS kept), class, deciding bar, gross, net, then the sensitivity columns overshootOutcome, overshootBar, overshootGross, overshootNet and orderingNet",
+    "predictions": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-predictions-<specification sha256, 12 hex>-<commit, 12 hex>.json: manifest, environment, and per evaluation its status, fit summary and one row per evaluated observation (dataset row index, pT, pS, pTO)",
+    "results": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-<specification sha256, 12 hex>.json",
+    "identity": "The specification's SHA-256 (stableSerialize, as protocol v1) and file SHA-256, the code commit and each study file's git blob, the recorded v1 result's, universe.json's and every candle file's SHA-256, the dataset's, the predictions' and the requirements file's SHA-256, the classifier configuration and the environment",
+    "writeOnce": "Each file is written once; a rerun reports UNCHANGED for identical bytes or CONFLICT and never overwrites",
+    "preserved": "Protocol v1, its result, every earlier study's specification, code and result, and the saved market data are read, never written",
+    "report": "Aggregates only. Every return figure is labelled simulated research, never the owner's Binance balance."
+  },
+  "notExecutionReady": "Research only. No UI, order, alert, account read, experiment record, migration, deployment, secret, schedule, download or prospective collection."
+}
