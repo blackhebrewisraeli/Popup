@@ -94,6 +94,7 @@ import { runSwingStructureEvaluation } from './swingStructureEvaluationRun';
 import { collectHistory, collectUniverse, runEvaluation } from './spot24hRun';
 import { runDiagnostic } from './spot24hDiagnosticRun';
 import { runBreadthFilter } from './spot24hBreadthRun';
+import { runChannelBreakout } from './spot24hBreakoutRun';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -133,7 +134,8 @@ const USAGE = `Usage:
   npm run evaluate -- spot-24h-collect             (protocol v1 public 1h history; after the cutoff)
   npm run evaluate -- spot-24h-evaluate            (protocol v1, offline; writes one git-ignored result)
   npm run evaluate -- spot-24h-diagnose            (diagnosis of v1's recorded run, offline; never rewrites it)
-  npm run evaluate -- spot-24h-breadth             (one fixed breadth filter on v1's history, offline; development only)`;
+  npm run evaluate -- spot-24h-breadth             (one fixed breadth filter on v1's history, offline; development only)
+  npm run evaluate -- spot-24h-breakout            (one fixed channel-breakout wallet on v1's candles, offline; development only)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -675,6 +677,17 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runBreadthFilter();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/spot-24h-channel-breakout.json: one fixed breakout design on v1's candles, writes one file.
+  'spot-24h-breakout': async (value, args) => {
+    assertOptions(
+      'spot-24h-breakout',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runChannelBreakout();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
