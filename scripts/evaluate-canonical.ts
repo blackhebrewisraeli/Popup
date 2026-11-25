@@ -97,6 +97,7 @@ import { runBreadthFilter } from './spot24hBreadthRun';
 import { runChannelBreakout } from './spot24hBreakoutRun';
 import { runStructureEntry } from './structureEntryRun';
 import { runQuantileForecastExport } from './quantileForecastRun';
+import { runExpectedNetDecomposition } from './expectedNetDecomposition';
 import { runExpectedNetEvaluate, runExpectedNetExport } from './expectedNetRun';
 
 const STORE_DIR = '.zerochart-evaluations';
@@ -142,7 +143,8 @@ const USAGE = `Usage:
   npm run evaluate -- structure-entry-1h-dev-v1    (immediate vs waiting structure entry on v1's candles, offline; development only)
   npm run evaluate -- quantile-forecast-export     (24h quantile forecast dataset from v1's candles, offline; then scripts/quantile_forecast.py)
   npm run evaluate -- expected-net-export          (stage D joined observations from v1's candles, offline; then scripts/expected_net_classifier.py)
-  npm run evaluate -- expected-net-evaluate        (stage D comparison, gates and verdict from the dataset and the classifier's probabilities, offline)`;
+  npm run evaluate -- expected-net-evaluate        (stage D comparison, gates and verdict from the dataset and the classifier's probabilities, offline)
+  npm run evaluate -- expected-net-decomposition   (stage D's expected-net error split into probability and payoff components from its recorded files, offline)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -738,6 +740,17 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runExpectedNetEvaluate();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/spot-24h-expected-net-error-decomposition-dev-v1.json: reads stage D's recorded files only.
+  'expected-net-decomposition': async (value, args) => {
+    assertOptions(
+      'expected-net-decomposition',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runExpectedNetDecomposition();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
