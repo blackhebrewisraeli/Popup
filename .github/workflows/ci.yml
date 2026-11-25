@@ -61,7 +61,8 @@ jobs:
       # Pine-parity and quant fixtures. Rerunning them proves the fixtures are still
       # theirs, and their coverage feeds SonarQube Cloud. After Test, which clears coverage/.
       # The quantile forecast study's synthetic tests run against its pinned, hashed
-      # requirements (docs/quantile-forecast-24h-dev-v1.json); they read no market data.
+      # requirements (docs/quantile-forecast-24h-dev-v1.json), and so do stage D's classifier
+      # tests (docs/spot-24h-expected-net-t3s3-dev-v1.json); they read no market data.
       # Wheels only, like npm's --ignore-scripts above: no package build script runs.
       - name: Reproduce Python fixtures and test the Python study
         run: |
@@ -70,6 +71,7 @@ jobs:
           python -m coverage run --branch -p scripts/generate-quant-reference-fixtures.py
           python -m coverage run --branch -p scripts/generate-pine-parity-fixtures.py
           python -m coverage run --branch -p -m unittest discover -s scripts -p 'test_quantile_forecast.py'
+          python -m coverage run --branch -p -m unittest discover -s scripts -p 'test_expected_net_classifier.py'
           python -m coverage combine
           python -m coverage xml -o coverage/python.xml
           git diff --exit-code -- docs/pine-parity-fixtures.json docs/quant-reference-fixtures.json

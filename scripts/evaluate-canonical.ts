@@ -97,6 +97,7 @@ import { runBreadthFilter } from './spot24hBreadthRun';
 import { runChannelBreakout } from './spot24hBreakoutRun';
 import { runStructureEntry } from './structureEntryRun';
 import { runQuantileForecastExport } from './quantileForecastRun';
+import { runExpectedNetEvaluate, runExpectedNetExport } from './expectedNetRun';
 
 const STORE_DIR = '.zerochart-evaluations';
 const USAGE = `Usage:
@@ -139,7 +140,9 @@ const USAGE = `Usage:
   npm run evaluate -- spot-24h-breadth             (one fixed breadth filter on v1's history, offline; development only)
   npm run evaluate -- spot-24h-breakout            (one fixed channel-breakout wallet on v1's candles, offline; development only)
   npm run evaluate -- structure-entry-1h-dev-v1    (immediate vs waiting structure entry on v1's candles, offline; development only)
-  npm run evaluate -- quantile-forecast-export     (24h quantile forecast dataset from v1's candles, offline; then scripts/quantile_forecast.py)`;
+  npm run evaluate -- quantile-forecast-export     (24h quantile forecast dataset from v1's candles, offline; then scripts/quantile_forecast.py)
+  npm run evaluate -- expected-net-export          (stage D joined observations from v1's candles, offline; then scripts/expected_net_classifier.py)
+  npm run evaluate -- expected-net-evaluate        (stage D comparison, gates and verdict from the dataset and the classifier's probabilities, offline)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -714,6 +717,27 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runQuantileForecastExport();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/spot-24h-expected-net-t3s3-dev-v1.json: stage D export, then (after the Python fit) evaluate.
+  'expected-net-export': async (value, args) => {
+    assertOptions(
+      'expected-net-export',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runExpectedNetExport();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  'expected-net-evaluate': async (value, args) => {
+    assertOptions(
+      'expected-net-evaluate',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runExpectedNetEvaluate();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
