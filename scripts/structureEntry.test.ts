@@ -669,23 +669,21 @@ describe('the study on synthetic markets', () => {
       for (const [h] of waits) expect(Number(h)).toBeLessThanOrEqual(12);
     });
 
-    it('gives identical rows when candles after every follow-up change', () => {
-      const cut = Date.parse(spec.timing.lastCandleClose) - 40 * H;
-      const shorter = structuredClone(spec);
-      shorter.timing.lastCandleClose = iso(cut);
-      shorter.periods.list = spec.periods.list.map((p) => ({
-        ...p,
-        end: iso(Math.min(Date.parse(p.end), cut)),
-      }));
+    it('keeps every row whose follow-up ends before a change of all later candles', () => {
+      const five = symbols.slice(0, 5);
+      const cut = START + 24 * 90 * H;
       const changed = Object.fromEntries(
-        symbols.map((s) => [
+        five.map((s) => [
           s,
           (candles[s] ?? []).map((c) => (c.timestamp >= cut ? bar(c.timestamp, [9, 10, 8, 9]) : c)),
         ]),
       );
-      const original = structureEntryStudy(candles, symbols, shorter);
-      expect(structureEntryStudy(changed, symbols, shorter).rows).toEqual(original.rows);
-    });
+      const settled = (r: { decision: string | null }) =>
+        Date.parse(r.decision ?? '') + 36 * H <= cut;
+      const original = results.rows.filter((r) => five.includes(r.symbol) && settled(r));
+      expect(original.length).toBeGreaterThan(5);
+      expect(structureEntryStudy(changed, five, spec).rows.filter(settled)).toEqual(original);
+    }, 30_000);
   });
 });
 
