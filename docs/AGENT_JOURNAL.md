@@ -21,6 +21,12 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-26 · Canonical daily Long, 24-hour economic comparison: feasibility review, verdict `NOT_WORTH_RUNNING` · Draft docs-only PR, branch `docs/canonical-long-24h-feasibility`, from `712b956`. The proposal stays PROPOSED / NOT FROZEN / NOT RUN; #222's `STOP` and the activityShock24h `INCONCLUSIVE` stand.**
+  - **Review:** [feasibility review](CANONICAL_LONG_24H_COMPARISON_FEASIBILITY.md) of an owner-supplied proposal (SHA-256 `c9a4a536…`). It would test the standing daily Long setup on v1's 20 pairs: 24-hour net returns against cash and against a same-date, exposure-matched uniform allocation.
+  - **Why stop:** #152 already replayed the same rule on 18 of these pairs over dates covering both periods: 3 Long pair-days of 18,322. #153 proves no Long above 4.25% ATR/close (median 6.4%). The floor of 300 selections per period is practically unreachable, so the expected verdict, `INSUFFICIENT_EVIDENCE`, repeats #152. With equal stakes, the cost formula reduces A − B to 0.997003 × its gross value.
+  - **Checked:** source code; v1's universe and 20 hourly files read-only (hashes equal v1's manifest; every hour present over the needed span). No score, Long count, return or price was computed. No corrected copy, frozen specification or implementation.
+  - **Next:** none. If the owner overrides, the review lists the blocking corrections.
+
 - **2026-11-26 · activityShock24h screen: run once, verdict `INCONCLUSIVE` · Draft PR, branch `research/activity-shock-increment-run`, from `ab7adb7` (#226 merged). Offline development research on examined history; the historical screen ends. #222's `STOP` stands.**
   - **Terms:** Binance Support case 174972727 (2026-11-26) clarified in writing three points. Historical `/api/v3/klines` retrieval within rate limits is permitted. Market data is public for non-commercial use. There are no issues without redistribution and with non-commercial use. This is support clarification for the described research only, not a commercial licence or legal assurance. The owner keeps the transcript privately; it is not committed. The owner authorized the bounded retrieval and study.
   - **Method:** [specification](spot-24h-activity-shock-increment-dev-v1.json) revision 3 (terms `RESOLVED`, design unchanged) committed alone in `6d40a2a`. The implementation followed in `344e079` with synthetic tests only (55 TS, 15 Python; a learnable example and a null control; 13 mutations killed). Everything ran at `344e079`. The retrieval was 380 of 380 requests, all 200, no retries, peak weight 196. All 365,280 hours were valid, with exact OHLC and presence parity with v1. v1 and the probe files were unchanged. #222's rows were reproduced exactly, and arm A reproduced #222's C probabilities exactly. Coverage was 100%. Reruns printed `UNCHANGED`. Result `.zerochart-reports/spot-24h-activity-shock-increment-dev-v1-c7fa2a8f7056.json` (`f912ed14…`); [report](SPOT_24H_ACTIVITY_SHOCK_INCREMENT_DEV_V1.md).
@@ -547,6 +553,11 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
   examples or sanitized aggregate evidence.
 
 ## Recent entries
+
+- **2026-11-26 · Canonical Long 24-hour comparison reviewed: `NOT_WORTH_RUNNING` · Draft PR.**
+  [Review](CANONICAL_LONG_24H_COMPARISON_FEASIBILITY.md): the published crypto study (#152) and
+  model diagnostic (#153) already show the Long setup is too rare on these pairs to meet the
+  proposal's own floor. Nothing frozen or run.
 
 - **2026-11-26 · Workspace maintenance guidance · PR open.** [CONTRIBUTING.md](../CONTRIBUTING.md)
   now points to the CI checks and documents scoped formatting and local evidence preservation.
