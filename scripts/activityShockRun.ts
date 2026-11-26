@@ -505,14 +505,13 @@ interface PredictionsFile {
   reproductionOfC: unknown;
 }
 
-/** pipeline.identity and estimator.verifiedParams, before any figure. */
-export function verifySteps(
+/** Both steps were written at this commit, under this specification, the second on this dataset. */
+function verifyManifests(
   dataset: DatasetFile,
   predictions: PredictionsFile,
   commit: string,
   spec: Specification,
   datasetSha256: string,
-  verifiedParams: Record<string, unknown>,
 ) {
   for (const [kind, m] of [
     ['dataset', dataset.manifest],
@@ -526,8 +525,10 @@ export function verifySteps(
   if (predictions.manifest.dataset.sha256 !== datasetSha256) {
     throw integrityFailure('the probabilities were fitted on another dataset');
   }
-  if (differences(dataset.columns, [...COLUMNS]).length)
-    throw integrityFailure('dataset columns differ');
+}
+
+/** Every evaluation has both arms, and every fitted estimator has the verified parameters. */
+function verifyArms(predictions: PredictionsFile, verifiedParams: Record<string, unknown>) {
   for (const e of EVALUATIONS) {
     for (const arm of ['A', 'B'] as const) {
       const set = predictions.evaluations[e.id]?.[arm];
@@ -537,6 +538,22 @@ export function verifySteps(
       }
     }
   }
+}
+
+/** pipeline.identity and estimator.verifiedParams, before any figure. */
+export function verifySteps(
+  dataset: DatasetFile,
+  predictions: PredictionsFile,
+  commit: string,
+  spec: Specification,
+  datasetSha256: string,
+  verifiedParams: Record<string, unknown>,
+) {
+  verifyManifests(dataset, predictions, commit, spec, datasetSha256);
+  if (differences(dataset.columns, [...COLUMNS]).length) {
+    throw integrityFailure('dataset columns differ');
+  }
+  verifyArms(predictions, verifiedParams);
 }
 
 export async function runActivityEvaluate(

@@ -165,6 +165,44 @@ type Step = { ok: true } | { retryAfterMs: number } | { stop: string };
 const iso = (ms: number) => new Date(ms).toISOString();
 const sha256 = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 
+/** retrieval.stopRules for a non-200 status; null lets a 200 through. */
+function statusStep(
+  status: number,
+  attemptNo: 1 | 2,
+  retryAfter: string | null,
+  id: string,
+): Step | null {
+  if (status === 200) return null;
+  // 418, 403 and 451 stop, as does every other status except a first 429.
+  if (status !== 429) return { stop: `HTTP ${status} on ${id}` };
+  if (attemptNo === 2) return { stop: `second 429 on ${id}` };
+  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+  if (!(seconds >= 0 && seconds <= RULES.maxRetryAfterS)) {
+    return { stop: `429 with Retry-After ${retryAfter} on ${id}` };
+  }
+  return { retryAfterMs: seconds * 1000 };
+}
+
+/** A saved 200 body must be a JSON array, and the used weight must stay within the stop rule. */
+function bodyStep(bytes: Buffer, usedWeight1m: number | null, id: string): Step {
+  let body: unknown;
+  try {
+    body = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return { stop: `non-JSON body on ${id}` };
+  }
+  if (!Array.isArray(body)) return { stop: `body is not a JSON array on ${id}` };
+  if (usedWeight1m !== null && usedWeight1m > RULES.maxUsedWeight) {
+    return { stop: `X-MBX-USED-WEIGHT-1M ${usedWeight1m} above ${RULES.maxUsedWeight}` };
+  }
+  return { ok: true };
+}
+
+function usedWeightOf(headers: Headers): number | null {
+  const weight = Number(headers.get('x-mbx-used-weight-1m'));
+  return headers.has('x-mbx-used-weight-1m') && Number.isFinite(weight) ? weight : null;
+}
+
 /** One attempt of one request, logged, judged by retrieval.stopRules. */
 async function attempt(
   request: PlannedRequest,
@@ -175,7 +213,12 @@ async function attempt(
   const id = `${request.symbol} k=${request.k}`;
   const entry = { symbol: request.symbol, k: request.k, url: request.url, attempt: attemptNo };
   const sentAt = iso(io.now());
-  const failed = (error: unknown): Step => {
+  let response: Response;
+  let bytes: Buffer;
+  try {
+    response = await io.fetchImpl(request.url);
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (error) {
     log.push({
       ...entry,
       sentAt,
@@ -188,18 +231,8 @@ async function attempt(
       error: String(error),
     });
     return { stop: `network error or timeout on ${id}: ${String(error)}` };
-  };
-  let response: Response;
-  let bytes: Buffer;
-  try {
-    response = await io.fetchImpl(request.url);
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch (error) {
-    return failed(error);
   }
-  const weight = Number(response.headers.get('x-mbx-used-weight-1m'));
-  const usedWeight1m =
-    response.headers.has('x-mbx-used-weight-1m') && Number.isFinite(weight) ? weight : null;
+  const usedWeight1m = usedWeightOf(response.headers);
   const retryAfter = response.headers.get('retry-after');
   log.push({
     ...entry,
@@ -211,30 +244,10 @@ async function attempt(
     bytes: bytes.length,
     sha256: sha256(bytes),
   });
-  const { status } = response;
-  if (status === 429) {
-    if (attemptNo === 2) return { stop: `second 429 on ${id}` };
-    const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
-    if (!(seconds >= 0 && seconds <= RULES.maxRetryAfterS)) {
-      return { stop: `429 with Retry-After ${retryAfter} on ${id}` };
-    }
-    return { retryAfterMs: seconds * 1000 };
-  }
-  if (status === 418 || status === 403 || status === 451)
-    return { stop: `HTTP ${status} on ${id}` };
-  if (status !== 200) return { stop: `HTTP ${status} on ${id}` };
+  const step = statusStep(response.status, attemptNo, retryAfter, id);
+  if (step) return step;
   await io.save(rawName(request), bytes);
-  let body: unknown;
-  try {
-    body = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    return { stop: `non-JSON body on ${id}` };
-  }
-  if (!Array.isArray(body)) return { stop: `body is not a JSON array on ${id}` };
-  if (usedWeight1m !== null && usedWeight1m > RULES.maxUsedWeight) {
-    return { stop: `X-MBX-USED-WEIGHT-1M ${usedWeight1m} above ${RULES.maxUsedWeight}` };
-  }
-  return { ok: true };
+  return bodyStep(bytes, usedWeight1m, id);
 }
 
 /** Requests one at a time, in order, at least pauseMs apart. Returns the log and any stop. */
@@ -278,6 +291,67 @@ const missingHour = (openTime: number, issue: string): HourRecord => ({
   volume: null,
 });
 
+type FiledRow = { row: unknown[]; sentAt: number; flags: string[] };
+type Filed = Map<number, FiledRow[]>;
+
+/** A row's open time if it is an expected hour, else a response issue and null. */
+function expectedHourOf(row: unknown, where: string, issues: string[]): number | null {
+  const openTime: unknown = Array.isArray(row) ? row[0] : undefined;
+  if (!Number.isSafeInteger(openTime)) {
+    issues.push(`${where}: open time is not an integer`);
+    return null;
+  }
+  const t = openTime as number;
+  if (t % HOUR_MS !== 0 || t < RULES.firstOpen || t >= RULES.endExclusive) {
+    issues.push(`${where}: open time ${t} is not an expected hour`);
+    return null;
+  }
+  return t;
+}
+
+/** One response's rows filed under their open time, flagged when out of range or order. */
+function fileResponse({ request, body, sentAt }: ResponseInput, filed: Filed, issues: string[]) {
+  const id = `k=${request.k}`;
+  if (!Array.isArray(body)) {
+    issues.push(`${id}: response is not an array`);
+    return;
+  }
+  if (body.length > RULES.limit) issues.push(`${id}: more than ${RULES.limit} rows`);
+  if (body.length !== request.expectedRows) {
+    issues.push(`${id}: ${body.length} rows, expected ${request.expectedRows}`);
+  }
+  let previous = Number.NEGATIVE_INFINITY;
+  for (const [i, row] of body.entries()) {
+    const t = expectedHourOf(row, `${id} row ${i}`, issues);
+    if (t === null) continue;
+    const flags: string[] = [];
+    if (t < request.startTime || t > request.endTime) {
+      flags.push("open time outside its request's range");
+    }
+    if (t <= previous) flags.push('open time not increasing');
+    previous = t;
+    const list = filed.get(t) ?? [];
+    list.push({ row: row as unknown[], sentAt, flags });
+    filed.set(t, list);
+  }
+}
+
+/** One expected hour from the rows filed under it, checked with #224's checkRow. */
+function classifyHour(t: number, entries: FiledRow[] | undefined): HourRecord {
+  if (!entries) return missingHour(t, 'no row for this hour');
+  const first = entries[0]!;
+  const check = checkRow(first.row, t, first.sentAt);
+  const extra = [...first.flags, ...(entries.length > 1 ? ['duplicate open time'] : [])];
+  const status: HourStatus = extra.length > 0 ? 'INVALID' : check.status;
+  const usable = status === 'VALID' || status === 'VALID_ZERO';
+  return {
+    ...check,
+    status,
+    issues: [...check.issues, ...extra],
+    volume: usable ? Number.parseFloat(first.row[5] as string) : null,
+  };
+}
+
 /**
  * validation.checks over one pair's responses: every expected hour from firstOpen to
  * endExclusive classified once, with #224's checkRow per row. Nothing is repaired: a duplicate,
@@ -286,58 +360,11 @@ const missingHour = (openTime: number, issue: string): HourRecord => ({
  */
 export function validatePair(responses: readonly ResponseInput[]) {
   const responseIssues: string[] = [];
-  const found = new Map<number, { row: unknown[]; sentAt: number; flags: string[] }[]>();
-  for (const { request, body, sentAt } of responses) {
-    const id = `k=${request.k}`;
-    if (!Array.isArray(body)) {
-      responseIssues.push(`${id}: response is not an array`);
-      continue;
-    }
-    if (body.length > RULES.limit) responseIssues.push(`${id}: more than ${RULES.limit} rows`);
-    if (body.length !== request.expectedRows) {
-      responseIssues.push(`${id}: ${body.length} rows, expected ${request.expectedRows}`);
-    }
-    let previous = Number.NEGATIVE_INFINITY;
-    for (const [i, row] of body.entries()) {
-      const openTime: unknown = Array.isArray(row) ? row[0] : undefined;
-      if (!Number.isSafeInteger(openTime)) {
-        responseIssues.push(`${id} row ${i}: open time is not an integer`);
-        continue;
-      }
-      const t = openTime as number;
-      if (t % HOUR_MS !== 0 || t < RULES.firstOpen || t >= RULES.endExclusive) {
-        responseIssues.push(`${id} row ${i}: open time ${t} is not an expected hour`);
-        continue;
-      }
-      const flags: string[] = [];
-      if (t < request.startTime || t > request.endTime) {
-        flags.push("open time outside its request's range");
-      }
-      if (t <= previous) flags.push('open time not increasing');
-      previous = t;
-      const list = found.get(t) ?? [];
-      list.push({ row: row as unknown[], sentAt, flags });
-      found.set(t, list);
-    }
-  }
+  const filed: Filed = new Map();
+  for (const response of responses) fileResponse(response, filed, responseIssues);
   const hours: HourRecord[] = [];
   for (let t = RULES.firstOpen; t < RULES.endExclusive; t += HOUR_MS) {
-    const entries = found.get(t);
-    if (!entries) {
-      hours.push(missingHour(t, 'no row for this hour'));
-      continue;
-    }
-    const first = entries[0]!;
-    const check = checkRow(first.row, t, first.sentAt);
-    const extra = [...first.flags, ...(entries.length > 1 ? ['duplicate open time'] : [])];
-    const status: HourStatus = extra.length > 0 ? 'INVALID' : check.status;
-    const usable = status === 'VALID' || status === 'VALID_ZERO';
-    hours.push({
-      ...check,
-      status,
-      issues: [...check.issues, ...extra],
-      volume: usable ? Number.parseFloat(first.row[5] as string) : null,
-    });
+    hours.push(classifyHour(t, filed.get(t)));
   }
   return { hours, responseIssues };
 }
@@ -411,7 +438,7 @@ export function activityShockAt(
     return sum;
   };
   const R = Array.from({ length: M + 1 }, (_, k) => block(k));
-  if (R.some((r) => r === 0)) return { unavailable: 'ACTIVITY_BLOCK_ZERO' };
+  if (R.includes(0)) return { unavailable: 'ACTIVITY_BLOCK_ZERO' };
   const baseline = R.slice(1);
   const logs = baseline.map((r) => Math.log(r));
   const meanLog = sumOf(logs) / M;
@@ -429,6 +456,20 @@ export function activityShockAt(
 // ---------------------------------------------------------------------------------------------
 // The joined dataset
 
+/** Features, split, outcome category, class and deciding bar, exactly. */
+function sameStageDRow(a: StageDRow, b: StageDRow): boolean {
+  return (
+    a.symbol === b.symbol &&
+    a.time === b.time &&
+    a.split === b.split &&
+    a.outcome.category === b.outcome.category &&
+    a.class === b.class &&
+    a.outcome.bar === b.outcome.bar &&
+    a.features.length === b.features.length &&
+    a.features.every((f, j) => Object.is(f, b.features[j]))
+  );
+}
+
 /** observations.priceFeaturesAndLabels: recomputed #222 rows must equal the recorded rows. */
 export function stageDParity(recomputed: readonly StageDRow[], recorded: readonly StageDRow[]) {
   const differing: string[] = [];
@@ -436,18 +477,7 @@ export function stageDParity(recomputed: readonly StageDRow[], recorded: readonl
   for (let i = 0; i < n; i += 1) {
     const a = recomputed[i];
     const b = recorded[i];
-    const same =
-      a !== undefined &&
-      b !== undefined &&
-      a.symbol === b.symbol &&
-      a.time === b.time &&
-      a.split === b.split &&
-      a.outcome.category === b.outcome.category &&
-      a.class === b.class &&
-      a.outcome.bar === b.outcome.bar &&
-      a.features.length === b.features.length &&
-      a.features.every((f, j) => Object.is(f, b.features[j]));
-    if (!same) differing.push(`row ${i}`);
+    if (a === undefined || b === undefined || !sameStageDRow(a, b)) differing.push(`row ${i}`);
   }
   return {
     recomputed: recomputed.length,
@@ -571,7 +601,8 @@ export function coverageOf(rows: readonly DatasetRow[]) {
   const pairs: Record<string, ReturnType<typeof empty>> = {};
   for (const r of rows) {
     const key = r.split ?? 'purged';
-    for (const b of [pooled[key], (pairs[r.symbol] ??= empty())[key]]) {
+    pairs[r.symbol] ??= empty();
+    for (const b of [pooled[key], pairs[r.symbol]![key]]) {
       b.decisions += 1;
       if (r.exclusion === null) b.common += 1;
       else b.exclusions[r.exclusion] += 1;
@@ -854,7 +885,9 @@ export function evaluatePeriod(
     ]),
   ) as Record<Klass, Estimate>;
   const residual = sumOf(CLASSES.map((k) => classComponents[k].mean!)) - primary.mean!;
-  if (!(Math.abs(residual) <= 1e-12)) throw new Error(`Class components do not sum: ${residual}`);
+  if (!Number.isFinite(residual) || Math.abs(residual) > 1e-12) {
+    throw new Error(`Class components do not sum: ${residual}`);
+  }
   const loss = (arm: Arm) => {
     const values = items.map((i) => logLoss(i[arm], i.y));
     const bad = values.filter((x) => !Number.isFinite(x)).length;
@@ -948,7 +981,7 @@ export function conclude(
     leaveOneMonthOutInBoth: list.every(
       (p) => p.metrics?.monthly.leaveOneMonthOut.allNegative === true,
     ),
-    bWorseInEither: labels.some((l) => l === 'B_WORSE'),
+    bWorseInEither: labels.includes('B_WORSE'),
     meanNotNegativeInBoth: means.every((m) => m !== null && m >= 0),
   };
   let verdict: Verdict = 'INCONCLUSIVE';

@@ -15,6 +15,7 @@ Development research on examined data: no network, account, order or production 
 from __future__ import annotations
 
 import json
+import math
 import sys
 from collections.abc import Callable
 from importlib import metadata
@@ -127,7 +128,7 @@ def reproduction_of_c(columns: list, rows: list, spec: dict, fits: dict, recorde
         a = np.array([r[1:] for r in mine["rows"]], dtype=np.float64)
         c = np.array([r[1:] for r in theirs["rows"]], dtype=np.float64)
         worst = float(np.max(np.abs(a - c))) if a.size else 0.0
-        if not worst <= TOLERANCE:
+        if not math.isfinite(worst) or worst > TOLERANCE:
             raise IntegrityFailure(f"{eid}: arm A differs from #222's C by {worst}")
         report[eid] = {"status": "PASS", "maxAbsoluteDifference": worst, "tolerance": TOLERANCE, **counts}
     return report
