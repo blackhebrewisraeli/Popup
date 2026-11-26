@@ -12,6 +12,7 @@ const db = vi.hoisted(() => ({
   inserts: [] as { table: string; row: Record<string, unknown> }[],
   insertResult: vi.fn(),
   listResult: vi.fn(),
+  singleResult: vi.fn(),
   listed: [] as { table: string; columns: string; filters: unknown[][] }[],
 }));
 vi.mock('@/lib/supabaseClient', () => ({
@@ -29,6 +30,7 @@ vi.mock('@/lib/supabaseClient', () => ({
           eq: (...args: unknown[]) => (read.filters.push(['eq', ...args]), chain),
           order: (...args: unknown[]) => (read.filters.push(['order', ...args]), chain),
           limit: (...args: unknown[]) => (read.filters.push(['limit', ...args]), db.listResult()),
+          maybeSingle: () => db.singleResult(),
         };
         return chain;
       },
@@ -108,6 +110,7 @@ afterEach(() => {
   db.rpc.mockReset();
   db.insertResult.mockReset();
   db.listResult.mockReset();
+  db.singleResult.mockReset();
 });
 
 function candles(path: (i: number) => number, spread: number, count = 199): Candle[] {
@@ -231,6 +234,83 @@ function deferred<T>() {
   const promise = new Promise<T>((done) => (resolve = done));
   return { promise, resolve };
 }
+
+describe('recording and retrieving a decision to stay out', () => {
+  it('recovers a lost save with the same ID and shows the saved evidence in Account', async () => {
+    db.rpc.mockResolvedValue({ data: true, error: null });
+    const research = await openRecord();
+    fireEvent.click(within(research).getByText('I reviewed this pair and chose to stay out'));
+    const reason = await screen.findByLabelText('Why did you choose to stay out?');
+    const save = screen.getByRole('button', { name: 'Save no-entry decision' });
+    fireEvent.change(reason, { target: { value: '   ' } });
+    fireEvent.click(save);
+    expect(await screen.findByText('Enter a reason of 1 to 1000 characters.')).toBeVisible();
+    expect(db.inserts).toHaveLength(0);
+
+    const note = 'Spread was too wide for my plan.';
+    const recorded_at = '2026-10-28T17:03:00.000Z';
+    db.insertResult
+      .mockRejectedValueOnce(new Error('Reply lost'))
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'Duplicate ID' } });
+    fireEvent.change(reason, { target: { value: `  ${note}  ` } });
+    fireEvent.click(save);
+    const retry = await screen.findByRole('button', { name: 'Retry save' });
+    expect(reason).toHaveAttribute('readonly');
+    const [first] = db.inserts;
+    if (!first) throw new Error('The no-entry decision was not submitted.');
+    db.singleResult.mockResolvedValue({ data: { ...first.row, recorded_at }, error: null });
+    expect(first).toEqual({
+      table: 'spot_no_entry_decisions',
+      row: {
+        id: expect.any(String),
+        reason: note,
+        source_evidence: expect.objectContaining({
+          instrument: 'BINANCE:ZCTLONGUSDT',
+          facts: expect.arrayContaining([['Scan', SCAN_ID]]),
+        }),
+        source_scan_id: SCAN_ID,
+        source_snapshot_sha256: SHA,
+        symbol: 'ZCTLONGUSDT',
+      },
+    });
+    fireEvent.click(retry);
+    expect(await screen.findByText(/Saved to Account.*No-entry decisions/)).toBeVisible();
+    expect(db.inserts).toEqual([first, first]);
+    expect(db.listed[0]?.filters).toEqual([
+      ['eq', 'user_id', OWNER],
+      ['eq', 'id', first.row['id']],
+    ]);
+
+    cleanup();
+    db.listResult
+      .mockResolvedValueOnce({ data: [], error: null })
+      .mockResolvedValueOnce({ data: [{ ...first.row, recorded_at }], error: null });
+    render(wrap(<SpotExperiments userId={OWNER} />));
+    fireEvent.click(await screen.findByText('No-entry decisions'));
+    const list = await screen.findByRole('list', { name: 'Recorded no-entry decisions' });
+    fireEvent.click(within(list).getByText('ZCTLONGUSDT'));
+    expect(within(list).getByText(note)).toBeVisible();
+    expect(within(list).getByText(SCAN_ID)).toBeVisible();
+    expect(within(list).getByText(SHA)).toBeVisible();
+    expect(within(list).getByText('ZC LONG')).toBeVisible();
+    expect(within(list).getByText('2026-10-28 17:03:00 UTC')).toBeVisible();
+  });
+
+  it('requires a reproduced saved scan and the configured owner', async () => {
+    const published = await openRecord({});
+    expect(within(published).queryByText('I reviewed this pair and chose to stay out')).toBeNull();
+
+    cleanup();
+    db.rpc.mockResolvedValue({ data: false, error: null });
+    const savedScan = await openRecord();
+    fireEvent.click(within(savedScan).getByText('I reviewed this pair and chose to stay out'));
+    await waitFor(() =>
+      expect(within(savedScan).getAllByText(/Recording unavailable/)).toHaveLength(2),
+    );
+    expect(screen.queryByLabelText('Why did you choose to stay out?')).toBeNull();
+    expect(db.inserts).toHaveLength(0);
+  });
+});
 
 describe('the saved snapshot identity', () => {
   it('is required, as 64 lowercase hex digits, on every saved scan read back', () => {

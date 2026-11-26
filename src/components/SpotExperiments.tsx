@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { CloseComposer, ExperimentEntries } from '@/components/ExperimentEntries';
 import { ExperimentScanReview } from '@/components/ExperimentScanReview';
+import { SpotNoEntryHistory } from '@/components/SpotNoEntryHistory';
 import { ScenarioSnapshotFacts } from '@/components/ScenarioFacts';
 import { isDevAuthUser } from '@/lib/authStore';
 import {
@@ -546,10 +547,13 @@ export function SpotExperiments({
     );
   } else {
     body = (
-      <ExperimentList
-        experiments={query.data.experiments}
-        onRefresh={async () => (await query.refetch()).isSuccess}
-      />
+      <>
+        <ExperimentList
+          experiments={query.data.experiments}
+          onRefresh={async () => (await query.refetch()).isSuccess}
+        />
+        <SpotNoEntryHistory userId={userId} />
+      </>
     );
   }
 

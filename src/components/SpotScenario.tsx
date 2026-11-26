@@ -1,4 +1,5 @@
 import { useId, useState, type ReactNode } from 'react';
+import { RecordSpotNoEntry } from '@/components/RecordSpotNoEntry';
 import { RecordSpotExperiment } from '@/components/RecordSpotExperiment';
 import { ScenarioFigures } from '@/components/ScenarioFacts';
 import type { CanonicalScore, ModelSetups } from '@/lib/canonicalModel';
@@ -282,6 +283,14 @@ export function SpotScenario({
           )}
         </div>
       </details>
+      {saved && scanId && (
+        <RecordSpotNoEntry
+          key={saved.snapshotSha256}
+          scanId={scanId}
+          snapshotSha256={saved.snapshotSha256}
+          evidence={() => evidenceAt(Date.now())}
+        />
+      )}
       <details
         className="scan-guide-details"
         onToggle={(event) => setRecording(event.currentTarget.open)}

@@ -21,6 +21,11 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-27 · Record no-entry decisions from a saved Spot scan.** Research lets the configured owner
+  save why they stayed out of an evaluated pair. Account shows the saved reason, UTC recording time,
+  scan identity and copied evidence. The [workflow](MANUAL_SPOT_EXPERIMENTS.md#recording-a-decision-to-stay-out)
+  uses a dedicated append-only table with owner-scoped access and preserves a submission ID for retries.
+
 - **2026-11-26 · Canonical daily Long, 24-hour economic comparison: feasibility review, verdict `NOT_WORTH_RUNNING` · Draft docs-only PR, branch `docs/canonical-long-24h-feasibility`, from `712b956`. The proposal stays PROPOSED / NOT FROZEN / NOT RUN; #222's `STOP` and the activityShock24h `INCONCLUSIVE` stand.**
   - **Review:** [feasibility review](CANONICAL_LONG_24H_COMPARISON_FEASIBILITY.md) of an owner-supplied proposal (SHA-256 `c9a4a536…`). It would test the standing daily Long setup on v1's 20 pairs: 24-hour net returns against cash and against a same-date, exposure-matched uniform allocation.
   - **Why stop:** #152 already replayed the same rule on 18 of these pairs over dates covering both periods: 3 Long pair-days of 18,322. #153 proves no Long above 4.25% ATR/close (median 6.4%). The floor of 300 selections per period is practically unreachable, so the expected verdict, `INSUFFICIENT_EVIDENCE`, repeats #152. With equal stakes, the cost formula reduces A − B to 0.997003 × its gross value.

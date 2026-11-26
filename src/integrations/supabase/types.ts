@@ -447,6 +447,40 @@ export type Database = {
         };
         Relationships: [];
       };
+      spot_no_entry_decisions: {
+        Row: {
+          id: string;
+          reason: string;
+          recorded_at: string;
+          source_evidence: NonNullable<Json>;
+          source_scan_id: string;
+          source_snapshot_sha256: string;
+          symbol: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          id: string;
+          reason: string;
+          recorded_at?: string;
+          source_evidence: NonNullable<Json>;
+          source_scan_id: string;
+          source_snapshot_sha256: string;
+          symbol: string;
+          user_id?: string;
+        };
+        Update: {
+          id?: string;
+          reason?: string;
+          recorded_at?: string;
+          source_evidence?: NonNullable<Json>;
+          source_scan_id?: string;
+          source_snapshot_sha256?: string;
+          symbol?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       // Mirrors 20261020120000_create_trading_signals.sql + 20261020180000_signal_contract_v2.sql;
       // rows arrive via the tv-webhook function. `quantity` is in units, not dollars.
       trading_signal_dismissals: {
