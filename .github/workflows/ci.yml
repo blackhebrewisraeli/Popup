@@ -72,6 +72,7 @@ jobs:
           python -m coverage run --branch -p scripts/generate-pine-parity-fixtures.py
           python -m coverage run --branch -p -m unittest discover -s scripts -p 'test_quantile_forecast.py'
           python -m coverage run --branch -p -m unittest discover -s scripts -p 'test_expected_net_classifier.py'
+          python -m coverage run --branch -p -m unittest discover -s scripts -p 'test_activity_shock_classifier.py'
           python -m coverage combine
           python -m coverage xml -o coverage/python.xml
           git diff --exit-code -- docs/pine-parity-fixtures.json docs/quant-reference-fixtures.json

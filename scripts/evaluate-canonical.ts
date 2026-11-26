@@ -97,6 +97,7 @@ import { runBreadthFilter } from './spot24hBreadthRun';
 import { runChannelBreakout } from './spot24hBreakoutRun';
 import { runStructureEntry } from './structureEntryRun';
 import { runQuantileForecastExport } from './quantileForecastRun';
+import { runActivityEvaluate, runActivityExport, runActivityRetrieve } from './activityShockRun';
 import { runExpectedNetDecomposition } from './expectedNetDecomposition';
 import { runExpectedNetEvaluate, runExpectedNetExport } from './expectedNetRun';
 
@@ -144,7 +145,10 @@ const USAGE = `Usage:
   npm run evaluate -- quantile-forecast-export     (24h quantile forecast dataset from v1's candles, offline; then scripts/quantile_forecast.py)
   npm run evaluate -- expected-net-export          (stage D joined observations from v1's candles, offline; then scripts/expected_net_classifier.py)
   npm run evaluate -- expected-net-evaluate        (stage D comparison, gates and verdict from the dataset and the classifier's probabilities, offline)
-  npm run evaluate -- expected-net-decomposition   (stage D's expected-net error split into probability and payoff components from its recorded files, offline)`;
+  npm run evaluate -- expected-net-decomposition   (stage D's expected-net error split into probability and payoff components from its recorded files, offline)
+  npm run evaluate -- activity-retrieve            (activityShock24h screen: the one bounded public kline retrieval, write-once, then validation)
+  npm run evaluate -- activity-export              (activityShock24h screen: joined dataset from the retrieval, v1's candles and #222's rows, offline; then scripts/activity_shock_classifier.py)
+  npm run evaluate -- activity-evaluate            (activityShock24h screen: paired Brier comparison, intervals and verdict, offline)`;
 
 type Fixture = {
   evaluationTime: string | number;
@@ -751,6 +755,37 @@ const commandHandlers: Record<string, CommandHandler> = {
       [],
     );
     const result = await runExpectedNetDecomposition();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  // docs/spot-24h-activity-shock-increment-dev-v1.json: retrieve once, export, (Python fit), evaluate.
+  'activity-retrieve': async (value, args) => {
+    assertOptions(
+      'activity-retrieve',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runActivityRetrieve();
+    printJson(result);
+    if (result.status !== 'COMPLETE' || !result.pass) process.exitCode = 1;
+  },
+  'activity-export': async (value, args) => {
+    assertOptions(
+      'activity-export',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runActivityExport();
+    printJson(result);
+    if (result.status === 'CONFLICT') process.exitCode = 1;
+  },
+  'activity-evaluate': async (value, args) => {
+    assertOptions(
+      'activity-evaluate',
+      [value, ...args].filter((item): item is string => Boolean(item)),
+      [],
+    );
+    const result = await runActivityEvaluate();
     printJson(result);
     if (result.status === 'CONFLICT') process.exitCode = 1;
   },
