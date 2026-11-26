@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import stageDSpec from '../docs/spot-24h-expected-net-t3s3-dev-v1.json';
 import {
   ACTIVITY,
@@ -22,6 +23,7 @@ import {
   pairParity,
   periodLabel,
   planRequests,
+  priceExclusionAt,
   RULES,
   runRetrieval,
   SPEC,
@@ -40,7 +42,10 @@ import {
 import {
   assertTermsResolved,
   computeValidation,
+  runActivityEvaluate,
+  runActivityExport,
   runActivityRetrieve,
+  specification,
   STUDY_FILES,
   studyIdentity,
   verifySteps,
@@ -53,7 +58,7 @@ import {
 } from './expectedNet';
 import { mulberry32 } from './opportunityAnalysis';
 import { decisionTimes, FEATURES } from './quantileForecast';
-import { HOUR_MS, PROTOCOL, splitOf, type Split } from './spot24h';
+import { HOUR_MS, indexHourly, PROTOCOL, splitOf, type HourCandle, type Split } from './spot24h';
 
 const HEAVY = 120_000;
 const H = HOUR_MS;
@@ -1131,6 +1136,235 @@ describe('identity and step checks', () => {
     cols.dataset.columns.pop();
     expect(() => verifySteps(cols.dataset, cols.predictions, 'c', spec, 'h', params)).toThrow(
       /columns differ/,
+    );
+  });
+});
+
+describe('validation edge cases', () => {
+  it('records a non-array response and a row without an integer open time as response issues', () => {
+    const [first, second, ...rest] = responses();
+    const { hours, responseIssues } = validatePair([
+      { ...first!, body: { code: -1 } },
+      { ...second!, body: [['x'], ...(second!.body as unknown[][]).slice(1)] },
+      ...rest,
+    ]);
+    expect(responseIssues).toEqual(
+      expect.arrayContaining([
+        'k=0: response is not an array',
+        'k=1 row 0: open time is not an integer',
+      ]),
+    );
+    expect(hours[0]!.status).toBe('MISSING');
+    expect(hours[1000]!.status).toBe('MISSING');
+    expect(hours[1001]!.status).toBe('VALID');
+  });
+});
+
+describe("#222's exclusion for a decision without a #222 row", () => {
+  const start = Date.parse('2025-01-01T00:00:00.000Z');
+  const candles: HourCandle[] = Array.from({ length: 400 }, (_, i) => {
+    const open = 100 + Math.sin(i / 5);
+    const close = 100 + Math.sin((i + 1) / 5);
+    const t = start + i * H;
+    return {
+      timestamp: t,
+      closeTime: t + H - 1,
+      open,
+      close,
+      high: Math.max(open, close) + 0.5,
+      low: Math.min(open, close) - 0.5,
+    };
+  });
+  const cutoff = Date.parse(PROTOCOL.data.collectionCutoff);
+
+  it("gives #222's first reason, and refuses an observation #222 should have had", () => {
+    expect(priceExclusionAt(indexHourly([], cutoff), start + 300 * H)).toBe(
+      'FEATURE_WINDOW_UNAVAILABLE',
+    );
+    expect(() => priceExclusionAt(indexHourly(candles, cutoff), start + 300 * H)).toThrow(
+      /missing from #222's rows/,
+    );
+  });
+});
+
+const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+const fakeIdentity = (commit: string) => () =>
+  Promise.resolve({ codeCommit: commit, codeBlobs: { 'scripts/activityShock.ts': 'b' } });
+
+describe('the export refuses a retrieval it cannot trust', { timeout: HEAVY }, () => {
+  const commit = 'c'.repeat(40);
+  const members = PROTOCOL.universe.members;
+  let root: string;
+  let base: string;
+  let dataDir: string;
+
+  /** A synthetic 20-pair retrieval whose every response is empty, against empty v1 files. */
+  async function retrieval(dir: string, v1: string, firstCandles: unknown[] = []) {
+    await mkdir(join(v1, 'klines'), { recursive: true });
+    await writeFile(join(v1, 'universe.json'), '{}');
+    for (const [i, m] of members.entries()) {
+      const candles = i === 0 ? firstCandles : [];
+      await writeFile(join(v1, 'klines', `${m}-1h.json`), JSON.stringify({ candles }));
+    }
+    let clock = RULES.endExclusive + 86_400_000;
+    const io = {
+      fetchImpl: () => Promise.resolve(fakeResponse(200, [])),
+      sleep: () => Promise.resolve(),
+      now: () => (clock += 1),
+    };
+    return runActivityRetrieve({ outDir: dir, dataDir: v1, identity: fakeIdentity(commit), io });
+  }
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), 'activity-export-'));
+    base = join(root, 'base');
+    dataDir = join(root, 'v1');
+    expect(await retrieval(base, dataDir)).toMatchObject({
+      status: 'COMPLETE',
+      requestsCounted: 380,
+      pass: true,
+    });
+  });
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function variant(name: string, edit: (dir: string) => Promise<void>) {
+    const dir = join(root, name);
+    await cp(base, dir, { recursive: true });
+    await edit(dir);
+    return dir;
+  }
+  const editManifest = (dir: string, change: (m: Record<string, unknown>) => void) =>
+    readFile(join(dir, 'manifest.json'), 'utf8').then((text) => {
+      const m = JSON.parse(text) as Record<string, unknown>;
+      change(m);
+      return writeFile(join(dir, 'manifest.json'), JSON.stringify(m));
+    });
+  const exportFrom = (retrievalDir: string, data = dataDir, at = commit) =>
+    runActivityExport({
+      retrievalDir,
+      dataDir: data,
+      outputDir: join(root, 'out'),
+      identity: fakeIdentity(at),
+    });
+
+  it('written at another commit', async () => {
+    await expect(exportFrom(base, dataDir, 'd'.repeat(40))).rejects.toThrow(
+      /INTEGRITY_FAILURE: the retrieval was written at c{40}/,
+    );
+  });
+
+  it('under another specification', async () => {
+    const dir = await variant('spec', (d) =>
+      editManifest(d, (m) => {
+        (m['specification'] as Record<string, unknown>)['fileSha256'] = 'other';
+      }),
+    );
+    await expect(exportFrom(dir)).rejects.toThrow(/another specification/);
+  });
+
+  it('that stopped early', async () => {
+    const dir = await variant('stopped', (d) =>
+      editManifest(d, (m) => {
+        m['status'] = 'RETRIEVAL_INCOMPLETE';
+      }),
+    );
+    await expect(exportFrom(dir)).rejects.toThrow(/the retrieval is incomplete/);
+  });
+
+  it('whose saved validation differs from a recomputation', async () => {
+    const dir = await variant('validation', (d) =>
+      readFile(join(d, 'validation.json'), 'utf8').then((t) =>
+        writeFile(join(d, 'validation.json'), `${t} `),
+      ),
+    );
+    await expect(exportFrom(dir)).rejects.toThrow(/validation.json differs/);
+  });
+
+  it("when v1's directory changed during the retrieval", async () => {
+    const v1 = join(root, 'v1-changed');
+    await cp(dataDir, v1, { recursive: true });
+    const dir = await variant('v1-changed', async (d) => {
+      await writeFile(join(v1, 'universe.json'), '{"changed":true}');
+      await writeFile(join(d, 'validation.json'), (await computeValidation(d, v1)).content);
+    });
+    await expect(exportFrom(dir, v1)).rejects.toThrow(/v1's directory changed/);
+  });
+
+  it('without exact OHLC and presence parity', async () => {
+    const t = RULES.v1FirstOpen;
+    const candle = { timestamp: t, closeTime: t + H - 1, open: 1, high: 1, low: 1, close: 1 };
+    const v1 = join(root, 'v1-parity');
+    const dir = join(root, 'parity');
+    expect(await retrieval(dir, v1, [candle])).toMatchObject({ status: 'COMPLETE', pass: false });
+    await expect(exportFrom(dir, v1)).rejects.toThrow(/OHLC parity with v1 failed/);
+  });
+
+  it("then requires v1's recorded inputs, which this synthetic directory is not", async () => {
+    await expect(exportFrom(base)).rejects.toThrow();
+  });
+});
+
+describe('the evaluate step', { timeout: HEAVY }, () => {
+  let out: string;
+  beforeEach(async () => {
+    out = await mkdtemp(join(tmpdir(), 'activity-evaluate-'));
+  });
+  afterEach(async () => {
+    await rm(out, { recursive: true, force: true });
+  });
+
+  it('scores the dataset and probabilities of its own commit once, then reports UNCHANGED', async () => {
+    const commit = 'e'.repeat(40);
+    const spec = await specification();
+    const { rows, predictions } = scenario({ learnable: true });
+    const { note: _note, ...params } = stageDSpec.forecasters.C.verifiedParams;
+    for (const arms of Object.values(predictions))
+      for (const arm of Object.values(arms)) arm.fit['params'] = params;
+    const prefix = `spot-24h-activity-shock-increment-dev-v1`;
+    const dataset = JSON.stringify({
+      manifest: { codeCommit: commit, specification: spec },
+      columns: COLUMNS,
+      rows: rows.map(toColumns),
+      coverage: {},
+      hours: {},
+      parity: {},
+    });
+    const datasetPath = join(
+      out,
+      `${prefix}-dataset-${spec.sha256.slice(0, 12)}-${commit.slice(0, 12)}.json`,
+    );
+    await writeFile(datasetPath, dataset);
+    const identity = fakeIdentity(commit);
+    await expect(runActivityEvaluate(out, identity)).rejects.toThrow(
+      /expected one predictions file/,
+    );
+    await writeFile(
+      join(out, `${prefix}-predictions-${spec.sha256.slice(0, 12)}-${commit.slice(0, 12)}.json`),
+      JSON.stringify({
+        manifest: {
+          codeCommit: commit,
+          specification: spec,
+          dataset: { path: datasetPath, sha256: sha(dataset) },
+        },
+        environment: { python: 'synthetic' },
+        evaluations: predictions,
+        reproductionOfC: { development: { status: 'PASS' } },
+      }),
+    );
+    const first = await runActivityEvaluate(out, identity);
+    expect(first.status).toBe('CREATED');
+    expect(first.summary.verdict).toBe('SCREEN_PASSED');
+    expect(first.summary.evaluations['development']!.BminusA!.defined).toBe(10_000);
+    expect(first.summary.evaluations['final']!.leaveOneMonthOutMaximum).not.toBeNull();
+    const written = JSON.parse(await readFile(first.path, 'utf8'));
+    expect(written.manifest.dataset.sha256).toBe(sha(dataset));
+    expect(written.reproductionOfC).toEqual({ development: { status: 'PASS' } });
+    expect(first.path).toBe(join(out, `${prefix}-${spec.sha256.slice(0, 12)}.json`));
+    expect((await runActivityEvaluate(out, identity)).status).toBe('UNCHANGED');
+    await expect(runActivityEvaluate(out, fakeIdentity('f'.repeat(40)))).rejects.toThrow(
+      /expected one dataset file/,
     );
   });
 });

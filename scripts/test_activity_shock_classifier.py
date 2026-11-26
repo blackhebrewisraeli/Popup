@@ -14,6 +14,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import activity_shock_classifier as asc
 import expected_net_classifier as enc
@@ -141,6 +142,24 @@ class CommonRowsTest(unittest.TestCase):
             asc.common_arrays(COLUMNS, bad, asc.arm_features(STAGE_D)["A"], CLASSES)
 
 
+class ArmParityTest(unittest.TestCase):
+    def test_arms_whose_labels_differ_are_refused_before_any_fit(self):
+        rows = synthetic_rows(pairs=1)[:40]
+        real = asc.common_arrays
+
+        def skewed(columns, rows, features, classes):
+            index, x, y, splits = real(columns, rows, features, classes)
+            if asc.ACTIVITY in features:
+                y = y.copy()
+                y[0] = "TIMEOUT" if y[0] != "TIMEOUT" else "STOP"
+            return index, x, y, splits
+
+        with mock.patch.object(asc, "common_arrays", side_effect=skewed), mock.patch.object(enc, "fit_evaluation") as fit:
+            with self.assertRaises(asc.IntegrityFailure):
+                asc.fit_arms(COLUMNS, rows, SPEC, STAGE_D)
+            fit.assert_not_called()
+
+
 class FitTest(unittest.TestCase):
     # Row lists are compared as arrays: unittest's diff of thousands of rows is quadratic.
     @classmethod
@@ -220,6 +239,12 @@ class ReproductionTest(unittest.TestCase):
         with self.assertRaises(asc.IntegrityFailure):
             asc.reproduction_of_c(COLUMNS, self.rows, SPEC, self.fits, recorded)
 
+    def test_a_different_fit_status_is_an_integrity_failure(self):
+        recorded = as_recorded(self.rows, self.fits)
+        recorded["evaluations"]["development"]["status"] = "MISSING_CLASS"
+        with self.assertRaises(asc.IntegrityFailure):
+            asc.reproduction_of_c(COLUMNS, self.rows, SPEC, self.fits, recorded)
+
     def test_not_applicable_when_activity_excludes_a_row(self):
         rows = exclude(self.rows, lambda r: r[AT["split"]] == "validation" and r[AT["symbol"]] == "P0USDT" and r[AT["time"]] % (24 * H) == 0)
         fits = asc.fit_arms(COLUMNS, rows, SPEC, STAGE_D)
@@ -247,6 +272,16 @@ class SyntheticStudyTest(unittest.TestCase):
 
 
 class RunnerTest(unittest.TestCase):
+    def test_dataset_path_needs_exactly_one_dataset_of_the_commit(self):
+        out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, out)
+        with self.assertRaises(FileNotFoundError):
+            asc.dataset_path(out, "c" * 40)
+        for spec12 in ("a" * 12, "b" * 12):
+            (out / f"{asc.PREFIX}-dataset-{spec12}-{'c' * 12}.json").write_text("{}")
+        with self.assertRaises(FileNotFoundError):
+            asc.dataset_path(out, "c" * 40)
+
     def test_identity_refuses_a_dirty_tree(self):
         with self.assertRaises(RuntimeError):
             asc.code_identity(lambda *args: " M scripts/x.py" if args[0] == "status" else "abc")
