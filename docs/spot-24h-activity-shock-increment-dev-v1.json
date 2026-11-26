@@ -1,9 +1,9 @@
 {
   "specificationId": "popup-spot-24h-activity-shock-increment-dev-v1",
-  "revision": 1,
+  "revision": 2,
   "status": "PROPOSED / NOT RUN / NOT FROZEN. A design for one historical development screen, written for owner review. Nothing has been retrieved, exported, fitted or scored under it. Retrieval is BLOCKED by dataSource.terms (status UNRESOLVED). It becomes runnable only through a later revision that cites the resolved terms and is committed alone; that revision's stable SHA-256 then identifies the study. No earlier specification, protocol, study, result or verdict is changed: #222's STOP and every earlier conclusion stand.",
   "question": "On v1's examined hourly history, with identical eligible observations, labels, estimator and settings, does adding activityShock24h to #220's eleven price features lower the out-of-sample three-class Brier score of #222's classifier for v1's T3S3 outcome, in both development periods?",
-  "whatAPassMeans": "Both evaluation periods are examined development history: this would be the eighth look at the same outcomes. SCREEN_PASSED can justify reviewing a separate prospective proposal, nothing more. It cannot establish independent predictive support, profitability or permission for live use.",
+  "whatAPassMeans": "Both evaluation periods are examined development history: this would be the eighth look at the same outcomes. SCREEN_PASSED can justify reviewing a separate prospective proposal, nothing more. It cannot establish independent predictive support, profitability or permission for live use. A lower Brier score is information value only and is never presented as evidence of trading readiness.",
   "outOfScope": "Entries, decision rules, expected-net plug-ins, payoffs, costs, returns, wallet or capital simulation and any economic backtest. Other activity fields (quote volume, trade count, taker-buy volume), other windows, normalizations, models, settings, labels or scenarios. Prospective collection, schedules, UI, alerts, orders, account reads, production changes and deployment.",
   "designChoices": "Every rule below is fixed before any activity value exists locally. Nothing is tuned, selected, refitted, reweighted or relabelled after a figure is seen. The comparison runs once. Each choice reuses v1, #220, #222 or #224 so that no new choice enters; the only new parts are the activity retrieval, its checks and the second arm.",
   "basis": {
@@ -57,25 +57,38 @@
     "endpoint": "GET https://api.binance.com/api/v3/klines, no credentials, no extra headers (v1's and #224's probe's host, so the source stays the same)",
     "terms": {
       "status": "UNRESOLVED",
-      "reviewedOn": "2026-11-26",
+      "reviewedOn": "2026-11-26 (two passes; the second after the owner accepted the defaults)",
       "applicableToEndpoint": [
         {
           "document": "Binance Terms of Use (ADGM Binance Entities: Nest Exchange Limited, Nest Clearing and Custody Limited, Nest Trading Limited)",
           "version": "Effective Date: 27 October 2026",
           "source": "https://www.binance.com/en/terms rendered this effective date in an embedded 74-page PDF on 2026-11-26. The PDF read is https://bin.bnbstatic.com/static/cms/cg08ou2ak0tn7mcplvfg/file/f7c3c8a8fbda48eaa272ff503b8c2e54c6c98ad4f0f2a1e5da3667af5962c7de.pdf (74 pages, SHA-256 f7c3c8a8fbda48eaa272ff503b8c2e54c6c98ad4f0f2a1e5da3667af5962c7de, equal to its file name). It was located by search and matched on effective date and page count, not by capturing the page's own request. Its metadata title contains 'Draft - 27 Oct 2026'.",
           "clauses": {
-            "preamble": "The Agreement governs use of a Binance Account and any other Binance Services made available on or through the Binance Platform. Accessing the Binance Platform or using the Binance Services is stated to be acceptance of the Agreement.",
-            "definitions": "Binance Platform: the digital platform made accessible via the Sites, the Mobile App, a Binance API or other prescribed means. Binance API: an API made available by a Binance Affiliate as a service. Binance Services: services offered through the Binance Platform. Intellectual Property Rights include database rights. Product Terms: product-specific terms applying in addition.",
-            "1.3 and 1.4": "The Agreement incorporates core policies (including the Prohibited Use Policy), rulebooks and Product Terms, with an order of precedence.",
+            "preamble": "The Agreement governs use of a Binance Account and any other Binance Services made available on or through the Binance Platform. Accessing the Binance Platform or using the Binance Services is stated to be acceptance. Local Terms, where they apply, supplement it.",
+            "definitions": "Binance Platform: the digital platform made accessible via the Sites, the Mobile App, a Binance API or other prescribed means. Binance API: an API made available by a Binance Affiliate as a service. Binance Services: services offered through the Binance Platform. Access IDs include API keys. Intellectual Property Rights include database rights. Product Terms: product-specific terms applying in addition.",
+            "1.3.1(c) and 1.4": "The Prohibited Use Policy is a core policy applicable to all users and part of the Agreement; Product Terms and rulebooks are incorporated with an order of precedence.",
+            "3.1": "Questions, feedback or complaints go to customer support at https://www.binance.com/en/chat.",
             "7.5.1": "Identity verification is required before opening an account or accessing any Binance Service.",
-            "14.1.2(b)": "An account may be accessed through Binance APIs, subject to separate API terms and Binance's approval.",
+            "14.1.2(b)": "A Binance Account may be accessed through Binance APIs, subject to separate API terms and Binance's approval. This clause concerns account access (API keys are Access IDs), not unauthenticated public market data.",
             "26-27": "Binance IP stays with Binance. Users get a non-exclusive licence, for the Agreement's duration, to use Binance IP solely as necessary to receive the Binance Services, for \"non-commercial personal or internal business use\".",
-            "31.1": "Prohibited use, including use that violates the Prohibited Use Policy.",
+            "31.1": "Prohibited use includes use that violates the Prohibited Use Policy.",
             "33.1": "A revocable, non-exclusive, non-transferable right to access the Binance Platform to receive the Binance Services; Binance may limit or revoke it at any time.",
-            "33.7-33.8": "Technology includes application programme interfaces. Certain databases forming part of the Technology are proprietary, with confidentiality and notice obligations.",
+            "33.7-33.8": "Technology includes application programme interfaces made available for trading, analysing trades and markets and constructing automated trading systems. Certain databases forming part of the Technology are proprietary, with confidentiality and notice obligations.",
             "33.11": "Third-party indices and market data are provided for information purposes only."
           },
-          "notAddressed": "Whether public kline responses are Binance IP or Proprietary Information; storing or retaining retrieved market data; offline analysis; research use; publishing aggregates derived from market data. The text contains no scraping, crawling, data-mining or redistribution clause."
+          "notAddressed": "Whether public kline responses are Binance IP or Proprietary Information; storing or retaining retrieved market data; offline analysis; research use; publishing aggregates derived from market data."
+        },
+        {
+          "document": "Binance Prohibited Use Policy",
+          "version": "Last updated: 5 January 2026",
+          "source": "https://bin.bnbstatic.com/static/cms/cg08ou2ak0tn7mcplvfg/file/3c287bd60863eccef6a16b8580190c96d4c9414931928d7fafdb227bf967cd63.pdf (3 pages, SHA-256 equal to its file name). Located by search; its metadata title contains '[DRAFT]'. Not confirmed to be the copy binance.com currently links (the Terms of Use link /en/about-legal/prohibited-use-policy, which renders client-side).",
+          "clauses": {
+            "A": "Applies, to the extent one is a customer or user of Binance's services, together with the Terms of Use.",
+            "D": "Use of Binance Services for resale or commercial purposes is prohibited unless Binance authorizes it in writing.",
+            "I": "Using crawlers, bots, automated devices, programs, scripts or algorithms to access, obtain, copy, monitor or replicate Binance Services is prohibited, except as expressly permitted. Also prohibited: unreasonable load on the infrastructure, bypassing robot exclusion, and copying, replicating, transmitting or otherwise exploiting any part of the Binance Platform.",
+            "contact": "Violations are reported to legal@binance.com."
+          },
+          "bearing": "This is the one clause found that addresses automated access and copying directly. Binance's documentation of the public market-data endpoints (with rate limits and a market-data-only host) plausibly is express permission for programmatic access through them. No text read expressly permits copying or retaining the returned data offline, and the clause does not say whether market data obtained through the API is 'any part of the Binance Platform'."
         },
         {
           "document": "SPOT Exchange Terms of Use (Spot API documentation)",
@@ -89,9 +102,9 @@
         }
       ],
       "notLocated": [
-        "The separate API terms named in clause 14.1.2(b): https://www.binance.com/en/about-legal/api-key-terms returned 404, and no API terms page was found by search or linked from the API documentation.",
-        "The Product Terms list and the Prohibited Use Policy: binance.com legal pages render client-side. Reading one in the owner's Chrome caused an automatic Google social-login redirect on binance.com, so reading stopped there. Neither was read.",
-        "Which regional version binds the owner's account: the ADGM version is what binance.com/en/terms served to this machine; other regional versions exist."
+        "The separate API terms of clause 14.1.2(b): /en/about-legal/api-key-terms returned 404 and none was found by search or linked from the API documentation. As written, the clause concerns account access, so their absence matters less for public market data, but it is not settled.",
+        "The Product Terms list (clause 1.3.3): binance.com renders it client-side and no CDN copy was found. Whether any Product Terms address public market data is unknown.",
+        "The currently linked Prohibited Use Policy: the copy read is the one found on Binance's CDN; it was not matched to the binance.com page."
       ],
       "archiveTermsKeptSeparate": {
         "document": "Binance Vision Dataset Terms",
@@ -99,9 +112,24 @@
         "scope": "Datasets made available through data.binance.vision and associated endpoints (2.1); CC BY-NC-SA 4.0 (3.1); permitted uses include backtesting for purely personal non-production research (4.1); derived models and indicators are governed by them (2.4); derivative works must carry attribution and the same licence (4.5).",
         "relevance": "Not relied on. They do not name api.binance.com, and whether 'associated endpoints' includes it, or data-api.binance.vision, is not stated. This specification proposes no archive file and does not switch source."
       },
-      "assessment": "Unresolved: neither clearly addressed nor clearly restricted. The Terms of Use plausibly govern the endpoint (accessing the Binance Platform includes a Binance API, and the Spot API documentation points to them), but the separate API terms they name were not located. The licence in clause 27 is non-commercial and personal, which the proposed use is, but it is limited to what is necessary to receive the Binance Services, and no clause says whether retaining two years of klines offline for a private research model is within it. Free, unauthenticated access is not treated as permission. This is a reading of the text, not legal advice or a legal assurance.",
-      "blocker": "TERMS_UNRESOLVED: no retrieval under this specification. The same open question applies to the 60 files #224's probe already retrieved and to v1's saved candles, which this screen would read; this specification does not resolve it for them either.",
-      "toResolve": "A later revision may cite either (a) the located and read separate API terms, Prohibited Use Policy or Product Terms, read without using the owner's sign-ins, if they address this use, or (b) a written statement from Binance about this use. The owner is not asked to certify the ambiguity. If neither settles it, the screen does not run."
+      "assessment": "Still unresolved, now narrowed. The text neither clearly permits nor clearly prohibits the proposed use. The documented public API plausibly is the 'expressly permitted' route for automated access under Prohibited Use Policy section I. The use is non-commercial and personal, as the clause 27 licence requires. But no text expressly permits copying or retaining the returned data offline for research, and section I prohibits copying or replicating Binance Services or any part of the Binance Platform except as expressly permitted. Whether that reaches market data obtained through the API is not stated. Silence is treated as neither permission nor prohibition. This is a reading of the text, not legal advice or a legal assurance.",
+      "blocker": "TERMS_UNRESOLVED: no retrieval under this specification. The same question applies to v1's candles and the probe's files, which are preserved unchanged.",
+      "toResolve": "A later revision may cite (a) published Binance text that addresses retaining public market data for private research (for example the Product Terms or the clause 14.1.2(b) API terms, if they do), or (b) Binance's written answer to clarification.question, if the owner chooses to send it. Neither the agent nor the specification contacts Binance. If neither settles it, the screen does not run.",
+      "accessTypes": {
+        "accountAccessApis": "Signed or API-key endpoints used to access a Binance Account. Governed by the Terms of Use and, per clause 14.1.2(b), separate API terms and Binance's approval. Not used by this screen, v1 or the probe.",
+        "publicMarketData": "Unauthenticated GET /api/v3/klines on api.binance.com, no API key. Governed by the Terms of Use (accessing the Binance Platform, which includes a Binance API), the Prohibited Use Policy (section I) and the clause 27 licence. No market-data-specific terms were found. Binance's documentation also names data-api.binance.vision as a market-data-only host; whether the Vision Dataset Terms reach it is not stated, and the source is not switched."
+      },
+      "regional": "Binance's global terms were novated to the ADGM entities from 5 January 2026 (the Terms of Use name them; the Prohibited Use Policy carries that date). binance.com/en/terms served the ADGM version to this machine; the en-AE page carried a Binance FZE (VARA) footer. Under the preamble, Local Terms supplement the Agreement where they apply. Which Local Terms, if any, bind the owner depends on the owner's residence and the entity holding the owner's account, which was not determined. Both PDFs' metadata titles say 'Draft'.",
+      "existingFiles": {
+        "files": "v1's universe and 20 candle files in .zerochart-market-data/spot-24h-v1/ (retrieved 2026-11-22) and #224's 60 probe responses in .zerochart-market-data/binance-activity-probe-2026-11-26/ (retrieved 2026-11-26)",
+        "status": "Same endpoint, same unauthenticated access, same documents in force (Terms of Use effective 2026-10-27, Prohibited Use Policy of 2026-01-05), so the same open question applies: whether retaining the responses offline for research is permitted. Aggregates derived from v1's candles are already published in this public repository (#215 to #223).",
+        "handling": "Preserved unchanged: not deleted, edited, moved, re-retrieved or redistributed. This specification records their status; it does not resolve it."
+      },
+      "clarification": {
+        "status": "PREPARED FOR OWNER REVIEW, NOT SENT",
+        "route": "Terms of Use clause 3.1: customer support at https://www.binance.com/en/chat, asking that the question be referred to Binance's legal team. legal@binance.com appears in the Prohibited Use Policy only for reporting violations.",
+        "question": "See docs/SPOT_24H_ACTIVITY_SHOCK_INCREMENT_DEV_V1.md, section 'Clarification request'"
+      }
     }
   },
   "retrieval": {
@@ -379,22 +407,26 @@
     "termsBlocker": {
       "question": "How the REST terms question is settled, or whether to stop",
       "recommendedDefault": "Keep retrieval blocked. First locate and read the separate API terms (14.1.2(b)), the Prohibited Use Policy and the Product Terms list without using the owner's sign-ins; if they do not address this use, seek a written statement from Binance; if neither settles it, stop.",
-      "reason": "The reviewed text neither permits nor forbids this use, and the documents that might were not read."
+      "reason": "The reviewed text neither permits nor forbids this use, and the documents that might were not read.",
+      "ownerDecision": "Accepted 2026-11-26 with boundaries: review the missing official documents only; do not contact Binance on the owner's behalf; prepare the question and route for owner review. Done in revision 2; the blocker remains."
     },
     "host": {
       "question": "api.binance.com or data-api.binance.vision",
       "recommendedDefault": "api.binance.com",
-      "reason": "It is v1's and the probe's source, and the one whose terms were reviewed. Binance recommends data-api.binance.vision for market-data-only clients, but a binance.vision host may bring the Vision Dataset Terms into scope, which would be a source change needing its own review."
+      "reason": "It is v1's and the probe's source, and the one whose terms were reviewed. Binance recommends data-api.binance.vision for market-data-only clients, but a binance.vision host may bring the Vision Dataset Terms into scope, which would be a source change needing its own review.",
+      "ownerDecision": "Accepted 2026-11-26: api.binance.com, no source switch."
     },
     "calibrationRole": {
       "question": "Whether B's absolute probability calibration gates a pass, as #224 section 6 proposed",
       "recommendedDefault": "Report only, both arms side by side against #222's limits",
-      "reason": "The screen measures the increment of one feature. #222 recorded that this same estimator on A's features already missed the limits once per period, so an absolute gate on B would mostly retest #222's model rather than activity. The Brier difference already includes calibration."
+      "reason": "The screen measures the increment of one feature. #222 recorded that this same estimator on A's features already missed the limits once per period, so an absolute gate on B would mostly retest #222's model rather than activity. The Brier difference already includes calibration.",
+      "ownerDecision": "Accepted 2026-11-26: report only. A better Brier score is not presented as evidence of trading readiness."
     },
     "existingFiles": {
       "question": "Whether the terms resolution must also cover v1's saved candles and the probe's files",
       "recommendedDefault": "Yes; the frozen revision states it",
-      "reason": "They came from the same endpoint under the same unreviewed terms, and this screen reads v1's candles."
+      "reason": "They came from the same endpoint under the same unreviewed terms, and this screen reads v1's candles.",
+      "ownerDecision": "Accepted 2026-11-26: included in the applicability review (dataSource.terms.existingFiles) and preserved unchanged."
     }
   },
   "notExecutionReady": "Design only. No retrieval, export, fit, outcome scoring, UI, order, alert, account read, experiment record, migration, deployment, secret, schedule or prospective collection."
