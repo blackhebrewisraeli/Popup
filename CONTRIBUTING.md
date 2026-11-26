@@ -6,11 +6,24 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 
 1. Follow [Getting started](./README.md#getting-started) to clone the repo, install dependencies, create `.env.local`, and apply the database migrations.
 2. Start the dev server with `npm run dev` and open [http://localhost:8080](http://localhost:8080).
-3. Before you push, run the same checks as CI:
+3. On Node.js 22, run the JavaScript checks from [CI](./.github/workflows/ci.yml):
 
    ```bash
-   npx tsc --noEmit && npm run build && npm run lint && npm test
+   npm run typecheck && npm run build && npm run lint && npm test -- --coverage
    ```
+
+   CI also regenerates and compares the pinned Python fixtures, runs the Python tests, and checks
+   database migrations and SQL tests. Use the workflow for those commands and their prerequisites.
+
+### Worktrees and local research files
+
+- Start maintenance from `main` in a separate Git worktree. An active research checkout may depend
+  on ignored files, symlinks to shared directories, or a specific commit. Verify the resolved paths
+  and coordinate with the run owner before moving or removing anything.
+- Keep local research inputs and evidence, including `.zerochart-market-data/`,
+  `.zerochart-reports/`, `.zerochart-scans/`, `.zerochart-evaluations/`, `.zerochart-campaigns/`,
+  `.zerochart-tradingview/`, manifests, and exports. Git ignores the stores, but replay and provenance
+  can depend on their paths and exact bytes.
 
 ## Coding standards
 
@@ -45,7 +58,9 @@ Thanks for helping out. This guide covers local setup, the standards every chang
 
 ### Style
 
-- Prettier and ESLint are the source of truth: `npm run format` and `npm run lint`.
+- Run `npm run lint` for ESLint. For formatting, pass only the files you intend to change to
+  `npx prettier --write`. `npm run format` writes across the checkout and can reformat tracked
+  research fixtures and manifests.
 - TypeScript runs in strict mode. Avoid `any` and non-null assertions; narrow types instead.
 - Comments explain _why_, not _what_.
 

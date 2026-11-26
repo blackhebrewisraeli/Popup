@@ -548,6 +548,11 @@ The [Decision Journal](DECISION_JOURNAL.md) is an in-app feature; this file is f
 
 ## Recent entries
 
+- **2026-11-26 · Workspace maintenance guidance · PR open.** [CONTRIBUTING.md](../CONTRIBUTING.md)
+  now points to the CI checks and documents scoped formatting and local evidence preservation.
+  Review and checks used an isolated worktree from `ab7adb7`. Inspection of the active research
+  checkout and its shared paths is pending access to that environment.
+
 - **2026-11-13 · TRXUSDT in Binance Spot executions · Draft PR [#170](https://github.com/blackhebrewisraeli/Popup/pull/170), from `c4e1c46`.** Decision: add
   one pair, at the owner's request, to the two execution allowlists only. TRX does not join the
   app-wide crypto set, and the reconciliation gate stays unverified: a fee charged in TRX, synthetic
