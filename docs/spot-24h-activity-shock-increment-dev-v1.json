@@ -1,0 +1,401 @@
+{
+  "specificationId": "popup-spot-24h-activity-shock-increment-dev-v1",
+  "revision": 1,
+  "status": "PROPOSED / NOT RUN / NOT FROZEN. A design for one historical development screen, written for owner review. Nothing has been retrieved, exported, fitted or scored under it. Retrieval is BLOCKED by dataSource.terms (status UNRESOLVED). It becomes runnable only through a later revision that cites the resolved terms and is committed alone; that revision's stable SHA-256 then identifies the study. No earlier specification, protocol, study, result or verdict is changed: #222's STOP and every earlier conclusion stand.",
+  "question": "On v1's examined hourly history, with identical eligible observations, labels, estimator and settings, does adding activityShock24h to #220's eleven price features lower the out-of-sample three-class Brier score of #222's classifier for v1's T3S3 outcome, in both development periods?",
+  "whatAPassMeans": "Both evaluation periods are examined development history: this would be the eighth look at the same outcomes. SCREEN_PASSED can justify reviewing a separate prospective proposal, nothing more. It cannot establish independent predictive support, profitability or permission for live use.",
+  "outOfScope": "Entries, decision rules, expected-net plug-ins, payoffs, costs, returns, wallet or capital simulation and any economic backtest. Other activity fields (quote volume, trade count, taker-buy volume), other windows, normalizations, models, settings, labels or scenarios. Prospective collection, schedules, UI, alerts, orders, account reads, production changes and deployment.",
+  "designChoices": "Every rule below is fixed before any activity value exists locally. Nothing is tuned, selected, refitted, reweighted or relabelled after a figure is seen. The comparison runs once. Each choice reuses v1, #220, #222 or #224 so that no new choice enters; the only new parts are the activity retrieval, its checks and the second arm.",
+  "basis": {
+    "proposal": {
+      "path": "docs/BINANCE_ACTIVITY_FEASIBILITY.md",
+      "mergedIn": "e029b5c7896baac4b4eecb503e6fad5f2df0b124",
+      "fileSha256": "5e1c8f384d3b77abd935a18c6aa12aedf85691dca74f4797e50a9ec7624f4013",
+      "use": "activityShock24h exactly as its section 5 defines it; its go / no-go prerequisites"
+    },
+    "protocol": {
+      "id": "popup-spot-24h-target-before-stop-v1",
+      "path": "docs/spot-24h-probability.v1.json",
+      "sha256": "b3aa90fb891275eb6ca03ef89038670783a00d7a7a449a45229de8728369a62a"
+    },
+    "recordedResult": {
+      "path": ".zerochart-reports/spot-24h-probability-b3aa90fb8912.json",
+      "sha256": "662c5d7d2eec69ac62c736701a63e00b565e642fdcb813823aa00ab43fa6ec1e",
+      "runCommit": "2d848fb1b5584d64f9892cd44627366246adf359",
+      "use": "Its manifest gives universe.json's and every v1 candle file's SHA-256"
+    },
+    "featureSource": {
+      "id": "popup-quantile-forecast-24h-dev-v1",
+      "path": "docs/quantile-forecast-24h-dev-v1.json",
+      "sha256": "a0d7ad9b57d1e3002a4dc8d63d45298fe6b72234486ed16865baf7f2b098c93c",
+      "fileSha256": "42cb7f4c306524f55ebaac048028456abfe5c0ae0e056e586414f3a411e0a389",
+      "use": "The eleven features (featuresOf and decisionAt in scripts/quantileForecast.ts) and the pinned environment"
+    },
+    "estimatorSource": {
+      "id": "popup-spot-24h-expected-net-t3s3-dev-v1",
+      "path": "docs/spot-24h-expected-net-t3s3-dev-v1.json",
+      "sha256": "0f67666dc4f8f2e0dd8eb0faef6f125a180b14d49d4c8d8f254965c1ad43ee63",
+      "fileSha256": "b9fe596a8b9f0fd91cef483e952b0704eb1e8136a9cfcd5d680f56a013f5d8b0",
+      "runCommit": "4d536534e79d92a2ede1d17ed1c269b89b6f9403",
+      "dataset": {
+        "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-dataset-0f67666dc4f8-4d536534e79d.json",
+        "sha256": "477946a0698aa6b92ff8c00d9d442904c6745b5328021f0c2996a45985a08d3e"
+      },
+      "predictions": {
+        "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-predictions-0f67666dc4f8-4d536534e79d.json",
+        "sha256": "23a18828c4b1f7d41188df3785134ef2b2469f7d706eb0bd9720a37197aa2071"
+      },
+      "result": {
+        "path": ".zerochart-reports/spot-24h-expected-net-t3s3-dev-v1-0f67666dc4f8.json",
+        "sha256": "1f291c94353bb57dcf377d2ba1204b08f879e0439a3d3cae233bb09b4d2b658a"
+      },
+      "use": "Classifier C's estimator, settings, verifiedParams and fit procedure; its dataset's rows (features, splits, outcomes, classes) and its recorded probabilities as parity references. Its expected-net, payoff, entry and economic parts are not used."
+    },
+    "dataStatus": "2024-11-22 to 2026-11-22 has been examined by protocol v1, #216, #217, #218, #219, #220, #222 and #223; #224's probe retrieved 60 pair-days inside it. This screen would be an eighth look at the same outcomes. New columns do not make examined prices or outcomes untouched."
+  },
+  "dataSource": {
+    "endpoint": "GET https://api.binance.com/api/v3/klines, no credentials, no extra headers (v1's and #224's probe's host, so the source stays the same)",
+    "terms": {
+      "status": "UNRESOLVED",
+      "reviewedOn": "2026-11-26",
+      "applicableToEndpoint": [
+        {
+          "document": "Binance Terms of Use (ADGM Binance Entities: Nest Exchange Limited, Nest Clearing and Custody Limited, Nest Trading Limited)",
+          "version": "Effective Date: 27 October 2026",
+          "source": "https://www.binance.com/en/terms rendered this effective date in an embedded 74-page PDF on 2026-11-26. The PDF read is https://bin.bnbstatic.com/static/cms/cg08ou2ak0tn7mcplvfg/file/f7c3c8a8fbda48eaa272ff503b8c2e54c6c98ad4f0f2a1e5da3667af5962c7de.pdf (74 pages, SHA-256 f7c3c8a8fbda48eaa272ff503b8c2e54c6c98ad4f0f2a1e5da3667af5962c7de, equal to its file name). It was located by search and matched on effective date and page count, not by capturing the page's own request. Its metadata title contains 'Draft - 27 Oct 2026'.",
+          "clauses": {
+            "preamble": "The Agreement governs use of a Binance Account and any other Binance Services made available on or through the Binance Platform. Accessing the Binance Platform or using the Binance Services is stated to be acceptance of the Agreement.",
+            "definitions": "Binance Platform: the digital platform made accessible via the Sites, the Mobile App, a Binance API or other prescribed means. Binance API: an API made available by a Binance Affiliate as a service. Binance Services: services offered through the Binance Platform. Intellectual Property Rights include database rights. Product Terms: product-specific terms applying in addition.",
+            "1.3 and 1.4": "The Agreement incorporates core policies (including the Prohibited Use Policy), rulebooks and Product Terms, with an order of precedence.",
+            "7.5.1": "Identity verification is required before opening an account or accessing any Binance Service.",
+            "14.1.2(b)": "An account may be accessed through Binance APIs, subject to separate API terms and Binance's approval.",
+            "26-27": "Binance IP stays with Binance. Users get a non-exclusive licence, for the Agreement's duration, to use Binance IP solely as necessary to receive the Binance Services, for \"non-commercial personal or internal business use\".",
+            "31.1": "Prohibited use, including use that violates the Prohibited Use Policy.",
+            "33.1": "A revocable, non-exclusive, non-transferable right to access the Binance Platform to receive the Binance Services; Binance may limit or revoke it at any time.",
+            "33.7-33.8": "Technology includes application programme interfaces. Certain databases forming part of the Technology are proprietary, with confidentiality and notice obligations.",
+            "33.11": "Third-party indices and market data are provided for information purposes only."
+          },
+          "notAddressed": "Whether public kline responses are Binance IP or Proprietary Information; storing or retaining retrieved market data; offline analysis; research use; publishing aggregates derived from market data. The text contains no scraping, crawling, data-mining or redistribution clause."
+        },
+        {
+          "document": "SPOT Exchange Terms of Use (Spot API documentation)",
+          "source": "https://developers.binance.com/en/docs/products/spot/PROD-TERMS-OF-USE and PROD-TERMS-OF-USE.md in github.com/binance/binance-spot-api-docs, read 2026-11-26",
+          "content": "One sentence: Binance products and services are subject to the Product Terms of Use, linked to https://www.binance.com/en/terms. No licence or usage clause of its own."
+        },
+        {
+          "document": "Binance Spot API documentation",
+          "source": "rest-api.md, faqs/market_data_only.md and the repository README of binance-spot-api-docs, read 2026-11-26",
+          "content": "Operational rules only (limits, 429/418/403, base endpoints). Public market-data clients are pointed to data-api.binance.vision. No licence, commercial-use, storage or research clause. The repository has no LICENSE file."
+        }
+      ],
+      "notLocated": [
+        "The separate API terms named in clause 14.1.2(b): https://www.binance.com/en/about-legal/api-key-terms returned 404, and no API terms page was found by search or linked from the API documentation.",
+        "The Product Terms list and the Prohibited Use Policy: binance.com legal pages render client-side. Reading one in the owner's Chrome caused an automatic Google social-login redirect on binance.com, so reading stopped there. Neither was read.",
+        "Which regional version binds the owner's account: the ADGM version is what binance.com/en/terms served to this machine; other regional versions exist."
+      ],
+      "archiveTermsKeptSeparate": {
+        "document": "Binance Vision Dataset Terms",
+        "version": "Version 1.0, last updated 2026-08-26 (TERMS_AND_CONDITIONS.md in github.com/binance/binance-public-data, SHA-256 99c4921dbe023cd68c1a447775707d621453cc78aec6ac0bfe2e6c06a5114ee0, unchanged since #224)",
+        "scope": "Datasets made available through data.binance.vision and associated endpoints (2.1); CC BY-NC-SA 4.0 (3.1); permitted uses include backtesting for purely personal non-production research (4.1); derived models and indicators are governed by them (2.4); derivative works must carry attribution and the same licence (4.5).",
+        "relevance": "Not relied on. They do not name api.binance.com, and whether 'associated endpoints' includes it, or data-api.binance.vision, is not stated. This specification proposes no archive file and does not switch source."
+      },
+      "assessment": "Unresolved: neither clearly addressed nor clearly restricted. The Terms of Use plausibly govern the endpoint (accessing the Binance Platform includes a Binance API, and the Spot API documentation points to them), but the separate API terms they name were not located. The licence in clause 27 is non-commercial and personal, which the proposed use is, but it is limited to what is necessary to receive the Binance Services, and no clause says whether retaining two years of klines offline for a private research model is within it. Free, unauthenticated access is not treated as permission. This is a reading of the text, not legal advice or a legal assurance.",
+      "blocker": "TERMS_UNRESOLVED: no retrieval under this specification. The same open question applies to the 60 files #224's probe already retrieved and to v1's saved candles, which this screen would read; this specification does not resolve it for them either.",
+      "toResolve": "A later revision may cite either (a) the located and read separate API terms, Prohibited Use Policy or Product Terms, read without using the owner's sign-ins, if they address this use, or (b) a written statement from Binance about this use. The owner is not asked to certify the ambiguity. If neither settles it, the screen does not run."
+    }
+  },
+  "retrieval": {
+    "authorizedBy": "Nothing yet. Requires owner approval, dataSource.terms resolved, and a frozen revision committed alone.",
+    "pairs": "Protocol v1's 20 members in v1's order: BTC, ETH, SOL, ZEC, XRP, NEAR, BNB, UNI, DOGE, SUI, ENA, PEPE, ADA, TRX, LINK, TAO, LTC, WLD, AVAX, AAVE (all USDT)",
+    "range": "1h candles opening 2024-10-22T00:00:00.000Z (1729555200000) through 2026-11-21T23:00:00.000Z, i.e. closed before 2026-11-22T00:00:00.000Z (1795305600000): 18,264 hours per pair",
+    "warmUp": "The first decision (2024-11-22T00:00Z) needs the 744 hours opening 2024-10-22T00:00Z to 2024-11-21T23:00Z. The 544 hours opening 2024-10-22T00:00Z to 2024-11-13T15:00Z precede v1's saved history (from 2024-11-13T16:00Z), so they get field validation but no OHLC parity. They enter only decisions before 2024-12-14T16:00Z. The hours after 2026-11-20T23:00Z enter no feature; they are retrieved for parity only.",
+    "requests": "19 per pair, 380 in all, documented weight 2 each (760). Request k = 0 … 18: interval 1h, startTime = 1729555200000 + k × 3,600,000,000, endTime = min(startTime + 3,599,999,999, 1795305599999), limit 1000. Expected rows 1000 for k < 18 and 264 for k = 18.",
+    "order": "Pairs in v1's order; for each pair k ascending. One request at a time, at least 250 ms apart.",
+    "stopRules": {
+      "http429": "Wait Retry-After seconds (stop if absent or above 120) and retry that request once; the retry is counted separately. A second 429 stops the retrieval.",
+      "http418": "Stop.",
+      "http403or451": "Stop. No other host, proxy, header or credential is tried.",
+      "usedWeight": "Stop if X-MBX-USED-WEIGHT-1M exceeds 3000, half the documented 6,000.",
+      "otherFailure": "Any other status, timeout, network error or non-JSON body stops the retrieval. It is not retried.",
+      "result": "A stopped retrieval is RETRIEVAL_INCOMPLETE: its directory is kept as written and nothing is exported from it. Another attempt needs a recorded owner decision and a new directory; two attempts are never merged."
+    },
+    "storage": {
+      "directory": ".zerochart-market-data/spot-24h-activity-shock-increment-dev-v1/ (git-ignored, new, write-once; the retrieval refuses to run if it exists)",
+      "raw": "raw/<SYMBOL>-<k, two digits>.json: each 200 response body, byte for byte",
+      "manifest": "manifest.json: specification stable and file SHA-256, commit, and per request the URL, sent and received times, HTTP status, X-MBX-USED-WEIGHT-1M, retries, byte count and SHA-256 of the body",
+      "validation": "validation.json: every check below per request, per pair and in total, the classification counts and the parity counts",
+      "separation": "Nothing is written into .zerochart-market-data/spot-24h-v1/ or binance-activity-probe-2026-11-26/. v1's directory is opened read-only; the SHA-256 list of its universe and 20 candle files is recorded before and after and must be unchanged.",
+      "dataHandling": "Raw responses stay local and git-ignored. Only aggregates appear in the repository."
+    }
+  },
+  "validation": {
+    "checks": [
+      "Each response is a JSON array of at most `limit` rows; each row has exactly 12 fields.",
+      "Open time (0) and close time (6) are integers; every open time is on the hour, inside the request's range, strictly increasing, and unique across the whole pair; close time = open time + 3,599,999.",
+      "Every candle closed before its request was sent.",
+      "Open, high, low, close (1-4) are positive decimal strings; high >= open, close, low; low <= open, close.",
+      "Base volume (5), quote volume (7), taker-buy base (9) and taker-buy quote (10) are nonnegative decimal strings; number of trades (8) is a nonnegative safe integer; field 11 is recorded as found.",
+      "Taker-buy base <= base volume and taker-buy quote <= quote volume, compared as exact decimals.",
+      "Zero consistency: trades = 0 exactly when base volume = 0, and then quote and taker-buy volumes are 0.",
+      "Implied mean prices, quote / base and taker-buy quote / taker-buy base (when the denominator is positive), lie within [low, high] with relative tolerance 1e-6. An inference from the field names, not a documented guarantee."
+    ],
+    "implementation": "#224's checkRow, compareDecimal and ohlcParity in scripts/binanceActivityProbe.ts, reused unchanged. Its checkResponse assumes 24 rows, so response indexing over each request's expected hours and the cross-request uniqueness check are new code with the same rules.",
+    "classification": {
+      "valid": "Present and passes every check, base volume > 0",
+      "validZero": "Present and passes every check with base volume 0 and trades 0. A valid hour; it enters the sums.",
+      "missing": "An expected open time with no row, a row shorter than 12 fields, or a null field (#224's classification). Kept distinct from a zero-volume hour (Binance generates no kline during BREAK or CANCEL_ONLY).",
+      "invalid": "A present row failing any other check, including a duplicate open time. Nothing is repaired, interpolated, deduplicated or refetched."
+    },
+    "ohlcParity": {
+      "hours": "Every hour of v1's saved files (2024-11-13T16:00Z to 2026-11-21T23:00Z) against the retrieval",
+      "values": "Number.parseFloat of fields 1-4 equals v1's saved open, high, low, close, and close time equals v1's closeTime, exactly (#224's ohlcParity)",
+      "presence": "An hour present in one source and missing from the other",
+      "rule": "Any value mismatch or presence difference is INTEGRITY_FAILURE before export, with every differing hour listed. Parity shows only that OHLC is unchanged since v1's retrieval; volume has no earlier copy to compare."
+    }
+  },
+  "activityFeature": {
+    "name": "activityShock24h",
+    "source": "docs/BINANCE_ACTIVITY_FEASIBILITY.md section 5, unchanged",
+    "definition": {
+      "hours": "h_j is the 1h candle opening at T - j hours, j = 1 … 744; every one closed by T. The candle opening at T is never used.",
+      "volume": "V(h) = Number.parseFloat of field 5 (base volume) as float64",
+      "R0": "Sum of V(h_j), j = 1 … 24",
+      "Rk": "For k = 1 … 30: sum of V(h_j), j = 24k + 1 … 24k + 24",
+      "mu": "(1/30) x sum of R_1 … R_30",
+      "s": "Population standard deviation (ddof = 0) of ln R_1 … ln R_30",
+      "value": "(ln R_0 - ln mu) / s"
+    },
+    "arithmetic": "float64; each block sum in increasing open time; Math.log; s = sqrt(sum((x - mean)^2) / 30)",
+    "unavailable": {
+      "order": [
+        "ACTIVITY_WINDOW_MISSING",
+        "ACTIVITY_WINDOW_INVALID",
+        "ACTIVITY_BLOCK_ZERO",
+        "ACTIVITY_DISPERSION_ZERO",
+        "ACTIVITY_NOT_FINITE"
+      ],
+      "meanings": {
+        "ACTIVITY_WINDOW_MISSING": "Any of the 744 hours is missing",
+        "ACTIVITY_WINDOW_INVALID": "Any of the 744 hours is invalid",
+        "ACTIVITY_BLOCK_ZERO": "Any of R_0 … R_30 equals 0",
+        "ACTIVITY_DISPERSION_ZERO": "s = 0",
+        "ACTIVITY_NOT_FINITE": "The value is not finite"
+      }
+    },
+    "normalization": "Per pair, own history only. Nothing is fitted or estimated outside the classifier, so no training-only rule is needed for it."
+  },
+  "observations": {
+    "grid": "Protocol v1's: every T at 00, 04, 08, 12, 16 and 20 UTC from 2024-11-22T00:00:00.000Z with T + 24h <= 2026-11-22T00:00:00.000Z: 4,375 per pair, 87,500 in all, in #222's row order (T, then v1's member order)",
+    "priceFeaturesAndLabels": "Taken from #222's recorded dataset (hash-verified), and recomputed with #222's pairRows from v1's saved candles: features, split, outcome category (AMBIGUOUS kept), class and deciding bar must equal the recorded row exactly, else INTEGRITY_FAILURE",
+    "outcome": "v1's resolveOutcome at T3S3 (target and stop at 3 x ATR14/close from the open of the candle opening at T, 24 bars), classes TARGET, STOP (AMBIGUOUS mapped to STOP), TIMEOUT, as in #222",
+    "exclusions": {
+      "order": [
+        "FEATURE_WINDOW_UNAVAILABLE",
+        "FEATURES_NOT_FINITE",
+        "VOLATILITY_NOT_POSITIVE",
+        "LABEL_WINDOW_UNAVAILABLE",
+        "V1_FEATURES_UNAVAILABLE",
+        "ACTIVITY_WINDOW_MISSING",
+        "ACTIVITY_WINDOW_INVALID",
+        "ACTIVITY_BLOCK_ZERO",
+        "ACTIVITY_DISPERSION_ZERO",
+        "ACTIVITY_NOT_FINITE"
+      ],
+      "rule": "#222's reasons in #222's order, then the activity reasons. A decision gets the first reason that applies; one with none is a common observation. Every reason is counted per pair, per split and in total."
+    },
+    "common": "Both arms are fitted and scored on the same common observations only. An observation without activityShock24h is excluded from both arms, never imputed, and arm A is never given rows that arm B lacks.",
+    "splits": "Protocol v1's splitOf, unchanged: train (T >= 2024-11-22T00:00Z, T + 24h <= 2025-11-22T00:00Z), validation (T >= 2025-11-22T00:00Z, T + 24h <= 2026-05-22T00:00Z), test (T >= 2026-05-22T00:00Z, T + 24h <= 2026-11-22T00:00Z). A decision whose 24-hour label crosses a boundary is purged: in no fit and no evaluation. v1 calls the last split test; here it is the final development period, examined data.",
+    "coverage": {
+      "denominator": "Per split: every grid decision whose splitOf equals that split (train 43,700; validation 21,620; test 21,980), pairs pooled. Purged decisions are in no denominator. The same denominator serves both arms.",
+      "numerator": "Common observations of that split",
+      "requirement": "coverage >= 0.95 in train, validation and test, each",
+      "reported": "Per split and per pair: coverage, each exclusion reason, missing, invalid and valid-zero hours"
+    }
+  },
+  "arms": {
+    "A": {
+      "features": "#220's eleven, in order: ret1h, ret4h, ret24h, ret72h, atr14OverClose, logReturnStd24h, rsi14Over100, macdHistogramOverClose, closeOverSma24Minus1, high24OverCloseMinus1, closeOverLow24Minus1"
+    },
+    "B": {
+      "features": "A's eleven in the same order, then activityShock24h as the twelfth column"
+    },
+    "nothingElseDiffers": "Same rows, row order, labels, estimator, settings, seed, environment and procedure."
+  },
+  "estimator": {
+    "library": "scikit-learn 1.9.1",
+    "estimator": "sklearn.ensemble.HistGradientBoostingClassifier",
+    "settings": {
+      "loss": "log_loss",
+      "learning_rate": 0.05,
+      "max_iter": 100,
+      "max_leaf_nodes": 15,
+      "min_samples_leaf": 100,
+      "l2_regularization": 1.0,
+      "early_stopping": false,
+      "random_state": 17
+    },
+    "verifiedParams": "#222's estimator.C.verifiedParams, unchanged; every fitted estimator's get_params() must equal it",
+    "fits": "One estimator per arm and evaluation, four in all, in the order development A, development B, final A, final B. X: the arm's features as float64; y: the class name. All common fit-set observations of all 20 pairs pooled, no sample or class weights, no coin identity.",
+    "fitSetRequirement": "Each fit set holds at least one observation of each class, else that evaluation is MISSING_CLASS",
+    "probabilities": "predict_proba on the evaluation set, columns reordered from classes_ to TARGET, STOP, TIMEOUT. Used as produced: no recalibration, clipping or renormalization. A non-finite probability stops the run.",
+    "reproductionOfC": "If an evaluation's common fit and evaluation sets equal #222's observation sets, arm A's probabilities must equal #222's recorded C probabilities within 1e-12 absolute for every row, else INTEGRITY_FAILURE. If activity exclusions make them differ, the check is reported NOT_APPLICABLE with the row counts.",
+    "noTuning": "No other setting, feature, transformation, class weight, calibration, model or seed is tried."
+  },
+  "evaluations": [
+    {
+      "id": "development",
+      "fit": ["train"],
+      "evaluate": "validation"
+    },
+    {
+      "id": "final",
+      "fit": ["train", "validation"],
+      "evaluate": "test"
+    }
+  ],
+  "evaluationRule": "Both evaluations run in one invocation of each step. Nothing is changed between them or after either is read. Purged decisions stay out of the combined fit.",
+  "metrics": {
+    "primary": {
+      "perObservation": "d_i = Brier_B,i - Brier_A,i, with Brier_X,i = sum over TARGET, STOP, TIMEOUT of (p_X,k - y_k)^2 and y the one-hot class",
+      "statistic": "Mean of d_i over the evaluation's common observations; negative favours B",
+      "alsoReported": "Each arm's mean three-class Brier; the relative difference mean(d) / mean(Brier_A), descriptive only"
+    },
+    "classComponents": "Per class k: mean of (p_B,k - y_k)^2 - (p_A,k - y_k)^2 with its interval; the three sum to the primary. Reported, not gated.",
+    "logLoss": "Per observation -ln p_X,y (natural log, probability of the observed class as produced); mean per arm and mean of the paired difference B - A with its interval. Reported, not gated. A zero probability makes that arm's figure non-finite and it is reported as such; nothing is clipped.",
+    "probabilityCalibration": {
+      "definition": "#222's metrics.probabilityCalibration, unchanged, per arm, class and evaluation on common observations: in the large |mean predicted p_k - observed share| and the weighted decile error over prediction-quantile bins",
+      "labels": "Each figure is labelled WITHIN or OUTSIDE #222's limits (in the large <= 0.03, weighted decile error <= 0.05), for both arms side by side",
+      "role": "Reported, not gated (see openDecisions.calibrationRole)"
+    },
+    "monthly": {
+      "table": "Per UTC calendar month of T within each evaluation period: common observations, distinct days, each arm's mean Brier and mean d_i. Partial first and last months are shown as they are.",
+      "leaveOneMonthOut": "For each month with common observations in the period: mean d_i over the period's other common observations. The maximum is reported with its month. Required for a pass (from #224 section 6).",
+      "monthsNegative": "Count of months whose mean d_i < 0, reported"
+    },
+    "pairs": "Per pair: common observations, each arm's mean Brier and mean d_i. Point figures only.",
+    "counts": "Every grid decision, purged decision, exclusion reason and hour classification, per pair, per split and in total"
+  },
+  "uncertainty": {
+    "method": "Protocol v1's dayOrders, unchanged, with a configuration that differs from protocol v1 only in replicates and seed (as #222): moving block bootstrap over whole UTC decision days (every pair and decision hour of a day together), blocks of 7 consecutive days (RULES.blockDays), never wrapped",
+    "replicates": 10000,
+    "random": {
+      "seed": "popup-spot-24h-activity-shock-increment-dev-v1",
+      "drawMessage": "{seed}|{grid}|L={blockLength}|r={replicate}|j={draw}|a={attempt}",
+      "draws": "blockStarts in scripts/swingStructureEvaluation.ts (SHA-256 counter with rejection), through dayOrders"
+    },
+    "grids": "The grid label is the evaluated split's name (validation, test). Positions are v1's splitDays: every UTC day from the period's start to its end - 24h (181 and 184), days without a common observation included.",
+    "pairing": "One set of day orders per evaluation serves every quantity of that evaluation, so A and B are always resampled on the same days",
+    "statistic": "v1's ratioInterval: per replicate, the sum of the quantity over the resampled days divided by the number of common observations on them. A replicate with none is undefined, excluded and counted.",
+    "minimumDefinedReplicates": 9900,
+    "levels": [0.025, 0.975],
+    "quantile": "Type 7 (v1's quantile)",
+    "heldFixed": "Fits and probabilities are held fixed: intervals reflect evaluation-day variation only, not refitting",
+    "limits": "Seven-day blocks cover label overlap and same-day co-movement of the 20 pairs, not regimes longer than a week. The history has been examined seven times before, and the two arms share eleven features, so the paired interval is narrow by construction and is a screening figure, not proof."
+  },
+  "evidenceFloors": {
+    "coverage": "observations.coverage.requirement in every split",
+    "perEvaluation": "At least 2,000 common observations on at least 90 distinct UTC days (#220's floor)",
+    "classes": "No MISSING_CLASS fit set",
+    "interval": "At least 9,900 defined replicates for the primary interval in each evaluation"
+  },
+  "verdict": {
+    "periodLabel": {
+      "B_BETTER": "mean d < 0 and upper 97.5% bound < 0",
+      "B_WORSE": "lower 2.5% bound > 0",
+      "NO_CLEAR_DIFFERENCE": "otherwise"
+    },
+    "order": [
+      {
+        "verdict": "INTEGRITY_FAILURE",
+        "when": "An input hash, v1's directory hashes, the retrieval manifest, a validation file, OHLC parity, #222 row parity, the reproduction of C, the environment, code identity or an artifact identity differs. The step that finds it stops, writes nothing and names the cause; no figure is reported."
+      },
+      {
+        "verdict": "INSUFFICIENT_EVIDENCE",
+        "when": "Otherwise, any evidenceFloors check fails"
+      },
+      {
+        "verdict": "SCREEN_PASSED",
+        "when": "Otherwise, in both evaluations: B_BETTER, and leave-one-month-out mean d < 0 for every month left out"
+      },
+      {
+        "verdict": "STOP",
+        "when": "Otherwise, if B_WORSE in either evaluation, or mean d >= 0 in both"
+      },
+      {
+        "verdict": "INCONCLUSIVE",
+        "when": "Any other outcome, for example mean d < 0 in both with an interval reaching 0, a failed leave-one-month-out, or opposite signs without B_WORSE"
+      }
+    ],
+    "comparisons": "Strict as written; a null or undefined figure fails its condition",
+    "reporting": "Every label, figure and condition is reported whatever the verdict",
+    "after": {
+      "SCREEN_PASSED": "Development evidence only. It permits writing a separate prospective proposal for review. It authorizes no collection, prospective test, schedule, entry rule, alert or order.",
+      "INCONCLUSIVE": "The historical screen ends. Not grounds for a prospective proposal, a rerun, a longer window or any variation.",
+      "STOP": "The activity block ends: no other window, normalization, quote volume, taker share, trade count, model, setting or label follows.",
+      "INSUFFICIENT_EVIDENCE": "The screen ends without a finding. Floors are not relaxed and no source is switched.",
+      "INTEGRITY_FAILURE": "Nothing is reported. Any further attempt needs a new revision committed alone."
+    }
+  },
+  "preconditions": {
+    "beforeFreezing": [
+      "Owner approval of this proposal and of openDecisions",
+      "dataSource.terms resolved as described in toResolve, and cited by the frozen revision"
+    ],
+    "beforeRetrieval": [
+      "The frozen revision committed alone, with no study code in the same commit",
+      "The retrieval code and its synthetic tests committed, tracked tree clean"
+    ],
+    "beforeExport": [
+      "Retrieval complete (not RETRIEVAL_INCOMPLETE), validation.json written, v1's directory hashes unchanged, OHLC parity exact"
+    ]
+  },
+  "verification": {
+    "synthetic": "Tests on synthetic data only: activityShock24h arithmetic, block alignment and causality (candles at or after T cannot change it); each unavailable reason, including valid-zero hours entering the sums; request planning (19 per pair, expected rows) and every stop rule; validation and classification of missing, invalid and zero hours; cross-request duplicates; OHLC value and presence parity; common-set construction (A never gets rows B lacks); identical rows, labels and settings across arms; paired bootstrap; leave-one-month-out; every verdict branch; write-once identities. A learnable synthetic example where the extra column carries signal, and one where it is noise; neither is financial evidence. Mutations of important lines must make a test fail.",
+    "checks": "Python unit tests, the repository's typecheck, lint, tests and build"
+  },
+  "environment": {
+    "requirements": "scripts/quantile-forecast-requirements.txt, unchanged (#220's hashed pins: scikit-learn 1.9.1, numpy 2.5.5, scipy 1.18.1, joblib 1.6.0, threadpoolctl 3.8.0, narwhals 2.29.0, cloudpickle 3.1.3), file SHA-256 b49283929f342a7dc486886a5ede3bdf97927e66911896555e7370865843e719. The fit refuses an installed version that differs (check_environment of scripts/quantile_forecast.py).",
+    "python": "3.12",
+    "recorded": "Python and Node versions, platform, every pinned package's installed version, thread pools, each estimator's get_params(), classes_ and n_iter_, and #222's recorded thread pools beside them"
+  },
+  "pipeline": {
+    "note": "Proposed command names; none exists yet",
+    "retrieve": "npm run evaluate -- activity-retrieve: refuses unless this specification's terms.status is RESOLVED; writes the retrieval directory, manifest and validation",
+    "export": "npm run evaluate -- activity-export: verifies inputs, retrieval, validation, OHLC parity and #222 row parity; computes activityShock24h; writes the joined dataset (no fit, no metric)",
+    "fit": ".venv/bin/python scripts/activity_shock_classifier.py: verifies environment, code identity and dataset; fits A and B for both evaluations; checks the reproduction of C; writes probabilities (no metric)",
+    "evaluate": "npm run evaluate -- activity-evaluate: verifies the dataset and probabilities; computes every metric, interval, floor and the verdict; writes the result",
+    "identity": "Each step refuses to run while a tracked file differs from HEAD, and refuses inputs written at another commit or under another specification file hash"
+  },
+  "output": {
+    "dataset": ".zerochart-reports/spot-24h-activity-shock-increment-dev-v1-dataset-<specification sha256, 12 hex>-<commit, 12 hex>.json: manifest, per-pair coverage and exclusions, and one row per grid decision: symbol, T, split, #222 dataset row index, exclusion reason, the eleven features, activityShock24h, outcome, class",
+    "predictions": ".zerochart-reports/spot-24h-activity-shock-increment-dev-v1-predictions-<specification sha256, 12 hex>-<commit, 12 hex>.json: manifest, environment, and per evaluation and arm the fit summary and one row per common evaluation observation (dataset row index, pT, pS, pTO)",
+    "results": ".zerochart-reports/spot-24h-activity-shock-increment-dev-v1-<specification sha256, 12 hex>.json",
+    "identity": "The specification's stable SHA-256 (stableSerialize, as protocol v1) and file SHA-256; the code commit and each study file's git blob; v1's recorded result, universe and candle hashes; #222's specification, dataset, predictions and result hashes; the retrieval manifest's and validation file's SHA-256; the dataset's, predictions' and requirements file's SHA-256; the classifier configuration and the environment",
+    "writeOnce": "Each file and the retrieval directory are written once; a rerun reports UNCHANGED for identical bytes or CONFLICT and never overwrites",
+    "report": "Aggregates only, no raw market data"
+  },
+  "preserved": "Protocol v1, its result and saved candles; #216-#224's specifications, code, results, reports and probe files; #222's STOP. All are read, never written.",
+  "openDecisions": {
+    "termsBlocker": {
+      "question": "How the REST terms question is settled, or whether to stop",
+      "recommendedDefault": "Keep retrieval blocked. First locate and read the separate API terms (14.1.2(b)), the Prohibited Use Policy and the Product Terms list without using the owner's sign-ins; if they do not address this use, seek a written statement from Binance; if neither settles it, stop.",
+      "reason": "The reviewed text neither permits nor forbids this use, and the documents that might were not read."
+    },
+    "host": {
+      "question": "api.binance.com or data-api.binance.vision",
+      "recommendedDefault": "api.binance.com",
+      "reason": "It is v1's and the probe's source, and the one whose terms were reviewed. Binance recommends data-api.binance.vision for market-data-only clients, but a binance.vision host may bring the Vision Dataset Terms into scope, which would be a source change needing its own review."
+    },
+    "calibrationRole": {
+      "question": "Whether B's absolute probability calibration gates a pass, as #224 section 6 proposed",
+      "recommendedDefault": "Report only, both arms side by side against #222's limits",
+      "reason": "The screen measures the increment of one feature. #222 recorded that this same estimator on A's features already missed the limits once per period, so an absolute gate on B would mostly retest #222's model rather than activity. The Brier difference already includes calibration."
+    },
+    "existingFiles": {
+      "question": "Whether the terms resolution must also cover v1's saved candles and the probe's files",
+      "recommendedDefault": "Yes; the frozen revision states it",
+      "reason": "They came from the same endpoint under the same unreviewed terms, and this screen reads v1's candles."
+    }
+  },
+  "notExecutionReady": "Design only. No retrieval, export, fit, outcome scoring, UI, order, alert, account read, experiment record, migration, deployment, secret, schedule or prospective collection."
+}
