@@ -23,14 +23,15 @@ comparison proposed below is a separate proposal for the owner. It does not cont
   hypothesis: on identical opportunities and labels, adding it to #220's eleven price features
   lowers the out-of-sample three-class Brier score. Taker-buy and trade-count fields are not
   proposed.
-- **The prior is low.** The general evidence (volume changes what a price move predicts, in a
+- **Transfer is uncertain.** The general evidence (volume changes what a price move predicts, in a
   direction that differs between settings) comes from daily equities and daily crypto aggregated
-  across exchanges. In the crypto
-  evidence the effect is strongest in small, illiquid pairs, while Popup's pairs are the 20 most
-  liquid. No source examined tests hourly Binance Spot data against a 24-hour barrier outcome.
-- **Is an experiment justified?** One frozen, paired comparison scored on an untouched period is
-  justified, and nothing beyond it. It needs no collector, schedule or UI, but it takes at least
-  184 days of new data. Stopping here is also defensible. See [go/no-go](#go--no-go-prerequisites).
+  across exchanges. In the crypto evidence the effect is strongest in small, illiquid pairs, while
+  Popup's pairs are the 20 most liquid. No source examined tests hourly Binance Spot data against a
+  24-hour barrier outcome, so whether the published effects carry over to this setting is unknown.
+- **Is an experiment justified?** One frozen, paired comparison scored prospectively is justified,
+  and nothing beyond it. It needs no collector, schedule or UI, but it needs a period of new data:
+  184 days is proposed (v1's test length, reused), not an established minimum or a power-based
+  requirement. Stopping here is also defensible. See [go/no-go](#go--no-go-prerequisites).
 
 ## 1. Field map
 
@@ -90,7 +91,8 @@ Read on 2026-11-26 from Binance's documentation repositories (hashes in [Sources
 | Gaps           | Market data is not generated during `BREAK`, and klines are not generated during `CANCEL_ONLY` (glossary). A missing hour is therefore possible and differs from a zero-volume hour.                                                                                                                                                                                                                                                 |
 | Limits         | Klines weight 2. IP limits use `REQUEST_WEIGHT`, shown as 6,000 per minute in the documentation's `exchangeInfo` example (the live value was not requested). 429 means slow down with `Retry-After`. Ignoring 429s leads to 418 bans of 2 minutes to 3 days. 403 means a WAF rule. Binance points public market-data clients to `data-api.binance.vision`; the probe kept v1's `api.binance.com` so that the source stayed the same. |
 | History        | REST klines go back to a symbol's listing. The archive offers daily and monthly kline zips with `.CHECKSUM` files. **Archived files may be updated later** (a 2022-08-08 kline update "Fixed inconsistent data"), so point-in-time values are not guaranteed.                                                                                                                                                                        |
-| Terms          | The archive's terms file licenses its datasets under CC BY-NC-SA 4.0 for non-commercial use, such as personal non-production research. The REST API has its own terms, not reviewed here. The probe used REST only.                                                                                                                                                                                                                  |
+| Archive terms  | **Reviewed:** the Binance Vision Dataset Terms (version 1.0, last updated 2026-08-26), the archive's terms file. They cover datasets "made available through data.binance.vision and associated endpoints", license them under CC BY-NC-SA 4.0, list permitted non-commercial uses (section 4.1), and supplement the Binance Terms of Use. Whether "associated endpoints" includes the REST API is not determined here.              |
+| REST terms     | **Not reviewed:** the Binance Terms of Use and any terms specific to the REST API. The probe used the REST endpoint only and downloaded no archive file, so which terms govern its responses, and what they permit, remains open.                                                                                                                                                                                                    |
 | Not documented | How taker-buy volume is computed, whether self-trades or wash trades are included, and whether REST klines are ever revised after close.                                                                                                                                                                                                                                                                                             |
 
 ## 3. Probe (2026-11-26)
@@ -195,16 +197,16 @@ s   = population SD of ln R_1 … ln R_30        (ddof = 0, as #220's logReturnS
 activityShock24h = (ln R_0 − ln μ) / s
 ```
 
-| Property            | Definition                                                                                                                                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Input               | Kline field 5 (base volume), decimal string to float64. Hours with zero volume are valid and enter the sums.                                                                                                                                                                          |
-| Units               | Dimensionless: log deviation from the pair's own baseline, in baseline log-SD units.                                                                                                                                                                                                  |
-| Lookback            | 744 closed hourly candles (31 days), longer than v1's 200-candle window. Blocks are aligned to T, so they match UTC days only at 00:00Z decisions. Each block spans a full daily cycle, so hour-of-day patterns cancel.                                                               |
-| Normalization       | Per pair, own history only. No cross-sectional or fitted transformation, so nothing is estimated outside training. The tree model's internal binning is part of its fit.                                                                                                              |
-| Unavailable         | Any missing or invalid candle among the 744 (no repair, as in v1), any R_k = 0 for k = 0 … 30, or s = 0. An opportunity without the feature is ineligible for **both** arms, and the count is reported.                                                                               |
-| Available at T      | Uses only candles closed by T, as v1's features do. Whether a retrospectively retrieved value equals what was available live is unverified. See archive revisions in section 2.                                                                                                       |
-| Settings and source | m = 30 and standardization follow Bianchi et al.'s main specification. The 24-hour block matches their daily frequency and the decision horizon. Their standardization text is brief, and SD of baseline log volumes is this proposal's reading. No setting was chosen from outcomes. |
-| Base, not quote     | Quote volume = base volume × price, so its ratio carries a price term the price block already has. Base volume isolates the non-price part. Bianchi et al. used USD volume, so this is a deliberate departure.                                                                        |
+| Property            | Definition                                                                                                                                                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Input               | Kline field 5 (base volume), decimal string to float64. Hours with zero volume are valid and enter the sums.                                                                                                                                                                                |
+| Units               | Dimensionless: log deviation from the pair's own baseline, in baseline log-SD units.                                                                                                                                                                                                        |
+| Lookback            | 744 closed hourly candles (31 days), longer than v1's 200-candle window. Blocks are aligned to T, so they match UTC days only at 00:00Z decisions. Each block contains one complete 24-hour cycle (every hour of day once). Whether hour-of-day patterns cancel in the ratio is unverified. |
+| Normalization       | Per pair, own history only. No cross-sectional or fitted transformation, so nothing is estimated outside training. The tree model's internal binning is part of its fit.                                                                                                                    |
+| Unavailable         | Any missing or invalid candle among the 744 (no repair, as in v1), any R_k = 0 for k = 0 … 30, or s = 0. An opportunity without the feature is ineligible for **both** arms, and the count is reported.                                                                                     |
+| Available at T      | Uses only candles closed by T, as v1's features do. Whether a retrospectively retrieved value equals what was available live is unverified. See archive revisions in section 2.                                                                                                             |
+| Settings and source | m = 30 and standardization follow Bianchi et al.'s main specification. The 24-hour block matches their daily frequency and the decision horizon. Their standardization text is brief, and SD of baseline log volumes is this proposal's reading. No setting was chosen from outcomes.       |
+| Base, not quote     | Quote volume = base volume × price, so its ratio carries a price term the price block already has. Base volume isolates the non-price part. Bianchi et al. used USD volume, so this is a deliberate departure.                                                                              |
 
 **Hypothesis H1.** On identical eligible opportunities and identical labels, a forecaster given
 #220's eleven price features plus `activityShock24h` (B) has a lower mean three-class Brier score
@@ -226,31 +228,39 @@ value depends on the imbalance still to come. Binance documents it only by name,
 crypto-specific primary source covering it was verified. _Trade count and mean trade size:_ no
 evidence examined at this horizon. Adding them would turn one hypothesis into a catalogue.
 
-**Why the prior is low.** Bianchi et al.'s effects are strongest in small, illiquid pairs, and
+**Why transfer is uncertain.** Bianchi et al.'s effects are strongest in small, illiquid pairs, and
 Popup's are Binance's most liquid. Their volume pools 80+ exchanges, while Binance-only volume can
 differ. Their test is a daily cross-sectional portfolio, not a pooled hourly-sampled classifier
-with barriers. Easley et al.'s Binance results are modest and about other labels. A null result is
-the likely outcome and would be informative.
+with barriers. Easley et al.'s Binance results are modest and about other labels. None of these
+limitations settles the outcome here in either direction. A supported or an unsupported H1 would
+both be informative.
 
 ## 6. Proposed comparison (a specification to write, not an implementation)
 
-| Element       | Proposal                                                                                                                                                                                                                                                                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Opportunities | v1's 20 pairs, v1's 4-hour grid and entry (open of the candle opening at T). Eligible only if both arms have every feature.                                                                                                                                                                                                                                    |
-| Labels        | v1's `resolveOutcome`, unchanged, at T3S3: TARGET, STOP (AMBIGUOUS inside), TIMEOUT. Reused so that no new label is chosen.                                                                                                                                                                                                                                    |
-| Arms          | A: #220's eleven features. B: the same eleven plus `activityShock24h`. Nothing else differs.                                                                                                                                                                                                                                                                   |
-| Fitting       | The same estimator and fixed settings for both arms: `HistGradientBoostingClassifier`, three classes, with #222's pinned settings, seed and scikit-learn 1.9.1. No tuning, feature selection, class weights or recalibration.                                                                                                                                  |
-| Chronology    | Fit once on v1's period (decisions whose 24-hour label ends by 2026-11-22T00:00Z). Fitting on examined data is not evidence. Score only an **untouched period**: decisions from the first 00:00Z after the specification is committed, for at least 184 days (v1's test length, reused, not chosen for power). Labels that cross the period's end are dropped. |
-| Primary       | Per observation, Brier(B) − Brier(A), averaged. H1 is supported only if the mean is below 0 and the 95% upper bound is below 0. Intervals come from v1's moving block bootstrap over whole UTC days with 7-day blocks, paired (the same resampled days for both arms).                                                                                         |
-| Also required | B meets the contract's probability calibration limits (per class: in the large ≤ 0.03, decile error ≤ 0.05), and the mean difference stays below 0 with any one calendar month left out. Months carried much of v1's outcome variance.                                                                                                                         |
-| Reported only | Three-class log-loss difference. A pair-shuffled control (B's column permuted across pairs at each T, seeded), showing how much of any gain is market-wide rather than pair-specific. Eligible counts and exclusions by reason.                                                                                                                                |
-| Entries       | Not recommended in this comparison. If the owner wants them, each arm's decisions use the contract's restricted plug-in, v1's costs, abstention at 0 and per-opportunity means, with the contract's economic criteria and ENTER-subset calibration reported **separately**. They neither support nor refute H1, and H1 does not license entries.               |
-| Stop          | If H1 is not supported, the activity block stops. No other window, quote volume, taker share, model or label follows.                                                                                                                                                                                                                                          |
+| Element       | Proposal                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Opportunities | v1's 20 pairs, v1's 4-hour grid and entry (open of the candle opening at T). Eligible only if both arms have every feature.                                                                                                                                                                                                                                                                                     |
+| Labels        | v1's `resolveOutcome`, unchanged, at T3S3: TARGET, STOP (AMBIGUOUS inside), TIMEOUT. Reused so that no new label is chosen.                                                                                                                                                                                                                                                                                     |
+| Arms          | A: #220's eleven features. B: the same eleven plus `activityShock24h`. Nothing else differs.                                                                                                                                                                                                                                                                                                                    |
+| Fitting       | The same estimator and fixed settings for both arms: `HistGradientBoostingClassifier`, three classes, with #222's pinned settings, seed and scikit-learn 1.9.1. No tuning, feature selection, class weights or recalibration.                                                                                                                                                                                   |
+| Chronology    | Fit once on v1's period (decisions whose 24-hour label ends by 2026-11-22T00:00Z). Fitting on examined data is not evidence. Score only an **untouched period**: decisions from the first 00:00Z after the specification is committed, for a proposed 184 days (v1's test length, reused; not an established minimum and not derived from a power calculation). Labels that cross the period's end are dropped. |
+| Primary       | Per observation, Brier(B) − Brier(A), averaged. H1 is supported only if the mean is below 0 and the 95% upper bound is below 0. Intervals come from v1's moving block bootstrap over whole UTC days with 7-day blocks, paired (the same resampled days for both arms).                                                                                                                                          |
+| Also required | B meets the contract's probability calibration limits (per class: in the large ≤ 0.03, decile error ≤ 0.05), and the mean difference stays below 0 with any one calendar month left out. Months carried much of v1's outcome variance.                                                                                                                                                                          |
+| Reported only | Three-class log-loss difference. Eligible counts and exclusions by reason.                                                                                                                                                                                                                                                                                                                                      |
+| Entries       | Not recommended in this comparison. If the owner wants them, each arm's decisions use the contract's restricted plug-in, v1's costs, abstention at 0 and per-opportunity means, with the contract's economic criteria and ENTER-subset calibration reported **separately**. They neither support nor refute H1, and H1 does not license entries.                                                                |
+| Stop          | If H1 is not supported, the activity block stops. No other window, quote volume, taker share, model or label follows.                                                                                                                                                                                                                                                                                           |
 
-**Why not test on v1's examined history.** It would be the eighth look at the same outcomes. A pass
-there could not be told apart from the selection already done on that history, and #223 asked that
-further work use data not yet examined. Retrieving new columns does not make examined prices
-untouched.
+**Historical screen versus prospective evaluation.** Two different things could follow this
+report, and they are not interchangeable:
+
+- An _optional historical development screen_ on v1's examined period. It would be the eighth look
+  at the same outcomes, so a pass there could not be told apart from the selection already done on
+  that history. At most it could inform whether a prospective evaluation is worth waiting for. It
+  is not evidence for H1. Retrieving new columns does not make examined prices untouched.
+- An _independent prospective evaluation_ on decisions made after a frozen specification. Only
+  this could support or fail to support H1, and it is what #223 asked for (data not yet examined).
+
+This correction authorizes and designs neither. Each would be a separately reviewed proposal.
 
 **Not a continuation of #222.** H1 compares two forecasters on information. It does not test
 whether a decision rule beats cash. It reuses v1's labels and #222's estimator settings so that no
@@ -264,8 +274,11 @@ All must hold before any scored figure exists:
 1. **Owner approval** of this proposal, and the decision whether to proceed at all.
 2. **A frozen specification** (JSON with its SHA-256) committed alone, before the untouched period
    starts and before any activity value is joined to an outcome.
-3. **Data terms.** The owner confirms that Binance's API and data terms allow this personal
-   research use. The archive is CC BY-NC-SA 4.0, non-commercial.
+3. **Data terms reviewed.** The terms that govern REST market data (the Binance Terms of Use and
+   any API terms, not reviewed here) are read before any further retrieval, and the specification
+   cites the text and version reviewed. The reviewed Vision Dataset Terms apply to archive files;
+   this proposal uses REST. If the reviewed text leaves this use unclear, that is recorded as an
+   open question and no retrieval proceeds on that source.
 4. **Fit-set retrieval:** 1h klines with all 12 fields for the 20 pairs from 2024-10-22T00:00Z (744
    hours before v1's first decision) to 2026-11-22T00:00Z, into a new git-ignored directory with a
    hash manifest. v1's files are never written. About 380 requests, a retrieval to authorize
@@ -290,10 +303,11 @@ All must hold before any scored figure exists:
 - **Unknown:** coverage over full history, any revision of closed klines, exactly how taker-buy
   volume is computed, and whether `activityShock24h` carries any incremental information for these
   pairs and this outcome. That last question is H1.
+- **Unknown, terms:** what the unreviewed REST terms permit (section 2).
 - **Verdict:** a separate experiment is justified only as the single paired comparison above,
-  frozen in advance and scored on an untouched period of at least 184 days. The evidence does not
-  justify collection infrastructure, UI, alerts, decision rules or more activity features. Given a
-  low prior and the long wait, stopping here is a reasonable owner choice.
+  frozen in advance and scored prospectively (184 days proposed, not a power-based minimum). The
+  evidence does not justify collection infrastructure, UI, alerts, decision rules or more activity
+  features. Given uncertain transfer and the long wait, stopping here is a reasonable owner choice.
 
 ## Sources
 
@@ -303,7 +317,8 @@ Binance documentation (read 2026-11-26; SHA-256 of the files read):
 - [Spot glossary (`isBuyerMaker`, `BREAK`, `CANCEL_ONLY`)](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/spot_glossary.md)
 - [Market data only URLs](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md)
 - [Spot API changelog (kline weight change to 2, `timeZone`)](https://github.com/binance/binance-spot-api-docs/blob/master/CHANGELOG.md) (`e6f174d2…`)
-- [Binance public data README (archive fields, microseconds from 2025, archive updates)](https://github.com/binance/binance-public-data/blob/master/README.md) (`2e133d99…`) and [its terms](https://github.com/binance/binance-public-data/blob/master/TERMS_AND_CONDITIONS.md)
+- [Binance public data README (archive fields, microseconds from 2025, archive updates)](https://github.com/binance/binance-public-data/blob/master/README.md) (`2e133d99…`) and [its terms](https://github.com/binance/binance-public-data/blob/master/TERMS_AND_CONDITIONS.md) (Binance Vision Dataset Terms v1.0, `99c4921d…`)
+- Not reviewed: the [Binance Terms of Use](https://www.binance.com/en/about-legal/terms) and any REST API terms
 
 Research:
 
