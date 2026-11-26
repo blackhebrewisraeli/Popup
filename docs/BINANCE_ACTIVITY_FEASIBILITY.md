@@ -100,7 +100,10 @@ committed alone in `4927532` (SHA-256 `bfb1fe51…`) before any request: v1's 20
 order; 24 closed 1h candles from 00:00 UTC on 2024-11-22, 2025-11-22 and 2026-11-21; 60 requests
 at most; stop rules for 429, 418, 403 and 451 and for used weight above 3,000; write-once storage.
 The probe code, [`scripts/binanceActivityProbe.ts`](../scripts/binanceActivityProbe.ts), was
-committed in `6d3660f` with synthetic tests and run once from a clean tree.
+committed in `6d3660f` with synthetic tests and run once from a clean tree. A later commit
+restructured it for SonarCloud only (async `git` call, helpers, top-level await). Its tests pass
+unchanged, and validating the saved responses again reproduces `validation.json` byte for byte.
+The run's code is `6d3660f`'s.
 
 **These dates are examined data.** They are v1's first decision day, the first day of v1's
 validation period and the last day before v1's cutoff. Nothing retrieved here is untouched

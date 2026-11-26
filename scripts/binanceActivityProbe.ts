@@ -8,11 +8,12 @@
  *   npx tsx scripts/binanceActivityProbe.ts             fetch, then validate
  *   npx tsx scripts/binanceActivityProbe.ts --validate  validate saved responses only
  */
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -173,32 +174,35 @@ export function checkRow(row: unknown[], openTime: number, sentAt: number): Hour
   };
 }
 
-/** A whole response: 24 hourly rows from startTime, in order, without duplicates. */
-export function checkResponse(body: unknown, startTime: number, sentAt: number) {
-  const expected = Array.from({ length: 24 }, (_, i) => startTime + i * HOUR_MS);
+/** Rows of a response keyed by open time, with ordering, range and duplicate findings. */
+function indexRows(body: unknown, expected: number[]) {
   const rows = new Map<number, unknown[]>();
   const duplicates = new Set<number>();
   const issues: string[] = [];
-  if (Array.isArray(body)) {
-    if (body.length !== 24) issues.push(`${body.length} rows, expected 24`);
-    let previous = Number.NEGATIVE_INFINITY;
-    for (const [index, row] of body.entries()) {
-      const openTime: unknown = Array.isArray(row) ? row[0] : undefined;
-      if (!Number.isSafeInteger(openTime)) {
-        issues.push(`row ${index}: open time is not an integer`);
-        continue;
-      }
-      const time = openTime as number;
-      if (!expected.includes(time))
-        issues.push(`row ${index}: open time outside the requested hours`);
-      if (time <= previous) issues.push(`row ${index}: open time not increasing`);
-      if (rows.has(time)) duplicates.add(time);
-      previous = time;
-      rows.set(time, row as unknown[]);
+  if (!Array.isArray(body)) return { rows, duplicates, issues: ['response is not an array'] };
+  if (body.length !== 24) issues.push(`${body.length} rows, expected 24`);
+  let previous = Number.NEGATIVE_INFINITY;
+  for (const [index, row] of body.entries()) {
+    const openTime: unknown = Array.isArray(row) ? row[0] : undefined;
+    if (!Number.isSafeInteger(openTime)) {
+      issues.push(`row ${index}: open time is not an integer`);
+      continue;
     }
-  } else {
-    issues.push('response is not an array');
+    const time = openTime as number;
+    if (!expected.includes(time))
+      issues.push(`row ${index}: open time outside the requested hours`);
+    if (time <= previous) issues.push(`row ${index}: open time not increasing`);
+    if (rows.has(time)) duplicates.add(time);
+    previous = time;
+    rows.set(time, row as unknown[]);
   }
+  return { rows, duplicates, issues };
+}
+
+/** A whole response: 24 hourly rows from startTime, in order, without duplicates. */
+export function checkResponse(body: unknown, startTime: number, sentAt: number) {
+  const expected = Array.from({ length: 24 }, (_, i) => startTime + i * HOUR_MS);
+  const { rows, duplicates, issues } = indexRows(body, expected);
   const hours = expected.map((openTime): HourCheck => {
     const row = rows.get(openTime);
     if (row === undefined) {
@@ -271,53 +275,65 @@ interface ProbeIo {
   save: (name: string, bytes: Buffer) => Promise<void>;
 }
 
+type Step = { stop: string } | { retryAfterMs: number } | { done: true };
+
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/** One attempt at one request, logged. A 429 on the first attempt asks for one retry. */
+async function attemptRequest(
+  request: ProbeRequest,
+  firstAttempt: boolean,
+  io: ProbeIo,
+  log: RequestLog[],
+): Promise<Step> {
+  const { symbol, date, url } = request;
+  const entry = { symbol, date, url, sentAt: iso(io.now()) };
+  let response: Response;
+  try {
+    response = await io.fetchImpl(url);
+  } catch (error) {
+    const failed = { usedWeight1m: null, bytes: null, sha256: null, error: String(error) };
+    log.push({ ...entry, counted: true, status: null, retrievedAt: iso(io.now()), ...failed });
+    return { done: true };
+  }
+  const weight = Number(response.headers.get('x-mbx-used-weight-1m'));
+  const usedWeight1m = Number.isFinite(weight) && weight > 0 ? weight : null;
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const retry = response.status === 429 && firstAttempt;
+  log.push({
+    ...entry,
+    counted: !retry,
+    status: response.status,
+    retrievedAt: iso(io.now()),
+    usedWeight1m,
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+  });
+  if (retry) {
+    const seconds = Number(response.headers.get('retry-after'));
+    if (seconds > 0 && seconds <= MAX_RETRY_AFTER_S) return { retryAfterMs: seconds * 1000 };
+    return { stop: `429 with Retry-After ${response.headers.get('retry-after')}` };
+  }
+  if ([429, 418, 403, 451].includes(response.status)) {
+    return { stop: `HTTP ${response.status} on ${symbol} ${date}` };
+  }
+  if (response.status === 200) await io.save(`raw/${symbol}-${date}.json`, bytes);
+  if (usedWeight1m !== null && usedWeight1m > MAX_USED_WEIGHT) {
+    return { stop: `X-MBX-USED-WEIGHT-1M ${usedWeight1m} above ${MAX_USED_WEIGHT}` };
+  }
+  return { done: true };
+}
+
 /** Requests in order under the plan's stop rules. Returns the log and why it stopped early, if it did. */
 export async function runProbe(requests: ProbeRequest[], io: ProbeIo) {
   const log: RequestLog[] = [];
-  const iso = (ms: number) => new Date(ms).toISOString();
   for (const request of requests) {
-    const { symbol, date, url } = request;
-    for (let attempt = 0; ; attempt += 1) {
-      const sentAt = io.now();
-      const entry = { symbol, date, url, sentAt: iso(sentAt) };
-      let response: Response;
-      try {
-        response = await io.fetchImpl(url); // NOSONAR(S9382): one request at a time
-      } catch (error) {
-        const failed = { usedWeight1m: null, bytes: null, sha256: null, error: String(error) };
-        log.push({ ...entry, counted: true, status: null, retrievedAt: iso(io.now()), ...failed });
-        break;
-      }
-      const weight = Number(response.headers.get('x-mbx-used-weight-1m'));
-      const usedWeight1m = Number.isFinite(weight) && weight > 0 ? weight : null;
-      const bytes = Buffer.from(await response.arrayBuffer()); // NOSONAR(S9382)
-      const retry = response.status === 429 && attempt === 0;
-      log.push({
-        ...entry,
-        counted: !retry,
-        status: response.status,
-        retrievedAt: iso(io.now()),
-        usedWeight1m,
-        bytes: bytes.length,
-        sha256: sha256(bytes),
-      });
-      if (retry) {
-        const seconds = Number(response.headers.get('retry-after'));
-        if (!(seconds > 0 && seconds <= MAX_RETRY_AFTER_S)) {
-          return { log, stopped: `429 with Retry-After ${response.headers.get('retry-after')}` };
-        }
-        await io.sleep(seconds * 1000); // NOSONAR(S9382): back off as Binance requires
-        continue;
-      }
-      if ([429, 418, 403, 451].includes(response.status)) {
-        return { log, stopped: `HTTP ${response.status} on ${symbol} ${date}` };
-      }
-      if (response.status === 200) await io.save(`raw/${symbol}-${date}.json`, bytes); // NOSONAR(S9382)
-      if (usedWeight1m !== null && usedWeight1m > MAX_USED_WEIGHT) {
-        return { log, stopped: `X-MBX-USED-WEIGHT-1M ${usedWeight1m} above ${MAX_USED_WEIGHT}` };
-      }
-      break;
+    let step = await attemptRequest(request, true, io, log); // NOSONAR(S9382): one at a time
+    if ('retryAfterMs' in step) {
+      await io.sleep(step.retryAfterMs); // NOSONAR(S9382): back off as Binance requires
+      step = await attemptRequest(request, false, io, log); // NOSONAR(S9382)
     }
+    if ('stop' in step) return { log, stopped: step.stop };
     await io.sleep(PAUSE_MS); // NOSONAR(S9382): pacing
   }
   return { log, stopped: null };
@@ -355,6 +371,7 @@ export function summarize(hours: HourRecord[]) {
   };
 }
 
+const execFileAsync = promisify(execFile);
 const repositoryRoot = () => fileURLToPath(new URL('..', import.meta.url));
 
 async function readV1(root: string, symbol: string): Promise<Map<number, SavedCandle>> {
@@ -418,8 +435,9 @@ export async function validateProbe(root = repositoryRoot()) {
 
 /** Online: refuses a dirty tree or an existing output directory, then runs the plan once. */
 async function fetchProbe(root: string) {
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root }).toString().trim();
-  if (git('status', '--porcelain', '--untracked-files=no')) {
+  const git = async (...args: string[]) =>
+    (await execFileAsync('git', args, { cwd: root, encoding: 'utf8' })).stdout.trim();
+  if (await git('status', '--porcelain', '--untracked-files=no')) {
     throw new Error('Refusing: tracked files differ from HEAD.');
   }
   const planBytes = await readFile(join(root, PLAN_PATH));
@@ -443,7 +461,7 @@ async function fetchProbe(root: string) {
   const manifest = {
     probeId: plan.probeId,
     plan: { path: PLAN_PATH, sha256: sha256(planBytes) },
-    commit: git('rev-parse', 'HEAD'),
+    commit: await git('rev-parse', 'HEAD'),
     startedAt,
     finishedAt: new Date().toISOString(),
     requestsCounted: log.filter((entry) => entry.counted).length,
@@ -457,20 +475,18 @@ async function fetchProbe(root: string) {
   return manifest;
 }
 
+async function main(root: string, validateOnly: boolean) {
+  if (!validateOnly) {
+    const { requestsCounted, rateLimitRetries, stopped } = await fetchProbe(root);
+    console.log(JSON.stringify({ requestsCounted, rateLimitRetries, stopped }));
+  }
+  const { summary, ohlcParityWithV1 } = await validateProbe(root);
+  console.log(JSON.stringify({ summary, ohlcParity: ohlcParityWithV1 }, null, 2));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const root = repositoryRoot();
-  const validateOnly = process.argv.includes('--validate');
-  (validateOnly ? Promise.resolve(null) : fetchProbe(root))
-    .then(async (manifest) => {
-      if (manifest) {
-        const { requestsCounted, rateLimitRetries, stopped } = manifest;
-        console.log(JSON.stringify({ requestsCounted, rateLimitRetries, stopped }));
-      }
-      const { summary, ohlcParityWithV1 } = await validateProbe(root);
-      console.log(JSON.stringify({ summary, ohlcParity: ohlcParityWithV1 }, null, 2));
-    })
-    .catch((error: unknown) => {
-      console.error(error instanceof Error ? error.message : error);
-      process.exitCode = 1;
-    });
+  await main(repositoryRoot(), process.argv.includes('--validate')).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
 }
