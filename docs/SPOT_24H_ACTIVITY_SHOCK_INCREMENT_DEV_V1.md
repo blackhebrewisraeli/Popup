@@ -21,10 +21,11 @@ study stand. The owner accepted the four defaults on 2026-11-26 ([decisions](#ow
   reviewing a separate prospective proposal. It cannot establish predictive support,
   profitability or permission for live use. A better Brier score is information value only,
   never evidence of trading readiness.
-- **Terms: unresolved, retrieval blocked.** The Terms of Use and the Prohibited Use Policy govern
-  unauthenticated public market-data access. The documented API plausibly is the "expressly
-  permitted" route for automated access. No text expressly permits copying or keeping the
-  returned data offline for research. See [Source terms](#source-terms).
+- **Terms: unresolved, retrieval blocked.** The Terms of Use govern unauthenticated public
+  market-data access and incorporate a Prohibited Use Policy. The copy of that policy read has an
+  unconfirmed publication status. No text read expressly permits copying or keeping the returned
+  data offline for research, and none is a confirmed prohibition of it. See
+  [Source terms](#source-terms).
 - **No economics.** No entries, expected-net plug-in, payoffs, costs, wallet or backtest. This
   isolates information value only.
 
@@ -58,11 +59,13 @@ Reviewed twice on 2026-11-26, from official Binance documents only. This is a re
 text, not legal advice or an assurance. Silence is treated as neither permission nor prohibition.
 
 **Conclusion: unresolved, but narrowed.** Unauthenticated public market data falls under the Terms
-of Use and the Prohibited Use Policy, not under the account-access API terms. The Policy bans
-automated access, obtaining and copying "except as expressly permitted". Binance's own
-documentation of the public market-data endpoints plausibly gives that permission for automated
-_access_. No text read expressly permits _copying or keeping_ the returned data offline for
-research. Blocker `TERMS_UNRESOLVED` stands: no retrieval.
+of Use, not under the account-access API terms. The Terms of Use incorporate a Prohibited Use
+Policy. The only copy read was found on Binance's CDN and was not matched to the current policy
+page, so its publication status and applicability are unconfirmed. That copy restricts automated
+access, obtaining and copying "except as expressly permitted". Binance's own documentation of the
+public market-data endpoints plausibly gives that permission for automated _access_. No text read
+expressly permits _copying or keeping_ the returned data offline for research. Nothing read is a
+confirmed prohibition of this research either. Blocker `TERMS_UNRESOLVED` stands: no retrieval.
 
 **Supporting clauses.**
 
@@ -78,11 +81,15 @@ research. Blocker `TERMS_UNRESOLVED` stands: no retrieval.
   - _33.1:_ the right to access the Platform is revocable.
   - _33.7–33.8:_ APIs are part of the Technology, and some databases in it are proprietary.
   - _3.1:_ questions go to customer support.
-- **Prohibited Use Policy**, last updated 5 January 2026. CDN PDF `3c287bd6…`, 3 pages.
-  - _Section I:_ crawlers, bots, programs or scripts used to access, obtain, copy or replicate
-    Binance Services are prohibited unless expressly permitted. So are unreasonable load and
-    copying or replicating any part of the Binance Platform.
-  - _Section D:_ resale or commercial use needs Binance's written authorization.
+- **Prohibited Use Policy, copy of unconfirmed status.** CDN PDF `3c287bd6…`, 3 pages, saying
+  "Last updated: 5 January 2026".
+  - _Status:_ found by search, with "[DRAFT]" in its metadata title. It was not matched to the
+    policy page the Terms of Use link (`/en/about-legal/prohibited-use-policy`, client-rendered,
+    not read). Whether it is the policy in force is not established.
+  - _Section I (this copy):_ crawlers, bots, programs or scripts used to access, obtain, copy or
+    replicate Binance Services are prohibited unless expressly permitted. So are unreasonable load
+    and copying or replicating any part of the Binance Platform.
+  - _Section D (this copy):_ resale or commercial use needs Binance's written authorization.
 - **Spot API documentation** (`rest-api.md`, `market_data_only.md`, and the "SPOT Exchange Terms
   of Use" page, which only points to the Terms of Use).
   - Documents the public endpoints, their rate limits and a market-data-only host,
@@ -95,16 +102,18 @@ research. Blocker `TERMS_UNRESOLVED` stands: no retrieval.
   and approval. Those terms were not located (`/en/about-legal/api-key-terms` returns 404).
   Neither this screen, v1 nor the probe uses them.
 - _Unauthenticated public market data_ (`GET /api/v3/klines`, no key): governed by the Terms of
-  Use and the Prohibited Use Policy. No market-data-specific terms were found. The Product Terms
+  Use, including the Prohibited Use Policy they incorporate, whose current text is unconfirmed.
+  No market-data-specific terms were found. The Product Terms
   list (client-rendered, no CDN copy found) was not read, so whether any Product Terms cover
   market data is unknown.
 
 **Not settled by the text.**
 
-1. Whether "expressly permitted" covers copying and keeping the responses, or only access.
-2. Whether API market data is "any part of the Binance Platform" or Binance IP.
-3. Whether offline research is "as needed to receive the services" under clause 27.
-4. Whether publishing aggregates derived from the data is allowed. This repository is public.
+1. Whether the policy copy read is the one in force.
+2. Whether "expressly permitted" covers copying and keeping the responses, or only access.
+3. Whether API market data is "any part of the Binance Platform" or Binance IP.
+4. Whether offline research is "as needed to receive the services" under clause 27.
+5. Whether publishing aggregates derived from the data is allowed. This repository is public.
 
 **Regional uncertainty.**
 
@@ -135,7 +144,7 @@ Only the owner decides whether to send this. The agent does not contact Binance.
 
 **Route.** Terms of Use clause 3.1 sends questions to customer support at
 <https://www.binance.com/en/chat>. Ask there for the question to be passed to the legal team.
-`legal@binance.com` appears in the Prohibited Use Policy only for reporting violations.
+`legal@binance.com` appears in the policy copy read only for reporting violations.
 
 **Question.**
 
@@ -143,8 +152,8 @@ Only the owner decides whether to send this. The agent does not contact Binance.
 Subject: Is keeping public Spot kline data for private, non-commercial research permitted?
 
 I would like to confirm the scope of the Binance Terms of Use (effective 27 October 2026) and the
-Prohibited Use Policy (last updated 5 January 2026) for the use below. Please refer this to the
-legal team if needed.
+Prohibited Use Policy they incorporate for the use below. Please refer this to the legal team if
+needed.
 
 Intended use:
 1. Unauthenticated GET requests to https://api.binance.com/api/v3/klines (interval 1h) for 20
@@ -166,6 +175,8 @@ c) Do separate API terms (clause 14.1.2(b)) or any Product Terms apply to unauth
    market-data endpoints? If so, where are they published?
 d) Is publishing aggregate statistics as described in 3 permitted, and is attribution required?
 e) Do the Binance Vision Dataset Terms apply to responses from api.binance.com?
+f) Is the Prohibited Use Policy marked "Last updated: 5 January 2026" the version currently in
+   force? If not, where is the current version published?
 ```
 
 ## Scope
