@@ -1,0 +1,79 @@
+{
+  "probeId": "binance-spot-kline-activity-probe-2026-11-26",
+  "status": "PLANNED: recorded and committed before any probe request",
+  "purpose": "Check that Binance Spot 1h klines return the aggregated trading-activity fields (base volume, quote volume, number of trades, taker-buy base and taker-buy quote volume) with the documented schema at three sampled dates. Feasibility only: no return, outcome, label, model, strategy or relation between activity and price is computed.",
+  "authorization": "Owner task of 2026-11-26: public market data without credentials; v1's 20 pairs; 24 closed 1h candles from 00:00 UTC on each of three dates; at most 60 kline requests, excluding rate-limit retries. No account, Supabase or production access; no full-history download.",
+  "endpoint": {
+    "method": "GET",
+    "url": "https://api.binance.com/api/v3/klines",
+    "why": "The host v1 and src/lib/binance.ts already use, so the source is unchanged. No credentials. No X-MBX-TIME-UNIT header, so times are milliseconds. No timeZone parameter, so intervals are UTC.",
+    "documentedWeight": 2,
+    "documentedIpLimit": "REQUEST_WEIGHT 6000 per minute per IP (rest-api.md, exchangeInfo example)"
+  },
+  "pairs": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "ZECUSDT",
+    "XRPUSDT",
+    "NEARUSDT",
+    "BNBUSDT",
+    "UNIUSDT",
+    "DOGEUSDT",
+    "SUIUSDT",
+    "ENAUSDT",
+    "PEPEUSDT",
+    "ADAUSDT",
+    "TRXUSDT",
+    "LINKUSDT",
+    "TAOUSDT",
+    "LTCUSDT",
+    "WLDUSDT",
+    "AVAXUSDT",
+    "AAVEUSDT"
+  ],
+  "pairsSource": "docs/spot-24h-probability.v1.json universe.members, in that order",
+  "dates": ["2024-11-22", "2025-11-22", "2026-11-21"],
+  "datesRelativeToV1": "All three lie inside v1's examined history: v1's first decision day (train), the first day of v1's validation period, and the last day before v1's cutoff (test). Any value retrieved here is examined-period data, never untouched evidence.",
+  "perRequest": {
+    "interval": "1h",
+    "startTime": "date T00:00:00.000Z in epoch milliseconds",
+    "endTime": "startTime + 86,399,999 ms (date T23:59:59.999Z)",
+    "limit": 24
+  },
+  "requests": 60,
+  "totalWeight": 120,
+  "order": "Pairs in the order above; for each pair the three dates in chronological order. One request at a time, at least 250 ms apart.",
+  "stopRules": {
+    "http429": "Wait Retry-After seconds (stop if absent or above 120) and retry that request once; the retry does not count toward the 60. A second 429 stops the probe.",
+    "http418": "Stop the probe.",
+    "http403or451": "Stop the probe. No other host, proxy, header or credential is tried.",
+    "usedWeight": "Stop if X-MBX-USED-WEIGHT-1M exceeds 3000, half the documented limit.",
+    "otherFailure": "Any other status, timeout or network error is recorded, not retried, and the probe continues with the next request."
+  },
+  "storage": {
+    "directory": ".zerochart-market-data/binance-activity-probe-2026-11-26/ (git-ignored, new, write-once; the probe refuses to run if it exists)",
+    "raw": "raw/<SYMBOL>-<date>.json: each 200 response body, byte for byte",
+    "manifest": "manifest.json: plan SHA-256, commit, per-request URL, status, retrieval time, X-MBX-USED-WEIGHT-1M, byte count and SHA-256",
+    "validation": "validation.json: the checks below, per request and in total",
+    "v1": ".zerochart-market-data/spot-24h-v1/ is opened read-only for an OHLC parity check. It is never written, renamed or supplemented."
+  },
+  "checks": [
+    "Response is a JSON array of 24 rows; each row has exactly 12 fields.",
+    "Open time (0) and close time (6) are integers; open times are startTime + i × 3,600,000 for i = 0 … 23, in order, without duplicates; close time = open time + 3,599,999.",
+    "Every candle closed before the request was sent.",
+    "Open, high, low, close (1–4) are positive decimal strings; high ≥ open, close, low; low ≤ open, close.",
+    "Base volume (5), quote volume (7), taker-buy base (9) and taker-buy quote (10) are nonnegative decimal strings; number of trades (8) is a nonnegative safe integer; field 11 is reported as found.",
+    "Taker-buy base ≤ base volume and taker-buy quote ≤ quote volume, compared as exact decimals.",
+    "Zero consistency: number of trades is 0 exactly when base volume is 0, and then quote and taker-buy volumes are 0.",
+    "Implied mean prices, quote ÷ base and taker-buy quote ÷ taker-buy base (when the denominator is positive), lie within [low, high] with a relative tolerance of 1e-6 for rounding. This is an inference from the field names (every trade in the hour priced within its range), not a documented guarantee.",
+    "OHLC parity with v1: Number.parseFloat of fields 1–4 equals v1's saved open, high, low and close for the same open time, and close time equals v1's closeTime."
+  ],
+  "classification": {
+    "validZero": "A row that passes every check with base volume 0 and trades 0 (an hour without trades).",
+    "missing": "An expected hour with no row, a row shorter than 12 fields, or a null field.",
+    "invalid": "A present field that fails a type, range, ordering, inequality or consistency check."
+  },
+  "notComputed": "No return, outcome, label, indicator, model, correlation, ranking or profitability figure. Summary statistics are limited to counts and the range of taker-buy share needed to show the inequality checks.",
+  "limitations": "60 pair-days demonstrate availability at these sampled dates only. They cannot establish complete historical coverage, that values never change after retrieval (point-in-time archival availability), or how Binance computes the fields."
+}
