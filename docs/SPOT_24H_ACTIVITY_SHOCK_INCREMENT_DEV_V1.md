@@ -1,150 +1,91 @@
-# activityShock24h incremental value: historical development screen (PROPOSED / NOT RUN)
+# activityShock24h incremental value: historical development screen: verdict `INCONCLUSIVE`
 
-**Status: design only, and blocked before retrieval.** This proposes one historical screen of
-whether [#224](BINANCE_ACTIVITY_FEASIBILITY.md)'s `activityShock24h` adds information to #222's
-classifier. The machine-readable specification is
-[`spot-24h-activity-shock-increment-dev-v1.json`](spot-24h-activity-shock-increment-dev-v1.json)
-(revision 2, not frozen). Nothing was retrieved, exported, fitted or scored. The terms covering
-the proposed REST endpoint remain **unresolved** after two reviews, so no retrieval may follow
-from this revision. [#222](SPOT_24H_EXPECTED_NET_T3S3_DEV_V1.md)'s `STOP` and every earlier
-study stand. The owner accepted the four defaults on 2026-11-26 ([decisions](#owner-decisions)).
+**Status: development research, finished. Verdict `INCONCLUSIVE`; per the specification, the
+historical screen ends here.** The screen asked whether adding
+[#224](BINANCE_ACTIVITY_FEASIBILITY.md)'s `activityShock24h` to #220's eleven price features
+lowers the out-of-sample three-class Brier score of [#222](SPOT_24H_EXPECTED_NET_T3S3_DEV_V1.md)'s
+classifier on v1's T3S3 outcomes. It was run once under the frozen
+[specification](spot-24h-activity-shock-increment-dev-v1.json) (revision 3). Both evaluation
+periods are examined development history: this was the eighth look at the same outcomes, never
+untouched evidence. A lower Brier score is information value only. Nothing here is a profit
+figure, an entry rule or evidence of trading readiness.
 
 ## In brief
 
-- **One comparison.** On v1's 20 pairs, decision grid, chronological splits, 24-hour boundary
-  purge and T3S3 labels: arm A is #220's eleven price features; arm B is the same eleven plus
-  `activityShock24h`. Same rows, labels, `HistGradientBoostingClassifier`, #222's fixed settings,
-  seed and environment. Primary metric: the paired per-observation difference in three-class
-  Brier score, B − A.
-- **Two development evaluations.** Fit on train and score validation; fit on train + validation
-  and score test. Both periods are examined history (an eighth look), so a pass can only justify
-  reviewing a separate prospective proposal. It cannot establish predictive support,
-  profitability or permission for live use. A better Brier score is information value only,
-  never evidence of trading readiness.
-- **Terms: unresolved, retrieval blocked.** The Terms of Use govern unauthenticated public
-  market-data access and incorporate a Prohibited Use Policy. The copy of that policy read has an
-  unconfirmed publication status. No text read expressly permits copying or keeping the returned
-  data offline for research, and none is a confirmed prohibition of it. See
-  [Source terms](#source-terms).
-- **No economics.** No entries, expected-net plug-in, payoffs, costs, wallet or backtest. This
-  isolates information value only.
+- **Did adding `activityShock24h` reduce Brier loss in both periods? Not shown.** Arm B's mean
+  three-class Brier score was lower than arm A's in both periods, but neither period's 95% paired
+  interval excludes zero. Both periods are labelled `NO_CLEAR_DIFFERENCE`.
+- **How large was the improvement?** About a fifth of a percent:
+  - Development (fit train, score validation): B − A = −0.00106 per observation, 95% −0.00452 to
+    +0.00395 (−0.16% of A's 0.65843).
+  - Final (fit train + validation, score test): −0.00124, 95% −0.00492 to +0.00152 (−0.19% of A's
+    0.65766).
+  - For scale, #222's C was about 1% below its unconditional baseline.
+- **Did calibration improve or deteriorate? Mixed, with no label changed.**
+  - B's in-the-large error was smaller for TARGET and TIMEOUT in both periods.
+  - B's STOP decile error was larger in both periods, and its STOP in-the-large error was larger
+    in the final period.
+  - Each period has the same one figure outside #222's limits for both arms: TIMEOUT in
+    development, TARGET in the final period.
+  - Calibration is reported, not gated.
+- **Did the result survive leaving each month out? Yes, but it is not enough.** The mean
+  difference stayed below zero with any one month left out, in both periods. The largest
+  leave-one-month-out means were −0.00010 (development, without March 2026) and −0.00038 (final,
+  without August 2026). B was better in 4 of 7 months in each period.
+- **What exact verdict follows from the frozen rules? `INCONCLUSIVE`.**
+  - Every evidence floor held: coverage 100% in every split; 21,620 and 21,980 observations on
+    181 and 184 days; no missing class; 10,000 defined replicates.
+  - `SCREEN_PASSED` needs `B_BETTER` in both periods, and neither period is.
+  - `STOP` needs `B_WORSE` in a period or a mean ≥ 0 in both, and neither holds.
+- **Integrity held throughout.**
+  - The retrieval was 380 of 380 requests, every one returning 200, with no retries.
+  - All 365,280 hours were valid, with exact OHLC and presence parity against v1.
+  - #222's rows were reproduced exactly.
+  - Arm A reproduced #222's recorded C probabilities exactly (maximum absolute difference 0.0) in
+    both periods.
 
-## Why this screen, and why it is narrow
+## Source terms and the support clarification
 
-#224 found that Popup discards kline activity fields, proposed one block (a 24-hour base-volume
-shock against the pair's own previous 30 days) and one hypothesis: adding it lowers
-three-class Brier on identical opportunities and labels. It also said a historical screen on
-v1's period would be development only. This specification designs that screen, not the
-prospective evaluation.
+**Binance Support case 174972727, dated 2026-11-26.** The owner asked Binance Support, through the
+chat the Terms of Use name for questions (clause 3.1), whether three things are permitted:
 
-Everything except the extra column is reused, so the only difference between the arms is the
-feature:
+1. Retrieving historical klines through `/api/v3/klines` within rate limits.
+2. Keeping those responses privately for offline, non-commercial research.
+3. Publishing aggregate research statistics without redistributing raw data.
 
-| Part                    | Reused from                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------ |
-| Pairs, grid, splits     | Protocol v1 (`splitOf`, purge of labels crossing a boundary)                   |
-| Labels                  | v1's `resolveOutcome` at T3S3, #222's class mapping (AMBIGUOUS → STOP)         |
-| Price features          | #220's `featuresOf`; rows taken from #222's recorded dataset and recomputed    |
-| Estimator and settings  | #222's C: settings, `verifiedParams`, seed 17, pinned scikit-learn 1.9.1       |
-| Calibration definitions | #222's in-the-large and decile error, with its limits as labels                |
-| Uncertainty             | #222's method: v1's `dayOrders` and `ratioInterval`, 7-day blocks, 10,000 reps |
-| Feature                 | #224 section 5, unchanged                                                      |
+Support answered in writing:
 
-If no observation loses its activity value, arm A must reproduce #222's recorded C probabilities
-exactly (1e-12). That check shows that arm A is #222's classifier and not a re-implementation.
+1. Retrieval within rate limits is permitted. Exceeding the IP rate limits brings a temporary IP
+   ban.
+2. Binance market data is public and available to all users for non-commercial use.
+3. There would be no issues, provided there is no redistribution and the use is non-commercial.
 
-## Source terms
+**Scope.** This is support clarification for the research described, and only that: private
+offline non-commercial research, publishing aggregate statistics, never raw data. It is not a
+commercial licence, legal advice or a blanket legal assurance. It did not address revision 2's
+other open points, which stand as recorded:
 
-Reviewed twice on 2026-11-26, from official Binance documents only. This is a reading of the
-text, not legal advice or an assurance. Silence is treated as neither permission nor prohibition.
+- whether the Prohibited Use Policy copy read is the one in force;
+- separate API terms or Product Terms;
+- attribution;
+- the Vision Dataset Terms.
 
-**Conclusion: unresolved, but narrowed.** Unauthenticated public market data falls under the Terms
-of Use, not under the account-access API terms. The Terms of Use incorporate a Prohibited Use
-Policy. The only copy read was found on Binance's CDN and was not matched to the current policy
-page, so its publication status and applicability are unconfirmed. That copy restricts automated
-access, obtaining and copying "except as expressly permitted". Binance's own documentation of the
-public market-data endpoints plausibly gives that permission for automated _access_. No text read
-expressly permits _copying or keeping_ the returned data offline for research. Nothing read is a
-confirmed prohibition of this research either. Blocker `TERMS_UNRESOLVED` stands: no retrieval.
+The owner keeps the transcript privately. It is not committed, and no account details are
+recorded. The agent did not contact Binance.
 
-**Supporting clauses.**
+**Effect.** Revision 3 sets `dataSource.terms.status` to `RESOLVED` on that basis and records the
+owner's authorization. It changes nothing else. The clarification concerns responses of this
+endpoint kept privately for this use, so it covers v1's candles and #224's probe files on the same
+basis. Both sets were preserved unchanged.
 
-- **Terms of Use** (ADGM Binance Entities), effective 27 October 2026. CDN PDF `f7c3c8a8…`, 74
-  pages, matched to the binance.com viewer by date and page count.
-  - _Preamble:_ accessing the Binance Platform is acceptance, and Local Terms supplement the
-    Agreement where they apply.
-  - _Definitions:_ the Platform includes access via a Binance API.
-  - _1.3.1(c):_ the Prohibited Use Policy is a core policy for all users.
-  - _26–27:_ Binance IP may be used only as needed to receive the services, for "non-commercial
-    personal or internal business use". IP rights include database rights.
-  - _14.1.2(b):_ account access through APIs needs separate API terms and Binance's approval.
-  - _33.1:_ the right to access the Platform is revocable.
-  - _33.7–33.8:_ APIs are part of the Technology, and some databases in it are proprietary.
-  - _3.1:_ questions go to customer support.
-- **Prohibited Use Policy, copy of unconfirmed status.** CDN PDF `3c287bd6…`, 3 pages, saying
-  "Last updated: 5 January 2026".
-  - _Status:_ found by search, with "[DRAFT]" in its metadata title. It was not matched to the
-    policy page the Terms of Use link (`/en/about-legal/prohibited-use-policy`, client-rendered,
-    not read). Whether it is the policy in force is not established.
-  - _Section I (this copy):_ crawlers, bots, programs or scripts used to access, obtain, copy or
-    replicate Binance Services are prohibited unless expressly permitted. So are unreasonable load
-    and copying or replicating any part of the Binance Platform.
-  - _Section D (this copy):_ resale or commercial use needs Binance's written authorization.
-- **Spot API documentation** (`rest-api.md`, `market_data_only.md`, and the "SPOT Exchange Terms
-  of Use" page, which only points to the Terms of Use).
-  - Documents the public endpoints, their rate limits and a market-data-only host,
-    `data-api.binance.vision`.
-  - Has no licence, storage or research clause.
+**Revision 2's reading.** It is in the specification's `dataSource.terms` and in this file's
+history at [#226](https://github.com/blackhebrewisraeli/Popup/pull/226). It found that the text
+read neither clearly permitted nor clearly prohibited the use.
 
-**Public market data versus account APIs.**
+### Clarification request
 
-- _Account-access APIs_ (API keys, signed endpoints): clause 14.1.2(b) adds separate API terms
-  and approval. Those terms were not located (`/en/about-legal/api-key-terms` returns 404).
-  Neither this screen, v1 nor the probe uses them.
-- _Unauthenticated public market data_ (`GET /api/v3/klines`, no key): governed by the Terms of
-  Use, including the Prohibited Use Policy they incorporate, whose current text is unconfirmed.
-  No market-data-specific terms were found. The Product Terms
-  list (client-rendered, no CDN copy found) was not read, so whether any Product Terms cover
-  market data is unknown.
-
-**Not settled by the text.**
-
-1. Whether the policy copy read is the one in force.
-2. Whether "expressly permitted" covers copying and keeping the responses, or only access.
-3. Whether API market data is "any part of the Binance Platform" or Binance IP.
-4. Whether offline research is "as needed to receive the services" under clause 27.
-5. Whether publishing aggregates derived from the data is allowed. This repository is public.
-
-**Regional uncertainty.**
-
-- Binance's global terms moved to the ADGM entities from 5 January 2026. binance.com served the
-  ADGM version here, while the en-AE page carried a Binance FZE (VARA) footer.
-- Local Terms supplement the Agreement where they apply. Which ones bind the owner depends on
-  residence and the entity holding the account, which was not determined.
-- Both PDFs were found on Binance's CDN by search, and their metadata titles say "Draft". The
-  Policy copy was not matched to the binance.com page.
-- binance.com legal pages render client-side. Opening one in the owner's Chrome triggered an
-  automatic Google social-login redirect, so the PDFs were read from the CDN instead.
-
-**Existing files.** v1's universe and 20 candle files (retrieved 2026-11-22) and #224's 60 probe
-responses (2026-11-26) came from the same endpoint, without a key, under the same documents, so
-the same question applies to them. Aggregates from v1's candles are already published in this
-repository (#215–#223). The files are preserved unchanged: not deleted, edited, re-retrieved or
-redistributed.
-
-**Archive terms, kept separate.** The Binance Vision Dataset Terms (version 1.0, last updated
-2026-08-26, unchanged since #224) cover data from `data.binance.vision` "and associated
-endpoints". They grant CC BY-NC-SA 4.0 and list personal non-production backtesting as permitted
-(4.1). They do not name `api.binance.com`. They are not relied on here, and this specification does
-not switch to the archive or to a `binance.vision` host.
-
-## Clarification request (prepared, not sent)
-
-Only the owner decides whether to send this. The agent does not contact Binance.
-
-**Route.** Terms of Use clause 3.1 sends questions to customer support at
-<https://www.binance.com/en/chat>. Ask there for the question to be passed to the legal team.
-`legal@binance.com` appears in the policy copy read only for reporting violations.
+Prepared in revision 2. The owner sent items 1 to 3 of the intended use in shorter form, without
+the lettered questions, and Support answered them as above.
 
 **Question.**
 
@@ -179,79 +120,199 @@ f) Is the Prohibited Use Policy marked "Last updated: 5 January 2026" the versio
    force? If not, where is the current version published?
 ```
 
-## Scope
+## What was fixed in advance
 
-**In:**
+Revision 3 was committed alone in `6d40a2a`, before any study code, retrieval or figure. Its
+stable SHA-256 is `c7fa2a8f7056…` and its file SHA-256 is `34b8ecac9035…`. The research design is
+revision 2's, unchanged.
 
-1. A retrieval of 380 requests: candles opening 2024-10-22T00:00Z to 2026-11-21T23:00Z for 20
-   pairs, 18,264 hours each. That includes the 744-hour warm-up for the first decision, 544 hours
-   of which precede v1's saved history.
-2. Write-once storage in its own git-ignored directory, with raw bodies, a hash manifest and a
-   validation file.
-3. Full field validation (the probe's checks over every hour) and exact OHLC and presence parity
-   with every v1 hour.
-4. `activityShock24h` as #224 defines it.
-5. Four fits: two arms × two evaluations.
-6. Metrics, paired intervals and one verdict.
+| Choice                 | Fixed value                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Pairs, grid, splits    | v1's 20 pairs; decisions every 4 h; train / validation / test with labels crossing a boundary purged (87,500 decisions, 200 purged)  |
+| Labels                 | v1's `resolveOutcome` at T3S3; classes TARGET, STOP (AMBIGUOUS mapped to STOP), TIMEOUT                                              |
+| Arm A                  | #220's eleven price features, rows taken from #222's recorded dataset and recomputed from v1's candles                               |
+| Arm B                  | The same eleven, then `activityShock24h` (#224 section 5)                                                                            |
+| Feature                | 24 h base volume against the 30 preceding 24 h blocks: (ln R₀ − ln μ) / s, s the ddof-0 SD of ln R₁…R₃₀; 744 closed hours            |
+| Estimator              | #222's C: `HistGradientBoostingClassifier`, scikit-learn 1.9.1, #222's settings, `verifiedParams` and fit function; seed 17          |
+| Fits                   | Development A, development B (train), final A, final B (train + validation), on identical common observations                        |
+| Primary metric         | Mean of d = Brier(B) − Brier(A) per observation, three classes                                                                       |
+| Interval               | v1's `dayOrders` / `ratioInterval`: 7-day whole-day blocks, 10,000 replicates, seed `popup-spot-24h-activity-shock-increment-dev-v1` |
+| Floors                 | Coverage ≥ 0.95 per split; ≥ 2,000 observations on ≥ 90 days per period; no missing class; ≥ 9,900 defined replicates                |
+| Pass (`SCREEN_PASSED`) | Both periods `B_BETTER` (mean < 0 and upper bound < 0) and the mean < 0 with each calendar month left out                            |
+| Reported, not gated    | Class components, log loss, calibration against #222's limits, months, pairs, every count                                            |
 
-**Missing, invalid and zero hours.** A zero-volume hour is valid and enters the sums. A missing or
-invalid hour anywhere in a decision's 744 hours, a zero block, or zero dispersion makes the decision
-ineligible for **both** arms. Nothing is imputed or repaired.
+## The run
 
-**Coverage.** Per split, the denominator is every grid decision of that split: train 43,700,
-validation 21,620, test 21,980. Purged decisions are left out. At least 95% must be common
-observations in each split.
+- **Retrieval** at `344e079`, 2026-11-26 15:30:55Z to 15:34:56Z.
+  - Requests: 380 unauthenticated `GET /api/v3/klines` on `api.binance.com`, one at a time and at
+    least 250 ms apart. No credentials, proxy or other host.
+  - Responses: all 200, no 429 or retry. The peak `X-MBX-USED-WEIGHT-1M` was 196, against the stop
+    rule's 3,000.
+  - Storage: raw bodies byte for byte in the git-ignored, write-once
+    `.zerochart-market-data/spot-24h-activity-shock-increment-dev-v1/`, with `manifest.json`
+    (`065309da…`) and `validation.json` (`f0fe88f9…`).
+- **Validation.**
+  - All 365,280 hours (20 × 18,264) were valid: none zero-volume, missing or invalid. No response
+    issue. Field 11 was `"0"` throughout.
+  - OHLC parity with v1: 354,400 hours compared, 0 value mismatches, 0 presence differences.
+  - v1's universe and 20 candle files had the same SHA-256 before and after. #224's probe files
+    were unchanged.
+- **Export, fit and evaluation**, all at `344e079` on a clean tracked tree.
+  - Every input hash was verified: v1, #222's specification, dataset, predictions and result.
+  - #222's 87,500 rows were recomputed from v1's candles and equal the recorded rows exactly.
+  - Arm A's probabilities equal #222's recorded C probabilities exactly in both periods. That
+    shows arm A is #222's classifier, not a re-implementation.
+  - Reruns of the fit and the evaluation printed `UNCHANGED`.
+- **Outputs** (git-ignored, write-once):
+  - dataset `.zerochart-reports/spot-24h-activity-shock-increment-dev-v1-dataset-c7fa2a8f7056-344e07967cbf.json` (`f3a3d2d8…`)
+  - predictions `…-predictions-c7fa2a8f7056-344e07967cbf.json` (`93c9fa23…`)
+  - result `.zerochart-reports/spot-24h-activity-shock-increment-dev-v1-c7fa2a8f7056.json` (`f912ed14…`)
+- **Environment.** Python 3.12.14, the pinned packages, OpenMP with 8 threads (as #222 recorded),
+  Node v26.12.1, macOS arm64.
 
-**Reported, not gated.**
+## Results
 
-- Per-class Brier components and log-loss differences, with intervals.
-- Both arms' probability calibration against #222's limits.
-- A monthly table, the count of months favouring B, and per-pair figures.
-- Every exclusion and hour classification.
+### Coverage and fits
 
-**Out:**
+No decision lost its activity value or any price feature, so every grid decision is a common
+observation:
 
-- Entries, payoffs, costs, returns, wallets and backtests.
-- Other activity fields, windows, normalizations, models, settings, labels and scenarios.
-- Collection, schedules, UI, alerts, orders, production changes and merges.
+- train 43,700 of 43,700;
+- validation 21,620 of 21,620;
+- test 21,980 of 21,980;
+- 200 decisions purged, as in v1.
 
-## Stop conditions
+Both arms were fitted on the same rows with identical parameters, each with 100 iterations:
 
-| Verdict                 | When                                                                                                                               | Then                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `INTEGRITY_FAILURE`     | Any hash, v1 directory, manifest, validation, OHLC parity, #222 row parity, reproduction of C, environment or identity check fails | Nothing reported; a new revision is needed                               |
-| `INSUFFICIENT_EVIDENCE` | Coverage < 95% in any split, < 2,000 observations or < 90 days in an evaluation, a missing class, or < 9,900 defined replicates    | Screen ends; floors are not relaxed, no source switched                  |
-| `SCREEN_PASSED`         | In both evaluations: mean B − A < 0 with 97.5% upper bound < 0, and still < 0 with each calendar month left out                    | Permits writing a separate prospective proposal for review, nothing else |
-| `STOP`                  | B − A lower 2.5% bound > 0 in either evaluation, or mean ≥ 0 in both                                                               | Activity block ends; no other field, window, model or label              |
-| `INCONCLUSIVE`          | Anything else (for example negative means whose interval reaches 0, a failed leave-one-month-out, opposite signs)                  | Historical screen ends; no rerun, no variation, no prospective proposal  |
+| Fit set               | Observations | TARGET | STOP   | TIMEOUT |
+| --------------------- | ------------ | ------ | ------ | ------- |
+| Development (train)   | 43,700       | 13,764 | 14,100 | 15,836  |
+| Final (train + valid) | 65,320       | 20,615 | 20,980 | 23,725  |
 
-Before any of this, three preconditions must hold. The retrieval is also stopped and kept as
-`RETRIEVAL_INCOMPLETE` on a second 429, any 418, 403 or 451, used weight above 3,000, or any other
-failure.
+### Brier score (primary)
 
-1. The owner approves this proposal.
-2. The terms are resolved and cited.
-3. The frozen revision is committed alone.
+| Period      | Observations (days) | Brier A | Brier B | B − A    | 95% interval         | Relative | Label                 |
+| ----------- | ------------------- | ------- | ------- | -------- | -------------------- | -------- | --------------------- |
+| Development | 21,620 (181)        | 0.65843 | 0.65737 | −0.00106 | −0.00452 to +0.00395 | −0.16%   | `NO_CLEAR_DIFFERENCE` |
+| Final       | 21,980 (184)        | 0.65766 | 0.65642 | −0.00124 | −0.00492 to +0.00152 | −0.19%   | `NO_CLEAR_DIFFERENCE` |
 
-## Owner decisions
+All 10,000 replicates were defined in both periods. The interval reflects day-to-day variation of
+the evaluation days only. The fits are held fixed, and refitting variation is not included.
 
-Accepted on 2026-11-26, with these boundaries:
+**By class.** The class components (B − A, with 95% intervals) sum to the primary figure.
 
-1. **Terms.** Review the missing official documents only (done above). Do not contact Binance on
-   the owner's behalf; the question and route are prepared above for the owner. The blocker
-   remains.
-2. **Host.** `api.binance.com`; no source switch.
-3. **Calibration.** Reported, not gated, which departs from #224 section 6. #222 recorded this
-   estimator on A's features missing the limits once per period. A better Brier score is never
-   presented as evidence of trading readiness.
-4. **Existing files.** Included in the applicability review above and preserved unchanged.
+| Period      | TARGET                        | STOP                          | TIMEOUT                       |
+| ----------- | ----------------------------- | ----------------------------- | ----------------------------- |
+| Development | +0.00124 (−0.00040, +0.00311) | +0.00130 (−0.00048, +0.00399) | −0.00359 (−0.00520, −0.00136) |
+| Final       | +0.00033 (−0.00099, +0.00195) | +0.00061 (−0.00139, +0.00244) | −0.00219 (−0.00439, −0.00062) |
 
-## Limits
+B's whole gain sits in the TIMEOUT probability. That component's interval excludes zero in both
+periods, while TARGET and STOP moved slightly the other way, unresolved.
 
-- Both periods were examined by seven earlier looks. A pass is not untouched evidence.
-- The arms share eleven features, so the paired interval is narrow by construction. Seven-day
-  blocks do not capture regimes longer than a week.
-- OHLC parity shows prices unchanged since v1's retrieval. Volume has no earlier copy, and
-  whether Binance revises closed klines is undocumented.
-- `activityShock24h`'s transfer from the daily, multi-exchange evidence to hourly Binance pairs is
-  uncertain (#224 section 5).
+These are reported, not gated. They are three of several descriptive figures per period, so they
+are no basis for a narrower follow-up (see [After](#after)).
+
+**Log loss** (natural log, B − A): development 1.08618 → 1.08422, −0.00197 (−0.00783, +0.00661);
+final 1.08504 → 1.08301, −0.00204 (−0.00749, +0.00212). No probability was zero.
+
+### Probability calibration (reported, not gated)
+
+#222's limits apply: in-the-large ≤ 0.03 and weighted decile error ≤ 0.05. Arm A's figures are
+#222's C's figures exactly.
+
+| Period      | Class   | Predicted A / B | Observed | In the large A → B            | Decile error A → B |
+| ----------- | ------- | --------------- | -------- | ----------------------------- | ------------------ |
+| Development | TARGET  | 33.8% / 33.3%   | 31.7%    | 0.0213 → 0.0162               | 0.0257 → 0.0248    |
+| Development | STOP    | 33.8% / 33.6%   | 31.8%    | 0.0200 → 0.0173               | 0.0400 → 0.0465    |
+| Development | TIMEOUT | 32.4% / 33.1%   | 36.5%    | **0.0413 → 0.0335** (OUTSIDE) | 0.0413 → 0.0335    |
+| Final       | TARGET  | 33.1% / 32.6%   | 29.3%    | **0.0383 → 0.0331** (OUTSIDE) | 0.0410 → 0.0386    |
+| Final       | STOP    | 32.8% / 32.2%   | 34.2%    | 0.0135 → 0.0192               | 0.0350 → 0.0409    |
+| Final       | TIMEOUT | 34.1% / 35.2%   | 36.6%    | 0.0248 → 0.0139               | 0.0248 → 0.0139    |
+
+### Months
+
+Mean d per month (negative favours B). Partial first and last months are shown as they are.
+
+| Development | Obs.  | d        | Without it | Final   | Obs.  | d        | Without it |
+| ----------- | ----- | -------- | ---------- | ------- | ----- | -------- | ---------- |
+| 2025-11     | 1,080 | +0.00174 | −0.00120   | 2026-05 | 1,200 | +0.00033 | −0.00133   |
+| 2025-12     | 3,720 | −0.00479 | −0.00028   | 2026-06 | 3,600 | +0.00448 | −0.00236   |
+| 2026-01     | 3,720 | +0.00201 | −0.00169   | 2026-07 | 3,720 | −0.00184 | −0.00112   |
+| 2026-02     | 3,360 | +0.00935 | −0.00297   | 2026-08 | 3,720 | −0.00548 | −0.00038   |
+| 2026-03     | 3,720 | −0.00564 | −0.00010   | 2026-09 | 3,600 | −0.00284 | −0.00093   |
+| 2026-04     | 3,600 | −0.00453 | −0.00036   | 2026-10 | 3,720 | +0.00019 | −0.00153   |
+| 2026-05     | 2,420 | −0.00350 | −0.00075   | 2026-11 | 2,420 | −0.00292 | −0.00103   |
+
+The leave-one-month-out condition holds in both periods. In development it holds narrowly: without
+March 2026 the mean is −0.00010.
+
+### Pairs (point figures only)
+
+B's mean Brier was lower in 10 of 20 pairs in development and 13 of 20 in the final period.
+
+- BTC, ETH, SOL, ZEC, BNB, UNI and LTC favoured B in both periods.
+- NEAR, ENA, ADA and TAO favoured A in both.
+
+These figures have no intervals and are not a basis for selecting pairs.
+
+## Verdict
+
+| Rule (in order)         | Holds?  | Why                                                                     |
+| ----------------------- | ------- | ----------------------------------------------------------------------- |
+| `INTEGRITY_FAILURE`     | No      | Every hash, parity, reproduction, environment and identity check passed |
+| `INSUFFICIENT_EVIDENCE` | No      | All nine floor checks held                                              |
+| `SCREEN_PASSED`         | No      | Neither period is `B_BETTER`: both upper bounds are above zero          |
+| `STOP`                  | No      | Neither period is `B_WORSE`, and both means are below zero              |
+| `INCONCLUSIVE`          | **Yes** | Negative means whose intervals reach zero                               |
+
+## What this does and does not show
+
+- **It shows** that, on this examined history, adding `activityShock24h` moved the classifier's
+  Brier score down by about 0.2% in both periods. That is a small change, within what day-to-day
+  variation of the evaluation days produces. It also shows that the run was the intended
+  comparison: the arms differ only by the column, and arm A is exactly #222's C.
+- **It does not show** that the feature adds predictive information. Neither interval excludes
+  zero.
+- **It is not untouched evidence.** Both periods were examined seven times before.
+- **It says nothing about returns or trading.** It does not show profitability, an entry rule,
+  calibration fit for decisions, or readiness for live use.
+- **It does not show that activity is useless** at other windows, normalizations, fields or
+  horizons. Those were out of scope and are not opened by this result.
+- **Limits.**
+  - Seven-day blocks do not capture regimes longer than a week.
+  - Volume has no earlier copy to compare. OHLC parity only shows prices unchanged since v1's
+    retrieval.
+  - Whether a value retrieved now equals what was available live is unverified.
+
+## After
+
+Per `verdict.after.INCONCLUSIVE`, **the historical screen ends.** The result is not grounds for:
+
+- a prospective proposal, a rerun or a longer window;
+- the TIMEOUT-only component as a target;
+- any variation: other activity fields, windows, normalizations, models, settings, labels or
+  pairs.
+
+No tuning, additional model, prospective collection, UI, order, alert or production change follows.
+#222's `STOP` and every earlier conclusion stand.
+
+## Implementation note
+
+`ACTIVITY_DISPERSION_ZERO` is detected as "the thirty ln R_k are all equal" as well as s = 0. With
+thirty identical values, float rounding of their mean leaves s ≈ 1e-16 rather than 0, which would
+otherwise turn a zero-dispersion window into an arbitrary value. The note is recorded for
+completeness only: no window in this run came near it, as every observation had a finite value.
+
+## Reproduce
+
+Only at `344e079`, with the retrieval directory present (it is never re-retrieved):
+
+```bash
+npm run evaluate -- activity-export
+.venv/bin/python scripts/activity_shock_classifier.py
+npm run evaluate -- activity-evaluate
+```
+
+Each step refuses a dirty tracked tree, another commit's inputs or another specification file, and
+prints `UNCHANGED` when its output already exists with identical bytes. The retrieval step
+(`npm run evaluate -- activity-retrieve`) refuses to run again because its directory exists.
