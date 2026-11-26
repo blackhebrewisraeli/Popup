@@ -191,6 +191,18 @@ only when the owner presses **Confirm and record** after **Review record**.
   - **No confirmation:** no answer came back, so the row may or may not exist. Confirm locks until
     the owner edits and reviews again, and the message says to check Account first.
 
+## Recording a decision to stay out
+
+From an evaluated Binance Spot USDT pair in a reproduced saved scan, open **I reviewed this pair
+and chose to stay out**, enter your reason, and select **Save no-entry decision**. You can find
+the decision under **Account → Manual Spot experiments → No-entry decisions**. Expand its row to
+see the reason, saved scan ID, snapshot hash and copied evidence. The time shown is when the
+database recorded the decision, in UTC.
+
+Only the configured Binance owner can read or record these decisions. Each is an append-only
+record of one pair review, with no account label, fills, rules or order execution. A retry of the
+same submission uses the same ID if the first response was lost.
+
 ## Linking fills from the execution view
 
 **Link to experiment** sits in the Experiment column of Account's **Binance Spot executions** table.

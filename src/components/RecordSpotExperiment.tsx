@@ -462,7 +462,10 @@ function ExperimentForm({
 }
 
 /** The database answers for the signed-in user only; it never says who the owner is. */
-function OwnerGate({ userId, children }: Readonly<{ userId: string; children: ReactNode }>) {
+export function SpotExperimentOwnerGate({
+  userId,
+  children,
+}: Readonly<{ userId: string; children: ReactNode }>) {
   const owner = useQuery({
     queryKey: ['binance-spot-owner', userId],
     queryFn: isSpotExperimentOwner,
@@ -541,7 +544,7 @@ export function RecordSpotExperiment({
     );
   } else {
     body = (
-      <OwnerGate userId={userId}>
+      <SpotExperimentOwnerGate userId={userId}>
         <ExperimentForm
           evidence={evidence}
           scanId={scanId}
@@ -550,7 +553,7 @@ export function RecordSpotExperiment({
           scenario={scenario}
           context={context}
         />
-      </OwnerGate>
+      </SpotExperimentOwnerGate>
     );
   }
   return (
