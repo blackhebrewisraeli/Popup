@@ -252,16 +252,13 @@ describe('recording and retrieving a decision to stay out', () => {
     db.insertResult
       .mockRejectedValueOnce(new Error('Reply lost'))
       .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'Duplicate ID' } });
-    db.singleResult.mockImplementation(() => ({
-      data: { ...db.inserts[0].row, recorded_at },
-      error: null,
-    }));
-
     fireEvent.change(reason, { target: { value: `  ${note}  ` } });
     fireEvent.click(save);
     const retry = await screen.findByRole('button', { name: 'Retry save' });
     expect(reason).toHaveAttribute('readonly');
     const [first] = db.inserts;
+    if (!first) throw new Error('The no-entry decision was not submitted.');
+    db.singleResult.mockResolvedValue({ data: { ...first.row, recorded_at }, error: null });
     expect(first).toEqual({
       table: 'spot_no_entry_decisions',
       row: {
@@ -279,9 +276,9 @@ describe('recording and retrieving a decision to stay out', () => {
     fireEvent.click(retry);
     expect(await screen.findByText(/Saved to Account.*No-entry decisions/)).toBeVisible();
     expect(db.inserts).toEqual([first, first]);
-    expect(db.listed[0].filters).toEqual([
+    expect(db.listed[0]?.filters).toEqual([
       ['eq', 'user_id', OWNER],
-      ['eq', 'id', first.row.id],
+      ['eq', 'id', first.row['id']],
     ]);
 
     cleanup();
