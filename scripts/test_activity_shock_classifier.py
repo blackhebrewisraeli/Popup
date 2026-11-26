@@ -132,14 +132,15 @@ class CommonRowsTest(unittest.TestCase):
 
     def test_a_non_finite_or_unknown_value_is_refused(self):
         rows = synthetic_rows(pairs=1)[:10]
+        arms = asc.arm_features(STAGE_D)
         bad = [list(r) for r in rows]
         bad[2][AT[asc.ACTIVITY]] = float("inf")
         with self.assertRaises(ValueError):
-            asc.common_arrays(COLUMNS, bad, asc.arm_features(STAGE_D)["B"], CLASSES)
+            asc.common_arrays(COLUMNS, bad, arms["B"], CLASSES)
         bad = [list(r) for r in rows]
         bad[2][AT["class"]] = "AMBIGUOUS"
         with self.assertRaises(ValueError):
-            asc.common_arrays(COLUMNS, bad, asc.arm_features(STAGE_D)["A"], CLASSES)
+            asc.common_arrays(COLUMNS, bad, arms["A"], CLASSES)
 
 
 class ArmParityTest(unittest.TestCase):

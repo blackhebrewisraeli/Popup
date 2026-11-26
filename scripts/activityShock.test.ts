@@ -1028,7 +1028,7 @@ describe('the retrieval runner', { timeout: HEAVY }, () => {
       rateLimitRetries: 0,
       pass: true,
     });
-    expect((await readdir(join(outDir, 'raw'))).length).toBe(38);
+    expect(await readdir(join(outDir, 'raw'))).toHaveLength(38);
     const manifest = JSON.parse(await readFile(join(outDir, 'manifest.json'), 'utf8'));
     expect(manifest.specification.sha256).toBe(specSha256());
     expect(manifest.codeCommit).toBe('c'.repeat(40));
