@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
+import { RecordSpotNoEntry } from '@/components/RecordSpotNoEntry';
 import { ScanChanges, type BaselineChoice } from '@/components/ScanChanges';
 import { Button } from '@/components/ui/button';
 import { Segmented } from '@/components/Segmented';
@@ -58,6 +59,7 @@ import {
   type ScanView,
   type SetupCheck,
 } from '@/lib/scanReview';
+import { candidateEvidence } from '@/lib/spotExperiments';
 import { plansSpot } from '@/lib/spotScenario';
 import type { TradingViewDevSource, TradingViewSavedScan } from '@/lib/tradingViewDevScan';
 import { closeOnBackdrop, cn } from '@/lib/utils';
@@ -248,7 +250,9 @@ function ResultRow({
       >
         <span className="market-scan-rank">#{result.rank}</span>
         <span className="scan-row-asset">
-          <span className="market-scan-ticker">{result.ticker}</span>
+          <span className="market-scan-ticker underline decoration-muted-foreground underline-offset-4">
+            {result.ticker}
+          </span>
           {symbol && <span className="scan-row-symbol">{symbol}</span>}
         </span>
         <span className="market-scan-score">
@@ -1143,9 +1147,8 @@ function EvidenceSummary({
 }
 
 /**
- * One evaluated asset, explained from its recorded values only. Nothing here is an
- * action. The summary stays open; each full section is closed until opened, and every
- * fact has one place. `scanFacts` repeats the scan's source, model and time for the sheet,
+ * One evaluated asset, explained from its recorded values. The summary stays open,
+ * with the no-entry form beside it when the saved scan supports recording. `scanFacts` repeats the scan's source, model and time for the sheet,
  * which covers the scan header; beside the list the header already shows them. The
  * optional Manual Spot scenario comes after the evidence, apart from it.
  */
@@ -1165,6 +1168,7 @@ function Evidence({
   scanFacts: boolean;
 }>) {
   const { result, model, setups, cohort } = selection;
+  const spotSource = plansSpot(result, source) ? source : undefined;
   const titleId = useId();
   const explanation = explainResult(model, setups);
   const raw = model.components.weights;
@@ -1200,6 +1204,26 @@ function Evidence({
           source={source}
           titleId={titleId}
         />
+
+        {spotSource && saved && scanId && (
+          <RecordSpotNoEntry
+            key={`${scanId}|${saved.snapshotSha256}|${result.ticker}`}
+            scanId={scanId}
+            snapshotSha256={saved.snapshotSha256}
+            evidence={() =>
+              candidateEvidence({
+                result,
+                model,
+                setups,
+                cohort,
+                scan,
+                scanId,
+                source: spotSource,
+                now: Date.now(),
+              })
+            }
+          />
+        )}
 
         <EvidenceSection title="Model conditions">
           <ClauseList check={explanation.long} />
@@ -1271,7 +1295,7 @@ function Evidence({
         </EvidenceSection>
       </div>
 
-      {plansSpot(result, source) && (
+      {spotSource && (
         // Keyed by scan and asset: another selection starts from empty inputs, never these.
         <SpotScenario
           key={`${scanId ?? ''}|${scan.evaluationTime}|${result.ticker}`}
@@ -1281,7 +1305,7 @@ function Evidence({
           cohort={cohort}
           scan={scan}
           scanId={scanId}
-          source={source}
+          source={spotSource}
           saved={saved}
         />
       )}
@@ -1423,9 +1447,8 @@ function EvidencePanel({
         </>
       ) : (
         <p className="scan-evidence-empty">
-          Select an asset to read its evidence: a summary, then its model conditions, indicators and
-          score calculation, score contributions relative to the Long threshold, and data provenance
-          and limitations. Up and Down move between rows.
+          Select an asset to read its evidence. Click its name in the Asset column. The Compare
+          checkbox adds it to the comparison table.
         </p>
       )}
     </section>
