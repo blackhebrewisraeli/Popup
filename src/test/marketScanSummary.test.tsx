@@ -198,12 +198,18 @@ describe('MarketScanSummary', () => {
     expect(within(equities).queryByText('BTC-USD')).not.toBeInTheDocument();
   });
 
-  it('never offers an action: no links, and only review controls', () => {
+  it('offers a Spot chart link alongside review controls', () => {
     const panel = renderScan([supported('BTC-USD')]);
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
     fireEvent.click(within(panel).getByRole('button', { name: /^BTC-USD,/ }));
+    const chart = within(screen.getByRole('dialog')).getByRole('link', {
+      name: /BTCUSDT intraday chart/,
+    });
+    expect(new URL(chart.getAttribute('href')!).searchParams.get('symbol')).toBe('BINANCE:BTCUSDT');
     for (const scope of [panel, screen.getByRole('dialog')]) {
-      expect(within(scope).queryByRole('link')).not.toBeInTheDocument();
+      for (const link of within(scope).queryAllByRole('link')) {
+        expect(link).toHaveAccessibleName('Open BTCUSDT intraday chart on TradingView (new tab)');
+      }
       for (const button of within(scope).queryAllByRole('button')) {
         // A row, a candidate or Start review opens existing evidence; the rest are Close, Reset
         // and Clear.
@@ -288,7 +294,7 @@ describe('MarketScanSummary as the TradingView development scan', () => {
     expect(panel).toHaveTextContent(
       'Reloading this page re-reads this import; it does not fetch new TradingView bars',
     );
-    expect(panel).toHaveTextContent('never merged into the Market scan or the Markets directory');
+    expect(panel).toHaveTextContent('never merged into the browser’s daily model scan');
     expect(within(panel).queryByText('Stale')).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByRole('tab', { name: /All ranked/ }));
     const rows = [...panel.querySelectorAll<HTMLElement>('.scan-row')];

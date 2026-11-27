@@ -13,34 +13,6 @@ const portfolio: CatalogFunction = {
   anon: false,
   authenticated: true,
 };
-const tactical: CatalogFunction = {
-  name: 'execute_tactical_signal',
-  args: ['signal_id', 'user_id', 'execution_price'],
-  defaults: 0,
-  anon: false,
-  authenticated: true,
-};
-const shared: CatalogFunction = {
-  name: 'get_shared_portfolio',
-  args: ['share_id'],
-  defaults: 0,
-  anon: true,
-  authenticated: true,
-};
-const rotate: CatalogFunction = {
-  name: 'rotate_signal_webhook_token',
-  args: [],
-  defaults: 0,
-  anon: false,
-  authenticated: true,
-};
-const dismiss: CatalogFunction = {
-  name: 'dismiss_tactical_signal',
-  args: ['signal_id', 'reason'],
-  defaults: 1,
-  anon: false,
-  authenticated: true,
-};
 // 20261114120000: revoked from public and anon, granted to authenticated.
 const owner: CatalogFunction = {
   name: 'is_binance_spot_owner',
@@ -49,8 +21,19 @@ const owner: CatalogFunction = {
   anon: false,
   authenticated: true,
 };
-const production = [portfolio, tactical, shared, rotate, dismiss, owner];
-const others = [tactical, shared, rotate, dismiss, owner];
+const historicalPortfolioContract = {
+  execute_paper_portfolio: {
+    args: {
+      request_id: 'always',
+      risk_profile: 'always',
+      budget: 'always',
+      holdings: 'always',
+      dry_run: 'always',
+      expected: 'sometimes',
+    },
+    roles: ['authenticated'],
+  },
+} as const;
 
 // The function as 20261022130000 left it: no `expected`.
 const fiveArgPortfolio: CatalogFunction = {
@@ -61,69 +44,49 @@ const fiveArgPortfolio: CatalogFunction = {
 
 const gapsWith = (functions: CatalogFunction[], missing_migrations: string[] = []) =>
   contractGaps({ missing_migrations, functions });
+const historicalGaps = (...functions: CatalogFunction[]) =>
+  contractGaps({ functions, missing_migrations: [] }, historicalPortfolioContract);
 
 describe('contractGaps', () => {
-  it('passes the production database the current frontend runs against', () => {
-    expect(gapsWith(production)).toEqual([]);
+  it('requires the Spot owner check and permits additional database functions', () => {
+    expect(gapsWith([owner, portfolio])).toEqual([]);
   });
 
   it('blocks a release whose migrations are not all applied', () => {
-    expect(gapsWith(production, ['20261023120000'])).toEqual([
-      'migration 20261023120000 is not applied',
+    expect(gapsWith([owner], ['20261127120000'])).toEqual([
+      'migration 20261127120000 is not applied',
     ]);
   });
 
-  it('blocks the 2026-10-23 release: Confirm sends `expected`, the database has five arguments', () => {
-    expect(gapsWith([fiveArgPortfolio, ...others])).toEqual([
+  it('detects a required argument missing from the database signature', () => {
+    expect(historicalGaps(fiveArgPortfolio)).toEqual([
       'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
     ]);
   });
 
-  it('blocks overloads that make a call ambiguous', () => {
-    expect(gapsWith([fiveArgPortfolio, ...production])).toEqual([
+  it('detects overloads that make a call ambiguous', () => {
+    expect(historicalGaps(fiveArgPortfolio, portfolio)).toEqual([
       "execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run): 2 overloads accept it, so PostgREST can't choose one (PGRST203)",
     ]);
   });
 
-  it('blocks making an argument required that previews leave out', () => {
-    const required = { ...portfolio, defaults: 0 };
-    expect(gapsWith([required, ...others])).toEqual([
+  it('detects when a previously optional argument is made required', () => {
+    expect(historicalGaps({ ...portfolio, defaults: 0 })).toEqual([
       'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
     ]);
   });
 
-  it('blocks a function missing altogether', () => {
-    expect(gapsWith(others)[0]).toMatch(/^execute_paper_portfolio\(.*PGRST202/);
-  });
-
-  it('blocks this frontend on a database without dismiss_tactical_signal (20261028120000)', () => {
-    expect(gapsWith([portfolio, tactical, shared, rotate, owner], ['20261028120000'])).toEqual([
-      'migration 20261028120000 is not applied',
-      'dismiss_tactical_signal(signal_id, reason): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
-    ]);
-  });
-
-  it('blocks this frontend on a database without is_binance_spot_owner (20261114120000)', () => {
-    expect(gapsWith([portfolio, tactical, shared, rotate, dismiss], ['20261114120000'])).toEqual([
+  it('blocks a database without is_binance_spot_owner', () => {
+    expect(gapsWith([], ['20261114120000'])).toEqual([
       'migration 20261114120000 is not applied',
       'is_binance_spot_owner(): no function accepts these arguments (PGRST202), or none that anon or authenticated may execute',
     ]);
   });
 
-  it('blocks an owner check that anon may execute', () => {
-    expect(
-      gapsWith([portfolio, tactical, shared, rotate, dismiss, { ...owner, anon: true }]),
-    ).toEqual([
+  it('blocks grants that differ from the roles the workspace uses', () => {
+    expect(gapsWith([{ ...owner, anon: true, authenticated: false }])).toEqual([
       'is_binance_spot_owner(): anon can execute it; the frontend needs authenticated only',
-    ]);
-  });
-
-  it('blocks grants that differ from the roles the frontend uses', () => {
-    const opened = { ...portfolio, anon: true };
-    const closed = { ...shared, anon: false };
-    expect(gapsWith([opened, tactical, closed, rotate, dismiss, owner])).toEqual([
-      'execute_paper_portfolio(request_id, risk_profile, budget, holdings, dry_run, expected): anon can execute it; the frontend needs authenticated only',
-      'get_shared_portfolio(share_id): anon cannot execute it; the frontend needs anon and authenticated only',
+      'is_binance_spot_owner(): authenticated cannot execute it; the frontend needs authenticated only',
     ]);
   });
 });
@@ -139,9 +102,17 @@ function sources(dir: string): string[] {
 describe('DB_CONTRACT', () => {
   it('lists exactly the RPCs the frontend calls', () => {
     const called = new Set(
-      sources(join(process.cwd(), 'src')).flatMap((file) =>
-        [...readFileSync(file, 'utf8').matchAll(/\.rpc\(\s*'(\w+)'/g)].map((match) => match[1]),
-      ),
+      sources(join(process.cwd(), 'src'))
+        // Kept for replay and historical tests. Neither module is imported by the workspace.
+        .filter(
+          (file) =>
+            !['db.ts', 'sharedPortfolio.ts'].some((name) =>
+              file.endsWith(join('src', 'lib', name)),
+            ),
+        )
+        .flatMap((file) =>
+          [...readFileSync(file, 'utf8').matchAll(/\.rpc\(\s*'(\w+)'/g)].map((match) => match[1]),
+        ),
     );
     expect([...called].sort()).toEqual(Object.keys(DB_CONTRACT).sort());
   });

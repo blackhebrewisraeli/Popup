@@ -9,14 +9,10 @@ import {
   type ErrorComponentProps,
 } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/react';
 
 import appCss from '../styles.css?url';
 import { Toaster } from '../components/ui/sonner';
-import { PortfolioProvider } from '../lib/portfolioStore';
 import { AuthProvider } from '../lib/authStore';
-import { AdInterstitialModal } from '../components/AdInterstitialModal';
 import { ThemeProvider } from 'next-themes';
 
 function NotFoundComponent() {
@@ -87,7 +83,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: 'description',
         content:
-          'Dated daily candidates, explainable daily-candle model scans and manual Spot records in one research workspace.',
+          'A private Binance Spot workspace for daily candidate review and manual decisions.',
       },
       { name: 'author', content: 'Popup' },
       { property: 'og:type', content: 'website' },
@@ -139,16 +135,10 @@ function RootComponent() {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <QueryClientProvider client={queryClient}>
-        <PortfolioProvider>
-          <AuthProvider>
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-            <AdInterstitialModal />
-          </AuthProvider>
-        </PortfolioProvider>
+        <AuthProvider>
+          <Outlet />
+        </AuthProvider>
         <Toaster />
-        <Analytics />
-        <SpeedInsights />
       </QueryClientProvider>
     </ThemeProvider>
   );

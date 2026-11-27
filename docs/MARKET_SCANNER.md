@@ -127,26 +127,19 @@ full answer only for a complete cohort.
 
 ## Reviewing a scan
 
-Research has three places, in this order: **Daily candidates** (where Research opens; see
-[Daily discovery](#daily-discovery-binance-spot-unattended)), **Model scan (1D)** and **Markets directory**. Each says
-once what it is. Daily candidates says it in its own header, to the owner and to other sign-ins:
-pairs ranked by 24-hour quote volume, a liquidity shortlist, not a BUY/SELL signal or a model score.
-For Model scan (1D) a line under the places says it is the existing model on closed daily candles,
-with its coverage and candle timestamps in its header. On a phone the three places stay on one row
-of equal width; a label too long for its third wraps onto a second line. The directory holds the price table (asset
-details, an alert button and a broker link per row) and the price alerts panel, so it never reads
-as a second scanner. Model scan and directory stay mounted, so moving between places keeps the
-scan's filters, selection and comparison. The scan offers no order, broker or paper-trading
-action; broker links stay in the directory.
+Research opens on **Daily candidates**, the dated Binance Spot liquidity shortlist. Each row
+links to an intraday TradingView chart for that exact pair. The **Model scan (1D)** tab evaluates
+the configured crypto symbols on closed Binance daily candles and opens saved TradingView crypto
+snapshots. The daily shortlist and the model scan read their own data. The configured owner
+accesses both through the same private workspace.
 
-Each scan (the live Market scan and the TradingView development scan) heads with its source,
+Each scan (the browser model scan and a saved TradingView snapshot) heads with its source,
 timeframe, data as of (with freshness and any cache age) and coverage, stated once for the scan.
 Above those facts, a **What this view shows** note says which scan it is, so the two can never be
 mistaken for each other:
 
-- **Live browser check** (or **Sample preview check**): not saved, no scan ID; its candle source,
-  data as of, evaluated scope and when this browser computed it. Under `vite dev` it adds that
-  saved TradingView scans are under **Dev source: TradingView import**.
+- **Live browser check**: its candle source, data as of, evaluated scope and when this browser
+  computed it. To review a snapshot, use **Open saved crypto scan** in this tab.
 - **Saved TradingView scan** with its scan ID (or "scan ID not recorded"): its candle source, data
   as of, evaluated scope and retrieval window (or "retrieval time not recorded"). It says the file
   does not refresh and that study eligibility is checked separately: being saved does not make a
@@ -162,8 +155,7 @@ accessible name: **Risk: high volatility** (the high-volatility regime, ATR ≥ 
 Each row shows rank, asset, score, setup and a short reason: the recorded clauses that decide its
 setup state ("Score 61, needs ≥ 78" for an asset short of ZC LONG), from the same `explainResult`
 the evidence uses. A search box (ticker, instrument or requested symbol) and filters on recorded
-fields narrow them: regime, the model's own momentum bias (±0.05% of price is flat) and the
-risk-profile rules a reading meets (technical thresholds, not suitability). "No setups" is a full answer only for a complete cohort; an empty filter result says how many
+fields narrow them by regime and the model's momentum bias (±0.05% of price is flat). "No setups" is a full answer only for a complete cohort; an empty filter result says how many
 it hid. The header says whether the data still passes the scan's own freshness rule now: crypto's
 latest close within 48h, equities' latest final session or the one before. Past that the data is
 marked **Stale**. A scan is never called live.
@@ -527,12 +519,9 @@ and exclusions sit in two closed disclosures; opening them reads nothing. Below 
 classification moves under the pair instead of its own column, and pairs without a label are
 announced as not classified.
 
-**Asset detail** opens only where a live `assets_status` row's Binance symbol is exactly the pair
-(`toBinanceSymbol`), never for a sample row. While live market data is loading, has failed or is
-set aside for sample data, a line above the list says it is not loaded (and each row's dash says the
-same to assistive technology) instead of claiming no asset maps; the
-board itself does not wait on that read, and the market-data and sample-data banners are not shown
-over it. The board shows no prices and does not refresh between batches.
+Each ranked pair links to its exact Binance Spot chart on TradingView, with a 15-minute
+interval requested. The chart link needs neither the model scan nor an `assets_status` row.
+The board shows no prices and does not refresh between batches.
 
 ### Supabase Edge preflight
 
@@ -644,17 +633,9 @@ agent session retrieved through TradingView's MCP server. By default a retrieval
 50-member universe; `tradingview-start --universe all` opts in to all 90 configured US equities and
 ETFs ([Two universes](#two-universes)), and `--universe crypto-usdt-v1` to 25 Binance Spot USDT pairs,
 ranked only among themselves under their own candle contract
-([TradingView crypto scan](TRADINGVIEW_CRYPTO_SCAN.md)). Under `vite dev` only, the Scan
-place has a source selector: **Market data** (the Market scan) or **TradingView import**, which
-replaces it with the **TradingView development scan**. The Markets directory always shows market
-data. The selector sits above the market-data loading and error states, so the import shows even
-while live market data is loading or has failed. The selector
-names the import's state (evaluated count, `Loading`, `Reloading`, `None`, `Unreadable`, or
-`Failed` when a reload failed and the earlier scan is still shown). It does not change
-live coverage: every live scan still reports equities as `UNSUPPORTED`.
-
-Outside `vite dev`, the hosted app included, a crypto snapshot from this store can be reviewed by
-opening its file in the browser ([Opening a saved crypto scan file](#opening-a-saved-crypto-scan-file)).
+([TradingView crypto scan](TRADINGVIEW_CRYPTO_SCAN.md)). The local import remains a CLI workflow.
+Review a crypto snapshot in the private app with
+[Open saved crypto scan](#opening-a-saved-crypto-scan-file).
 
 | Step                    | Who                      | How                                                                                                                                                                                                                                                         |
 | ----------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -668,22 +649,8 @@ opening its file in the browser ([Opening a saved crypto scan file](#opening-a-s
 
 ### Refreshing it (owner runbook)
 
-**Reload local scan**, above the TradingView review, re-reads the published
-`tradingview-dev-scan.json` through the dev route without reloading the page; so does reloading the
-page. Neither fetches TradingView bars, calls an agent or starts a scan, and nothing re-reads or
-re-scans on a schedule. While the review is open, the header's market-data refresh is hidden.
-
-- **Loaded, missing or unreadable:** the button is there in every state. A click during a read joins
-  that read. The line beside it names the scan shown and when the file was last read (UTC).
-- **A different scan:** the selector, scan metadata, results, evidence and "Changes since previous
-  scan" all switch to it together, and the review starts over: no selection, Compare or open
-  evidence carries across. An identical file keeps the review as it was.
-- **Failed reload** (server down, HTTP error, malformed or truncated file): the earlier scan stays
-  on screen under an alert naming it and saying it may not be the published scan; the selector
-  says `Failed`. A removed file shows the "no scan published" state instead of the earlier scan. The agent's TradingView MCP session is the owner's, signed in with the
-  owner's account; it is not a backend connection the app can call. To start a new scan, the owner
-  pastes this prompt into an agent session that has TradingView's MCP server connected, opened in this
-  repository:
+Run the following from an owner-authenticated TradingView agent session opened in this repository
+to create a new snapshot.
 
 ```text
 Run Popup's TradingView development scan. You retrieve; the repository's helper binds, imports
@@ -716,9 +683,8 @@ and reproduces. Local only: never commit, publish or send anything you retrieve.
    exits non-zero, while a member has fewer than 199 closed UTC days). From `baseline`, report status, chosenBy,
    before.scanId with before.session and after.session, the Long, Risk and score counts, reason,
    and every entry under skipped with its reason.
-7. If viewStatus is PUBLISHED, run `npm run dev`, open http://localhost:8080/?devAuth=1, go to
-   Research, choose TradingView import, and check that its retrieval window, counts and
-   "Changes since previous scan" match the report.
+7. For the crypto universe, open the original `.zerochart-scans/<SCAN_ID>.json` under
+   Research → Model scan (1D) → Open saved crypto scan. Use `scan-reproduce` for offline checks.
 ```
 
 What the helper (`scripts/tradingViewImport.ts`) does at each step:
@@ -812,55 +778,11 @@ reproduce as before.
 
 ### Saved scans
 
-Under `vite dev`, **Scan shown** above the TradingView review chooses what it shows: **Latest
-published scan** (`tradingview-dev-scan.json`, as before) or one TradingView snapshot saved in
-`.zerochart-scans/`. The list names each by scan ID, evaluated session, universe size and coverage,
-newest first, and marks `legacy` (recorded before exact symbols) and `published` (the published
-view's scan). The review header says **Latest published scan** or **Saved scan, not the published
-view**. Selecting a scan copies, publishes and replaces nothing: snapshots and the published view
-stay byte-identical. The source selector's count stays the published import's.
-
-- **Verified before it is shown.** On each selection and each **Reload saved scan**, the dev server
-  reads the snapshot and reproduces it offline from its own inputs, as `scan-reproduce` does. Only a
-  scan that reproduces shows results. Otherwise the review names the scan and its state, and shows
-  nothing from it:
-
-  | State                              | When                                                                     |
-  | ---------------------------------- | ------------------------------------------------------------------------ |
-  | Malformed                          | Not JSON, required fields missing, or another scan ID inside             |
-  | Cannot be checked by this checkout | Another snapshot schema, scanner version or model version                |
-  | Does not reproduce                 | Its inputs, universe, evaluation time or outputs do not re-derive (code) |
-  | No longer in the scan store        | Removed since it was listed, or not a TradingView snapshot               |
-
-  A snapshot-named file that is not JSON is not listed; the selector says how many there are.
-
-- **Only what was recorded.** Source notes and "Changes since previous scan" come from a published
-  or preserved view of exactly that scan (same scan ID, identical results). Without one, only the
-  snapshot is shown: the retrieval window, TradingView's notice, the selection rule and the alert
-  check read as not recorded, the symbols are those its inputs recorded (none for a legacy scan), and
-  no baseline is chosen after the fact. A recorded baseline is kept only while its own snapshot is
-  unchanged and reproduces; otherwise the view says why nothing is compared. Nothing is filled in
-  from today's instrument map.
-- **Reload stays on the selection.** With a saved scan selected, the button reads **Reload saved
-  scan**. It re-reads and re-checks that scan and the list, never the published view. A scan that
-  disappeared stays selected, marked "not in the scan store", until the owner picks another.
-- **Changing the scan** starts the review over: no selection, Compare or open evidence carries
-  across. Comparison rules and source isolation are unchanged. Switching to Market data and back
-  returns to the latest published scan. So does a reload that brings different content, even
-  under the same scan ID; an unchanged file keeps the review.
-- **A full page reload** restores the source and **Scan shown** chosen in that browser tab, and
-  reads the scan again: a saved scan by its ID, **Latest published scan** as whatever is published
-  now. The tab's `sessionStorage` holds only the source and a scan ID, under `vite dev` only; a new
-  tab opens on Market data. Selection, Compare, open evidence and Manual Spot inputs are not kept.
-  A restored scan that is missing, unreadable, refused or not a scan ID says so, shows nothing
-  from it and offers **Show the latest published scan**; Research never falls back to Market data
-  or another scan by itself.
-- **Access.** `/__zerochart/tradingview-saved-scans` lists and `/<scanId>` reads one. Only a scan
-  ID (`YYYYMMDDTHHMMSSZ-xxxxxxxx`) is accepted, never a path. Files are read directly in the store
-  and a symbolic link reads as absent. A read returns results, never candles. Like the published
-  route, it answers only this machine's loopback addresses, and only for a loopback `Host`
-  (`localhost`, `127.0.0.1`, `[::1]`), so a page that re-points its own name at this machine is
-  refused. Neither route exists in a production build.
+The local scan store retains snapshots by scan ID. Use `scan-reproduce` to re-check one against
+its own recorded inputs. The browser's saved-file review shows only what the snapshot contains.
+It does not add facts from published display views, modern instrument mappings or retrospective
+baseline choices. The former local scan picker is documented in the
+[historical implementation](https://github.com/blackhebrewisraeli/Popup/blob/dab50fdb1691952ea08ff1621da98fed0f655113/docs/MARKET_SCANNER.md#saved-scans).
 
 ### Opening a saved crypto scan file
 

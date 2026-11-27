@@ -21,6 +21,13 @@ user decides whether to act, and where; Popup places no orders.
 
 ## Current handoff
 
+- **2026-11-27 · Focus the app on private Spot review and decisions.** Research opens on the
+  scheduled liquidity shortlist, with links to exact Binance Spot symbols on TradingView. The
+  closed-candle model scan and reproduced saved-file review remain available. Journal at
+  `/account` holds manual decisions and links to read-only Binance fills. The workspace checks
+  owner access before rendering either route. The former app views for simulations, portfolios,
+  general markets, and paid features were removed. No database migration or strategy change.
+
 - **2026-11-27 · Record no-entry decisions from a saved Spot scan.** Research lets the configured owner
   save why they stayed out of an evaluated pair. Account shows the saved reason, UTC recording time,
   scan identity and copied evidence. The [workflow](MANUAL_SPOT_EXPERIMENTS.md#recording-a-decision-to-stay-out)

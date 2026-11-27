@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Minus, X } from 'lucide-react';
+import { SpotChartLink } from '@/components/SpotChartLink';
 import { RecordSpotNoEntry } from '@/components/RecordSpotNoEntry';
 import { ScanChanges, type BaselineChoice } from '@/components/ScanChanges';
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,7 @@ import {
 } from '@/lib/canonicalModel';
 import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
 import { exactSymbol, type ScanComparison } from '@/lib/scanChanges';
-import { RISK_PROFILE_POLICIES, type RiskProfile } from '@/lib/portfolioBuilder';
+import { spotSymbol } from '@/lib/tradingViewSymbol';
 import {
   ageLabel,
   candidateStatus,
@@ -113,19 +114,6 @@ function SetupTags({ result }: Readonly<{ result: ScanAssetResult }>) {
       {risk && <span className="market-scan-tag is-risk">{risk}</span>}
     </>
   );
-}
-
-/**
- * Which portfolio-builder profiles' technical rules (score, regime, momentum) the recorded
- * reading meets. A rule match, never a judgment that the asset suits anyone.
- */
-function profileFit(result: ScanAssetResult): string {
-  const profiles = Object.entries(result.riskProfiles ?? {})
-    .filter(([, fits]) => fits)
-    .map(([profile]) => profile);
-  return profiles.length > 0
-    ? `Meets the ${profiles.join(' · ')} profile rules`
-    : 'Meets no profile’s rules';
 }
 
 /** Rank, score, setup and Pine alert are four different things; say so once, above the results. */
@@ -347,7 +335,6 @@ function Comparison({
         return `${factor.reading(model.inputs)} → ${score} × ${weight}%`;
       }),
     ),
-    field('Risk-profile rules', ({ result }) => profileFit(result)),
     field('Last evaluated', ({ result }) => resultAsOfLabel(result)),
     field('Window', ({ result }) => `${result.closedCandles} closed`),
     field('Fetched', ({ result }) => fetchedLabel(result, scan)),
@@ -1077,6 +1064,7 @@ function EvidenceSummary({
 }>) {
   const { long, risk } = candidateStatus(explanation);
   const { stale, others } = warnings(result, cohort, scan, source);
+  const symbol = spotSymbol((source ? exactSymbol(result) : result.instrument) ?? '');
   const status = (line: typeof long, tone: string) => (
     <>
       <span className={cn('scan-candidate-state', line.holds && tone)}>{line.label}</span>{' '}
@@ -1142,6 +1130,7 @@ function EvidenceSummary({
           </dd>
         </div>
       </dl>
+      {symbol && <SpotChartLink symbol={symbol} />}
     </section>
   );
 }
@@ -1258,19 +1247,11 @@ function Evidence({
                 {REGIME_LABELS[model.regime]}: {explanation.regimeRule}
               </dd>
             </div>
-            <div>
-              <dt>Risk-profile rules</dt>
-              <dd>{profileFit(result)}</dd>
-            </div>
           </dl>
           <FactorBars model={model} />
           <p className="market-scan-fit">
             Score {model.signal_score} is the weighted blend {unrounded.toFixed(1)}, rounded.
             Weights are the {REGIME_LABELS[model.regime].toLowerCase()} regime&rsquo;s.
-          </p>
-          <p className="market-scan-fit">
-            Risk-profile rules are the portfolio builder&rsquo;s technical thresholds on score,
-            regime and momentum. Meeting them is not an assessment of whether the asset suits you.
           </p>
         </EvidenceSection>
 
@@ -1456,7 +1437,6 @@ function EvidencePanel({
 }
 
 const REGIME_OPTIONS = Object.entries(REGIME_LABELS) as [MarketRegime, string][];
-const PROFILE_OPTIONS = Object.keys(RISK_PROFILE_POLICIES) as RiskProfile[];
 
 /** Wide enough for the evidence to sit beside the list. Matches `.scan-desk.is-wide` in styles.css. */
 const WIDE = '(min-width: 1024px)';
@@ -1603,21 +1583,6 @@ export function ScanReview({
             <option value="Bullish">Bullish</option>
             <option value="Flat">Flat</option>
             <option value="Bearish">Bearish</option>
-          </select>
-          <select
-            className="portfolio-cash-input"
-            name="scan-profile"
-            aria-label="Filter by risk-profile rules (technical, not suitability)"
-            value={filters.profile}
-            onChange={(event) => set('profile', event.target.value as ScanFilters['profile'])}
-          >
-            <option value="any">Any profile rules</option>
-            {PROFILE_OPTIONS.map((profile) => (
-              <option key={profile} value={profile}>
-                Meets {profile} rules
-              </option>
-            ))}
-            <option value="none">Meets no profile’s rules</option>
           </select>
           {filtersActive(filters) && (
             <button

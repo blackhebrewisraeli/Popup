@@ -38,7 +38,7 @@ interface Reviewed {
 const sameInputs = (a: ScenarioInputs, b: ScenarioInputs) =>
   (Object.keys(a) as ScenarioField[]).every((field) => a[field] === b[field]);
 
-const EXPERIMENTS_PLACE = 'Account → Binance Spot → Manual Spot experiments';
+const EXPERIMENTS_PLACE = 'Journal → Manual Spot experiments';
 
 function Field({
   id,
@@ -559,7 +559,7 @@ export function RecordSpotExperiment({
   return (
     <div className="spot-record">
       <p className="market-scan-fit">
-        Saves a record to Account only when you press Confirm and record after Review record: your
+        Saves a record to Journal only when you press Confirm and record after Review record: your
         decision text, this candidate&rsquo;s evidence and the scan&rsquo;s identity, and the
         scenario only if you include it, for the configured Binance owner. Opening this section
         saves nothing. It places no order and links no fill.

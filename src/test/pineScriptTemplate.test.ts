@@ -1,15 +1,4 @@
-import { createElement } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-const { auth, rpc } = vi.hoisted(() => ({
-  auth: { user: null as { id: string } | null },
-  rpc: vi.fn(),
-}));
-vi.mock('@/lib/authStore', () => ({ useAuth: () => auth }));
-vi.mock('@/lib/supabaseClient', () => ({ supabase: { rpc } }));
-
-import { PineScriptModal } from '@/components/PineScriptModal';
+import { describe, expect, it } from 'vitest';
 import { CANONICAL_MODEL_VERSION, REGIME_WEIGHTS, type MarketRegime } from '@/lib/canonicalModel';
 import { buildPineScript } from '@/lib/pineScriptTemplate';
 import { DEFAULT_ATR_STOP_MULTIPLIER } from '@/lib/risk';
@@ -229,72 +218,5 @@ describe('buildPineScript', () => {
     for (const invalid of [undefined, null, 0, -500, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(buildPineScript(invalid)).toBe(source);
     }
-  });
-});
-
-describe('PineScriptModal', () => {
-  afterEach(() => {
-    Reflect.deleteProperty(navigator, 'clipboard');
-  });
-
-  it('copies the capital-injected Pine Script to the clipboard', async () => {
-    const writeText = vi.fn(async (_text: string) => {});
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-
-    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {}, capital: 42_000 }));
-
-    expect(screen.getByText(/pre-filled from your portfolio: \$42,000\.00/)).toBeInTheDocument();
-    expect(screen.getByText('Open TradingView → Pine Editor')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Copy Pine Script \(v6\)/ }));
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    const copied = writeText.mock.calls[0]?.[0] ?? '';
-    expect(copied.startsWith('//@version=6')).toBe(true);
-    expect(copied).toContain('input.float(42000.00, "Account Capital ($)"');
-  });
-
-  it('falls back to the default capital when none is provided', () => {
-    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
-    expect(screen.getByText(/defaults to \$10,000\.00/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Pine Script source')).toHaveValue(buildPineScript());
-  });
-});
-
-describe('Connect TradingView', () => {
-  afterEach(() => {
-    auth.user = null;
-    rpc.mockReset();
-    vi.unstubAllEnvs();
-  });
-
-  it('is hidden from signed-out users', () => {
-    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
-    expect(screen.queryByText('Connect TradingView')).not.toBeInTheDocument();
-  });
-
-  it('mints a token, shows the webhook URL and bakes the token into the script', async () => {
-    vi.stubEnv('VITE_SUPABASE_URL', 'https://demo.supabase.co');
-    auth.user = { id: 'user-1' };
-    rpc.mockResolvedValue({ data: 'tok123', error: null });
-
-    render(createElement(PineScriptModal, { open: true, onOpenChange: () => {} }));
-
-    expect(screen.getByLabelText('Webhook URL')).toHaveValue(
-      'https://demo.supabase.co/functions/v1/tv-webhook',
-    );
-    expect(screen.getByText(/replaces your old one/)).toBeInTheDocument();
-    expect(screen.getByText(/create two TradingView alerts/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/never enable phone notifications on the machine alert/i),
-    ).toBeInTheDocument();
-    expect(screen.queryByLabelText('Webhook token')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Generate webhook token/ }));
-
-    expect(await screen.findByLabelText('Webhook token')).toHaveValue('tok123');
-    expect(rpc).toHaveBeenCalledWith('rotate_signal_webhook_token');
-    const script = screen.getByLabelText('Pine Script source');
-    expect(script).toHaveValue(buildPineScript(null, 'tok123'));
-    expect((script as HTMLTextAreaElement).value).not.toContain(SECRET_PLACEHOLDER);
   });
 });

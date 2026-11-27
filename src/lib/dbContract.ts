@@ -18,40 +18,10 @@ interface Requirement<Name extends keyof Functions> {
   roles: readonly Role[];
 }
 
-type FrontendRpc =
-  | 'dismiss_tactical_signal'
-  | 'execute_paper_portfolio'
-  | 'execute_tactical_signal'
-  | 'get_shared_portfolio'
-  | 'is_binance_spot_owner'
-  | 'rotate_signal_webhook_token';
+type FrontendRpc = 'is_binance_spot_owner';
 
 export const DB_CONTRACT: { [Name in FrontendRpc]: Requirement<Name> } = {
-  // Dismiss sends a null reason when none is picked.
-  dismiss_tactical_signal: {
-    args: { signal_id: 'always', reason: 'always' },
-    roles: ['authenticated'],
-  },
-  execute_paper_portfolio: {
-    args: {
-      request_id: 'always',
-      risk_profile: 'always',
-      budget: 'always',
-      holdings: 'always',
-      dry_run: 'always',
-      // Previews and recoveries leave it out; Confirm sends it.
-      expected: 'sometimes',
-    },
-    roles: ['authenticated'],
-  },
-  execute_tactical_signal: {
-    args: { signal_id: 'always', user_id: 'always', execution_price: 'always' },
-    roles: ['authenticated'],
-  },
-  get_shared_portfolio: { args: { share_id: 'always' }, roles: ['anon', 'authenticated'] },
-  // Manual Spot experiments: whether the signed-in user is the configured Binance owner.
   is_binance_spot_owner: { args: {}, roles: ['authenticated'] },
-  rotate_signal_webhook_token: { args: {}, roles: ['authenticated'] },
 };
 
 /** One public function overload as release_contract() reports it. */

@@ -22,7 +22,7 @@ import {
 } from '@/lib/spotExperiments';
 import { utcText } from '@/lib/utils';
 
-const EXPERIMENTS_PLACE = 'Account → Binance Spot → Manual Spot experiments';
+const EXPERIMENTS_PLACE = 'Journal → Manual Spot experiments';
 
 function Fact({ name, value }: Readonly<{ name: string; value: ReactNode }>) {
   return (
@@ -309,7 +309,7 @@ export interface FillLinkingView {
 
 /**
  * Lets the owner link a consistent execution row to one of their experiments with the same pair
- * and the account label given for this retrieval. It reads the same experiment list as Account,
+ * and the account label given for this retrieval. It reads the same experiment list as Journal,
  * so it asks the database nothing new, and stores a link only after an explicit review.
  */
 export function FillLinking({

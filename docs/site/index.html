@@ -102,8 +102,8 @@
             <h3>Start with dated candidates.</h3>
             <p>
               Research opens on a daily shortlist of Binance Spot pairs ranked by 24-hour quote
-              volume: a liquidity ranking, not a score. Model scan (1D) then shows factors, Risk
-              clauses, and coverage.
+              volume. Open the exact pair's intraday chart on TradingView and use Model scan (1D) to
+              review daily-candle context.
             </p>
             <a href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/MARKET_SCANNER.md"
               >Research workflow →</a
@@ -113,8 +113,8 @@
             <span class="index">02 / MANUAL SPOT</span>
             <h3>Record what you did.</h3>
             <p>
-              Trades are placed by hand on Binance, then recorded as experiments: source scan,
-              rules, linked fills, observations, and close. Popup evaluates no rule.
+              Record a decision to stay out or a trade placed by hand on Binance. Keep the source
+              scan, decision rules, linked fills, observations, and close together in the journal.
             </p>
             <a
               href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/MANUAL_SPOT_EXPERIMENTS.md"
@@ -125,8 +125,8 @@
             <span class="index">03 / ACCOUNT</span>
             <h3>Keep the boundary clear.</h3>
             <p>
-              The owner-only Binance Spot connection reads balances and finite execution history
-              without placing orders. Paper Desk simulations are paused and stay read-only.
+              The owner-only Binance Spot connection reads balances and finite execution history.
+              The journal links reported fills to the owner's decisions.
             </p>
             <a
               href="https://github.com/blackhebrewisraeli/Popup/blob/main/docs/BINANCE_SPOT_ACCOUNT.md"
@@ -137,8 +137,7 @@
         <p class="scope">
           The daily batch is collected once a day by a scheduled Edge Function. TradingView
           development scans run locally through an authenticated agent at the owner's request. They
-          are not an unattended hosted scanner. The hosted app, market-data streams, alerts, and
-          account reads have separate capabilities.
+          can be opened in the workspace as saved crypto snapshots.
         </p>
       </section>
       <section
