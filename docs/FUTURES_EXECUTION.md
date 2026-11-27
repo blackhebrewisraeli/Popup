@@ -131,9 +131,10 @@ or a PR.
 5. **Secrets** (leave `FUTURES_LIVE_ENABLED`, `FUTURES_ENTRY_RULE` and `FUTURES_RISK_LIMITS` unset
    for now): `supabase secrets set --project-ref <ref> BINANCE_FUTURES_API_KEY=… BINANCE_FUTURES_API_SECRET=… TELEGRAM_BOT_TOKEN=… TELEGRAM_WEBHOOK_SECRET=… TELEGRAM_OWNER_USER_ID=… TELEGRAM_OWNER_CHAT_ID=…`
 6. **Deploy:** `supabase functions deploy futures-execution --project-ref <ref>`.
-7. **Webhook.** Call Telegram `setWebhook` with
-   `url=https://<ref>.supabase.co/functions/v1/futures-execution?forceFunctionRegion=eu-west-1`,
-   your `secret_token`, `allowed_updates=["callback_query"]` and `drop_pending_updates=true`.
+7. **Webhook and smoke test.** Follow the [Telegram smoke test](#telegram-smoke-test). It
+   registers the webhook (`url=https://<ref>.supabase.co/functions/v1/futures-execution?forceFunctionRegion=eu-west-1`,
+   your `secret_token`, `allowed_updates=["callback_query"]`, `drop_pending_updates=true`) and
+   checks the owner binding before anything can trade.
 8. **Schedule the tick** (SQL editor), like the other scheduled functions:
 
    ```sql
@@ -158,6 +159,72 @@ or a PR.
 11. **Set `FUTURES_RISK_LIMITS`** with your values.
 12. **Activate:** `FUTURES_LIVE_ENABLED=true`. To stop, unset it. If you need to stop everything,
     also delete the key on Binance and unschedule the tick.
+
+## Telegram smoke test
+
+Checks the bot, the webhook, the owner binding and one-time decisions without Binance. A TEST
+message has its own table (`futures_telegram_tests`): it never creates a proposal or an execution,
+and the function builds no Binance client for it. It needs only `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_OWNER_USER_ID` and `TELEGRAM_OWNER_CHAT_ID`. Keep
+`FUTURES_LIVE_ENABLED` unset. No Binance key is needed.
+
+1. **Find your numeric IDs** before the webhook exists (`getUpdates` stops working once one is
+   set). After pressing Start in the bot's private chat, run this in your own terminal. `read -rs`
+   keeps the token off the screen and out of shell history:
+
+   ```bash
+   read -rs TELEGRAM_BOT_TOKEN && curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates" | python3 -c 'import json,sys; [print("user", m["from"]["id"], "chat", m["chat"]["id"], m["chat"]["type"], m.get("text")) for m in (u.get("message") for u in json.load(sys.stdin)["result"]) if m]'; unset TELEGRAM_BOT_TOKEN
+   ```
+
+   It prints a line like `user 123456789 chat 123456789 private /start`. In a private chat both
+   numbers are the same positive integer. If nothing prints, send the bot any message and run it
+   again (Telegram keeps updates for 24 hours).
+
+2. **Enter the secrets** in the Supabase Dashboard › Edge Functions › Secrets
+   (`https://supabase.com/dashboard/project/<ref>/functions/secrets`): `TELEGRAM_BOT_TOKEN` (from
+   @BotFather), `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_OWNER_USER_ID` and `TELEGRAM_OWNER_CHAT_ID`
+   (the two numbers above). Make the webhook secret with `openssl rand -hex 32` (Telegram allows
+   1–256 of A–Z, a–z, 0–9, `_`, `-`). Saving needs no redeploy. Never paste these into chat.
+3. **Deploy** the function once: `supabase functions deploy futures-execution --project-ref <ref>`.
+4. **Register the webhook** from the SQL editor, with the project's Vault secrets as the
+   scheduled functions use:
+
+   ```sql
+   select net.http_post(
+     url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+       || '/functions/v1/futures-execution',
+     headers := jsonb_build_object(
+       'Content-Type', 'application/json',
+       'x-region', 'eu-west-1',
+       'apikey', (select decrypted_secret from vault.decrypted_secrets where name = 'secret_key')
+     ),
+     body := '{"action":"telegram_setup"}'::jsonb
+   );
+   ```
+
+   Then `select status_code, content from net._http_response order by id desc limit 1;` should
+   show `200` and `{"webhookSet":true,"bot":"@PopupFuturesBot","webhookUrlMatches":true,"pendingUpdates":0,"lastError":null}`.
+   The answer contains no token or secret.
+
+5. **Send a TEST**: run the same statement with `{"action":"telegram_test"}`. The response is
+   `{"sent":true,"test":"<8 characters>","expiresAt":"…"}`. The private chat receives
+   **TEST — Telegram smoke test for the Popup Futures bot** with ✅ Approve (TEST) and ✖ Reject
+   (TEST). It expires after 10 minutes, and only one TEST is pending at a time.
+6. **Press the buttons:**
+   - ✅ Approve (TEST): Telegram shows **TEST approved — no order placed.** and the message gains
+     **TEST APPROVED by the owner at hh:mm:ss UTC.** The buttons stay.
+   - Either button again: **TEST already approved — nothing was done.**
+   - To exercise Reject, send another TEST and press ✖ Reject (TEST): **TEST rejected — no order
+     placed.**
+
+If your own press answers **Not authorized.**, `TELEGRAM_OWNER_USER_ID` or
+`TELEGRAM_OWNER_CHAT_ID` doesn't match your account (repeat step 1, after removing the webhook
+with `deleteWebhook`). `"sent":false` with "Telegram refused the message" means the token or chat
+ID is wrong, or Start wasn't pressed. No answer at all means the webhook isn't reaching the
+function: rerun step 4 and read `lastError`. Each TEST leaves one row in
+`futures_telegram_tests` and `telegram_test_*` rows in `futures_events`. A press from anyone else
+can't be shown from your own private chat, because only you see its buttons. The automated tests
+cover it (`Not authorized.` for another user, a group or another private chat).
 
 ## Owner inputs still missing
 

@@ -351,6 +351,7 @@ export function binanceFake(now: () => number) {
 export function telegram() {
   const calls: { method: string; body: Row; messageId?: number }[] = [];
   let nextMessage = 500;
+  let webhookUrl = '';
   return {
     calls,
     sent: () => calls.filter((c) => c.method === 'sendMessage').map((c) => String(c.body['text'])),
@@ -362,9 +363,14 @@ export function telegram() {
       if (!url.pathname.startsWith(`/bot${BOT_TOKEN}/`)) return respond(401, { ok: false });
       const method = url.pathname.split('/').pop() as string;
       const body = JSON.parse(String(init?.body)) as Row;
+      if (method === 'setWebhook') webhookUrl = String(body['url']);
       if (method !== 'sendMessage') {
         calls.push({ method, body });
-        return respond(200, { ok: true, result: true });
+        const results: Record<string, unknown> = {
+          getMe: { id: 1, is_bot: true, username: 'PopupFuturesBot' },
+          getWebhookInfo: { url: webhookUrl, pending_update_count: 0 },
+        };
+        return respond(200, { ok: true, result: results[method] ?? true });
       }
       const messageId = nextMessage++;
       calls.push({ method, body, messageId });
@@ -389,6 +395,7 @@ const INSERTABLE: Record<string, string[]> = {
   ],
   futures_executions: ['proposal_id', 'state', 'entry_client_order_id', 'lease_until'],
   futures_events: ['proposal_id', 'kind', 'detail'],
+  futures_telegram_tests: ['id', 'expires_at', 'telegram_chat_id'],
 };
 const UPDATABLE: Record<string, string[]> = {
   futures_proposals: ['telegram_message_id', 'status', 'decided_by'],
@@ -405,6 +412,7 @@ const UPDATABLE: Record<string, string[]> = {
     'realized_pnl',
   ],
   futures_events: [],
+  futures_telegram_tests: ['telegram_message_id', 'status', 'decided_by'],
 };
 const REQUIRED_ON_INSERT: Record<string, string[]> = {
   futures_proposals: [
@@ -418,6 +426,7 @@ const REQUIRED_ON_INSERT: Record<string, string[]> = {
   ],
   futures_executions: ['proposal_id', 'state', 'entry_client_order_id'],
   futures_events: ['kind'],
+  futures_telegram_tests: ['id', 'expires_at', 'telegram_chat_id'],
 };
 type Result = { data: unknown; error: { code: string; message: string } | null };
 const failure = (code: string, message: string): Result => ({
@@ -430,6 +439,7 @@ export function fakeSupabase(clock: Clock) {
     futures_proposals: [],
     futures_executions: [],
     futures_events: [],
+    futures_telegram_tests: [],
   };
   const rows = (table: string) =>
     (tables[table] as string[]).map((text) => JSON.parse(text) as Row);
@@ -445,7 +455,7 @@ export function fakeSupabase(clock: Clock) {
     if (denied.length > 0) return failure('42501', `permission denied for ${denied.join(', ')}`);
     const missing = (REQUIRED_ON_INSERT[table] ?? []).filter((column) => row[column] == null);
     if (missing.length > 0) return failure('23502', `null value in ${missing.join(', ')}`);
-    if (table === 'futures_proposals') {
+    if (table === 'futures_proposals' || table === 'futures_telegram_tests') {
       if (list.some((r) => r['id'] === row['id'] || r['status'] === 'pending'))
         return failure('23505', 'duplicate');
       Object.assign(row, {
@@ -488,18 +498,19 @@ export function fakeSupabase(clock: Clock) {
     const list = rows(table);
     const changed: Row[] = [];
     for (const row of list.filter(match)) {
-      if (table === 'futures_proposals') {
+      if (table === 'futures_proposals' || table === 'futures_telegram_tests') {
+        const name = table === 'futures_proposals' ? 'futures_proposal' : 'futures_telegram_test';
         if ('telegram_message_id' in patch && row['telegram_message_id'] !== null) {
-          return failure('42501', 'futures_proposal_immutable');
+          return failure('42501', `${name}_immutable`);
         }
         if ('status' in patch && patch['status'] !== row['status']) {
-          if (row['status'] !== 'pending') return failure('42501', 'futures_proposal_decided');
-          if (
-            patch['status'] === 'approved' &&
-            clock.now() >= Date.parse(String(row['expires_at']))
-          ) {
-            return failure('P0001', 'futures_proposal_expired');
-          }
+          if (row['status'] !== 'pending') return failure('42501', `${name}_decided`);
+          // Proposals refuse a late approval; TESTs refuse any late decision.
+          const late = clock.now() >= Date.parse(String(row['expires_at']));
+          const decision =
+            patch['status'] === 'approved' ||
+            (table === 'futures_telegram_tests' && patch['status'] === 'rejected');
+          if (late && decision) return failure('P0001', `${name}_expired`);
           row['decided_at'] = nowIso();
         }
       }

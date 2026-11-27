@@ -305,3 +305,25 @@ migration in the commit to be applied, so the database goes first.
 - Database: forward-only. Never drop the tables or delete their rows: they are the record of every
   proposal, decision and order outcome. To withdraw access, revoke the `service_role` grants in a
   new migration.
+
+## Futures Telegram smoke test (20261128130000)
+
+Storage for the [Telegram smoke test](./FUTURES_EXECUTION.md#telegram-smoke-test). The migration
+only expands: one table (`futures_telegram_tests`), its index, one trigger function
+(`futures_guard_telegram_test()`) and its trigger, and column-level grants to `service_role` only.
+It changes no existing table, policy, grant, function or row. No frontend reads it and
+`DB_CONTRACT` is unchanged.
+
+**Order: database, then merge, then (separately) deploy and the smoke test.**
+
+1. From a checkout of the PR's final head, run `supabase db push --dry-run`. It should list only
+   `20261128130000`. Then run `supabase db push`.
+2. From the same checkout, run the contract check above. It must report all 36 migrations applied.
+3. Merge. The production build passes the gate. Nothing in the app changes and nothing trades.
+4. The smoke test's deploy, secrets and webhook are owner steps in
+   [FUTURES_EXECUTION.md › Telegram smoke test](./FUTURES_EXECUTION.md#telegram-smoke-test).
+   `FUTURES_LIVE_ENABLED` stays unset.
+
+**Rollback.** Frontend: Instant Rollback is safe; it never reads the table. Telegram: call
+`deleteWebhook` for the bot, or unset `TELEGRAM_WEBHOOK_SECRET` (every webhook call then answers
+401). Database: forward-only; never delete TEST rows.

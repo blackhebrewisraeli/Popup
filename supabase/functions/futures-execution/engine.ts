@@ -114,7 +114,13 @@ export interface Telegram {
     text: string,
     buttons?: { text: string; data: string }[],
   ): Promise<number | null>;
-  edit(chatId: number, messageId: number, text: string): Promise<void>;
+  /** Without buttons the keyboard is removed, so a decided proposal can't be pressed again. */
+  edit(
+    chatId: number,
+    messageId: number,
+    text: string,
+    buttons?: { text: string; data: string }[],
+  ): Promise<void>;
   answer(callbackQueryId: string, text: string): Promise<void>;
 }
 
