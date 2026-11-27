@@ -300,15 +300,25 @@ async function setState(deps: EngineDeps, ex: ExecutionRow, patch: Partial<Execu
 }
 
 /**
- * Everything that must hold right before the entry. Account-wide settings are verified, never
- * changed; the symbol is set to isolated and 5× and then read back. Any value that can't be read
- * refuses the entry.
+ * Everything that must hold right before the entry, in this order. Account-wide settings are
+ * verified, never changed; the symbol is set to isolated and 5× and then read back. Any value that
+ * can't be read refuses the entry.
  */
 async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | null> {
+  for (const check of [riskRefusal, accountRefusal, symbolRefusal, marginRefusal]) {
+    const refusal = await check(deps, p); // NOSONAR(S9382): checks run in order, first refusal wins
+    if (refusal) return refusal;
+  }
+  return null;
+}
+
+/** The proposal is still within its time, the owner's limits, the budget, the key and the price. */
+async function riskRefusal(deps: EngineDeps, p: ProposalRow): Promise<string | null> {
   const { plan, symbol } = p;
   if ('error' in deps.risk) return deps.risk.error;
-  if (deps.risk.sha256 !== plan.riskLimitsSha256)
+  if (deps.risk.sha256 !== plan.riskLimitsSha256) {
     return 'The owner risk limits changed since the proposal';
+  }
   if (deps.now() >= Date.parse(p.expires_at)) return 'The proposal expired';
   if (!deps.risk.limits.symbols.includes(symbol)) return `${symbol} is no longer an allowed symbol`;
   const loss = await cumulativeLoss(deps);
@@ -317,18 +327,19 @@ async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | nul
   if (overRisk) return overRisk;
   const keyRefusal = keyPermissionRefusal(await okBody(deps, 'apiRestrictions'));
   if (keyRefusal) return keyRefusal;
-
   const book = await okBody(deps, 'bookTicker', { symbol });
   if (!isRecord(book)) return 'Could not read the current ask';
-  const drift = priceDrift(plan, String(book['askPrice']));
-  if (drift) return drift;
+  return priceDrift(plan, String(book['askPrice']));
+}
 
+/** One-way, single-asset, able to trade, and nothing already open on the symbol. */
+async function accountRefusal(deps: EngineDeps, p: ProposalRow): Promise<string | null> {
+  const { symbol } = p;
   const config = await okBody(deps, 'accountConfig');
   if (!isRecord(config)) return 'Could not verify the account configuration';
   if (config['dualSidePosition'] !== false) return 'The account is not in one-way position mode';
   if (config['multiAssetsMargin'] !== false) return 'The account is in Multi-Assets mode';
   if (config['canTrade'] !== true) return 'The account cannot trade';
-
   const [positions, orders, algos] = await Promise.all([
     okBody(deps, 'positionRisk', { symbol }),
     okBody(deps, 'openOrders', { symbol }),
@@ -339,38 +350,46 @@ async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | nul
   if (amount !== 0n) return `${symbol} already has a position`;
   if (!Array.isArray(orders) || !Array.isArray(algos)) return 'Could not verify open orders';
   if (orders.length > 0 || algos.length > 0) return `${symbol} already has open orders`;
+  return null;
+}
 
-  let symbolConfig = await readSymbolConfig(deps, symbol);
-  if (!symbolConfig) return 'Could not read the symbol configuration';
-  if (symbolConfig.marginType !== 'ISOLATED') {
+/** Isolated margin at 5×, set if needed and read back; auto-add margin off; bracket large enough. */
+async function symbolRefusal(deps: EngineDeps, p: ProposalRow): Promise<string | null> {
+  const { symbol } = p;
+  const before = await readSymbolConfig(deps, symbol);
+  if (!before) return 'Could not read the symbol configuration';
+  if (before.marginType !== 'ISOLATED') {
     const set = await deps.binance.call('setMarginType', { symbol, marginType: 'ISOLATED' });
-    if (set.kind === 'rejected' && set.code !== -4046)
+    if (set.kind === 'rejected' && set.code !== -4046) {
       return `Isolated margin not set: ${describe(set)}`;
+    }
   }
-  if (symbolConfig.leverage !== LEVERAGE) {
+  if (before.leverage !== LEVERAGE) {
     const set = await deps.binance.call('setLeverage', { symbol, leverage: String(LEVERAGE) });
     if (set.kind === 'rejected') return `Leverage not set: ${describe(set)}`;
   }
-  symbolConfig = await readSymbolConfig(deps, symbol);
-  if (
-    !symbolConfig ||
-    symbolConfig.marginType !== 'ISOLATED' ||
-    symbolConfig.leverage !== LEVERAGE
-  ) {
+  const after = await readSymbolConfig(deps, symbol);
+  if (after?.marginType !== 'ISOLATED' || after.leverage !== LEVERAGE) {
     return 'Could not verify isolated margin at 5×';
   }
-  if (symbolConfig.isAutoAddMargin !== false) return 'Auto-add margin is on for this symbol';
-  const cap = dec(symbolConfig.maxNotionalValue);
-  if (!cap || cap < (dec(plan.notional) as bigint))
+  if (after.isAutoAddMargin !== false) return 'Auto-add margin is on for this symbol';
+  const cap = dec(after.maxNotionalValue);
+  if (!cap || cap < (dec(p.plan.notional) as bigint)) {
     return 'The notional exceeds the 5× bracket cap';
+  }
+  return null;
+}
 
+/** Available USDT covers the collateral. */
+async function marginRefusal(deps: EngineDeps, p: ProposalRow): Promise<string | null> {
   const balances = await okBody(deps, 'balance');
   const usdt = Array.isArray(balances)
     ? balances.find((b: unknown) => isRecord(b) && b['asset'] === 'USDT')
     : undefined;
   const available = isRecord(usdt) ? dec(usdt['availableBalance']) : null;
   if (available === null) return 'Could not read the available USDT balance';
-  if (available < (dec(plan.collateral) as bigint)) return 'Available USDT is below the collateral';
+  if (available < (dec(p.plan.collateral) as bigint))
+    return 'Available USDT is below the collateral';
   return null;
 }
 
@@ -410,6 +429,24 @@ async function cumulativeLoss(deps: EngineDeps): Promise<bigint | string> {
   return loss;
 }
 
+const INCOME_TYPES = new Set(['REALIZED_PNL', 'COMMISSION', 'FUNDING_FEE']);
+
+/**
+ * One income row's contribution: skipped when it is another symbol or type, null when it can't be
+ * counted (not USDT, or unreadable).
+ */
+function incomeAmount(
+  row: unknown,
+  symbol: string,
+): 'skip' | { amount: bigint; realized: boolean } | null {
+  if (!isRecord(row) || row['symbol'] !== symbol || !INCOME_TYPES.has(String(row['incomeType']))) {
+    return 'skip';
+  }
+  const amount = signedDec(row['income']);
+  if (row['asset'] !== 'USDT' || amount === null) return null;
+  return { amount, realized: row['incomeType'] === 'REALIZED_PNL' };
+}
+
 /**
  * Net USDT for the symbol since the entry, from Binance income: realized PnL, commissions and
  * funding. Null when any of them is in another asset, a page could be truncated, or no realized
@@ -422,22 +459,21 @@ async function incomeSinceEntry(deps: EngineDeps, p: ProposalRow, ex: ExecutionR
   let total = 0n;
   let realized = false;
   for (let from = start; from <= deps.now(); from += INCOME_WINDOW_MS) {
-    const to = Math.min(from + INCOME_WINDOW_MS - 1, deps.now());
-    const rows = await okBody(deps, 'income', {
+    const range = {
       symbol: p.symbol,
       startTime: String(from),
-      endTime: String(to),
+      endTime: String(Math.min(from + INCOME_WINDOW_MS - 1, deps.now())),
       limit: '1000',
-    });
+    };
+    // 7-day windows, one request at a time.
+    const rows = await okBody(deps, 'income', range); // NOSONAR(S9382)
     if (!Array.isArray(rows) || rows.length >= 1000) return null;
     for (const row of rows) {
-      if (!isRecord(row) || row['symbol'] !== p.symbol) continue;
-      const type = row['incomeType'];
-      if (type !== 'REALIZED_PNL' && type !== 'COMMISSION' && type !== 'FUNDING_FEE') continue;
-      const amount = signedDec(row['income']);
-      if (row['asset'] !== 'USDT' || amount === null) return null;
-      realized ||= type === 'REALIZED_PNL';
-      total += amount;
+      const counted = incomeAmount(row, p.symbol);
+      if (counted === null) return null;
+      if (counted === 'skip') continue;
+      realized ||= counted.realized;
+      total += counted.amount;
     }
   }
   return realized ? fmt(total) : null;
@@ -536,8 +572,8 @@ async function execute(deps: EngineDeps, p: ProposalRow): Promise<void> {
     if (sent.kind === 'ok') await applyEntry(deps, p, ex, sent.body);
     // Unknown: query the client order ID a few times before leaving it to the scheduled reconcile.
     for (let attempt = 0; ex.state === 'entry_unknown' && attempt < 4; attempt++) {
-      await deps.sleep(1500 * (attempt + 1));
-      await reconcileEntry(deps, p, ex);
+      await deps.sleep(1500 * (attempt + 1)); // NOSONAR(S9382): back off between queries
+      await reconcileEntry(deps, p, ex); // NOSONAR(S9382): each query depends on the last
     }
     if (ex.state === 'entry_unknown') {
       await alertOnce(
@@ -589,7 +625,7 @@ function parseOrder(body: unknown): OrderView | null {
   return {
     status: body['status'],
     executedQty,
-    avgPrice: String(body['avgPrice'] ?? '0'),
+    avgPrice: typeof body['avgPrice'] === 'string' ? body['avgPrice'] : '0',
     orderId: String(body['orderId']),
   };
 }
@@ -667,24 +703,25 @@ async function ensureAlgo(deps: EngineDeps, spec: AlgoSpec): Promise<AlgoStatus>
   const { clientAlgoId } = spec;
   let last = 'not attempted';
   for (let attempt = 0; attempt < 3; attempt++) {
-    const found = await deps.binance.call('queryAlgoOrder', { clientAlgoId });
+    // Query, then submit only if absent, then back off: strictly one at a time.
+    const found = await deps.binance.call('queryAlgoOrder', { clientAlgoId }); // NOSONAR(S9382)
     if (found.kind === 'ok' && isRecord(found.body)) {
       const status = String(found.body['algoStatus']);
       if (status === 'NEW' || status === 'TRIGGERED' || status === 'FINISHED')
         return { clientAlgoId, status };
     } else if (!isAbsent(found)) {
       last = `query ${describe(found)}`;
-      await deps.sleep(1000 * (attempt + 1));
+      await deps.sleep(1000 * (attempt + 1)); // NOSONAR(S9382)
       continue;
     }
-    const sent = await deps.binance.call('newAlgoOrder', { algoType: 'CONDITIONAL', ...spec });
+    const sent = await deps.binance.call('newAlgoOrder', { algoType: 'CONDITIONAL', ...spec }); // NOSONAR(S9382)
     last = describe(sent);
     if (sent.kind === 'rejected' && !isDuplicate(sent))
       return { clientAlgoId, status: 'FAILED', detail: last };
     if (sent.kind === 'ok' && isRecord(sent.body) && sent.body['algoStatus'] === 'NEW') {
       return { clientAlgoId, status: 'NEW' };
     }
-    await deps.sleep(1000 * (attempt + 1));
+    await deps.sleep(1000 * (attempt + 1)); // NOSONAR(S9382)
   }
   return { clientAlgoId, status: 'UNVERIFIED', detail: last };
 }
@@ -709,25 +746,27 @@ async function protect(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Prom
   }
   const targets: AlgoStatus[] = [];
   for (const [i, target] of targetQuantities(ex.filled_qty as string, p.plan).entries()) {
-    targets.push(
-      await ensureAlgo(deps, {
-        symbol: p.symbol,
-        side: 'SELL',
-        type: 'TAKE_PROFIT_MARKET',
-        triggerPrice: target.price,
-        quantity: target.quantity,
-        workingType: 'MARK_PRICE',
-        // Reduce-only: can only shrink the long, never reverse it.
-        reduceOnly: 'true',
-        clientAlgoId: targetAlgoId(p.id, i),
-      }),
-    );
+    const spec = {
+      symbol: p.symbol,
+      side: 'SELL',
+      type: 'TAKE_PROFIT_MARKET',
+      triggerPrice: target.price,
+      quantity: target.quantity,
+      workingType: 'MARK_PRICE',
+      // Reduce-only: can only shrink the long, never reverse it.
+      reduceOnly: 'true',
+      clientAlgoId: targetAlgoId(p.id, i),
+    };
+    // One exit at a time, in target order.
+    targets.push(await ensureAlgo(deps, spec)); // NOSONAR(S9382)
   }
   await setState(deps, ex, { state: 'protected', protection: { stop, targets } });
   const lines = [
     `PROTECTED ${ex.filled_qty} ${p.symbol}:`,
     `Stop ${p.plan.stopTrigger} (close-all, mark price): ${stop.status}`,
-    ...targets.map((t, i) => `Target ${i + 1}: ${t.status}${t.detail ? ` (${t.detail})` : ''}`),
+    ...targets.map((t, i) =>
+      [`Target ${i + 1}: ${t.status}`, t.detail && `(${t.detail})`].filter(Boolean).join(' '),
+    ),
   ];
   if (targets.length === 0)
     lines.push('No take-profit: the filled quantity is below the minimum per target.');
@@ -861,56 +900,59 @@ export interface TickSummary {
   rule: string;
 }
 
-/** Expire stale proposals, reconcile every open execution (also after a restart), run the rule. */
-export async function tick(deps: EngineDeps, rule: string | undefined): Promise<TickSummary> {
-  const summary: TickSummary = {
-    expired: 0,
-    reconciled: [],
-    skipped: [],
-    results: 0,
-    rule: '',
-  };
+async function expireProposals(deps: EngineDeps, summary: TickSummary) {
   for (const p of await deps.store.expireDue(iso(deps.now()))) {
     summary.expired++;
-    await deps.store.event(p.id, 'expired', {});
-    if (p.telegram_message_id !== null) {
-      await deps.telegram.edit(
-        p.telegram_chat_id,
-        p.telegram_message_id,
-        `${proposalText(p.id, p.plan_sha256, p.plan)}\n\nEXPIRED — no order placed.`,
-      );
-    }
+    await deps.store.event(p.id, 'expired', {}); // NOSONAR(S9382): few rows, in order
+    if (p.telegram_message_id === null) continue;
+    const text = `${proposalText(p.id, p.plan_sha256, p.plan)}\n\nEXPIRED — no order placed.`;
+    await deps.telegram.edit(p.telegram_chat_id, p.telegram_message_id, text); // NOSONAR(S9382)
   }
+}
+
+/** Drive every open execution whose lease is free; at most one exists (database constraint). */
+async function reconcileOpen(deps: EngineDeps, summary: TickSummary) {
   for (const ex of await deps.store.openExecutions()) {
-    const p = await deps.store.getProposal(ex.proposal_id);
-    if (
-      !p ||
-      !(await deps.store.lease(ex.proposal_id, iso(deps.now()), iso(deps.now() + LEASE_MS)))
-    ) {
+    const p = await deps.store.getProposal(ex.proposal_id); // NOSONAR(S9382): one at a time
+    const until = iso(deps.now() + LEASE_MS);
+    if (!p || !(await deps.store.lease(ex.proposal_id, iso(deps.now()), until))) {
       summary.skipped.push(ex.proposal_id);
       continue;
     }
     const from = ex.state;
     try {
-      await drive(deps, p, ex);
+      await drive(deps, p, ex); // NOSONAR(S9382): an execution is never driven concurrently
     } finally {
-      await deps.store.updateExecution(ex.proposal_id, { lease_until: null });
+      await deps.store.updateExecution(ex.proposal_id, { lease_until: null }); // NOSONAR(S9382)
     }
     summary.reconciled.push({ id: ex.proposal_id, from, to: ex.state });
   }
+}
+
+async function recordPendingResults(deps: EngineDeps, summary: TickSummary) {
   for (const ex of await deps.store.closedExecutions()) {
     if (ex.realized_pnl !== null) continue;
-    const p = await deps.store.getProposal(ex.proposal_id);
-    if (p) await recordResult(deps, p, ex);
+    const p = await deps.store.getProposal(ex.proposal_id); // NOSONAR(S9382): one at a time
+    if (p) await recordResult(deps, p, ex); // NOSONAR(S9382)
     if (ex.realized_pnl !== null) summary.results++;
   }
+}
+
+async function runRule(deps: EngineDeps, rule: string | undefined): Promise<string> {
   const detect = rule ? ENTRY_RULES[rule] : undefined;
-  if (!rule) summary.rule = 'no entry rule configured';
-  else if (!detect) summary.rule = `${rule} is not an approved entry rule; nothing detected`;
-  else if (!deps.liveEnabled) summary.rule = 'live entries disabled (FUTURES_LIVE_ENABLED)';
-  else {
-    const candidate = await detect(deps);
-    summary.rule = candidate ? await propose(deps, candidate) : `${rule}: no candidate`;
-  }
+  if (!rule) return 'no entry rule configured';
+  if (!detect) return `${rule} is not an approved entry rule; nothing detected`;
+  if (!deps.liveEnabled) return 'live entries disabled (FUTURES_LIVE_ENABLED)';
+  const candidate = await detect(deps);
+  return candidate ? propose(deps, candidate) : `${rule}: no candidate`;
+}
+
+/** Expire stale proposals, reconcile every open execution (also after a restart), run the rule. */
+export async function tick(deps: EngineDeps, rule: string | undefined): Promise<TickSummary> {
+  const summary: TickSummary = { expired: 0, reconciled: [], skipped: [], results: 0, rule: '' };
+  await expireProposals(deps, summary);
+  await reconcileOpen(deps, summary);
+  await recordPendingResults(deps, summary);
+  summary.rule = await runRule(deps, rule);
   return summary;
 }

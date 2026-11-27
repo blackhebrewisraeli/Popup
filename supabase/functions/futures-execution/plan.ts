@@ -25,16 +25,21 @@ export function dec(text: unknown): bigint | null {
 /** dec() that also accepts a leading minus, as Binance income and position amounts carry. */
 export function signedDec(text: unknown): bigint | null {
   if (typeof text !== 'string') return null;
-  const value = dec(text.replace(/^-/, ''));
-  return value === null ? null : text.startsWith('-') ? -value : value;
+  const negative = text.startsWith('-');
+  const value = dec(negative ? text.slice(1) : text);
+  if (value === null) return null;
+  return negative ? -value : value;
 }
 
 /** Plain decimal text without exponent or trailing zeros: what Binance accepts as a parameter. */
 export function fmt(value: bigint): string {
   const sign = value < 0n ? '-' : '';
   const abs = value < 0n ? -value : value;
-  const fraction = (abs % SCALE).toString().padStart(18, '0').replace(/0+$/, '');
-  return `${sign}${abs / SCALE}${fraction ? `.${fraction}` : ''}`;
+  const digits = (abs % SCALE).toString().padStart(18, '0');
+  let end = digits.length;
+  while (end > 0 && digits[end - 1] === '0') end--;
+  const whole = `${sign}${abs / SCALE}`;
+  return end === 0 ? whole : `${whole}.${digits.slice(0, end)}`;
 }
 
 /** The owner's total experiment budget: collateral never exceeds what is left of it. */
@@ -312,14 +317,8 @@ export function planLong(input: {
   const byCollateral = div(collateralRoom * BigInt(LEVERAGE), entryLimit);
   const quantity = floorGrid(least(least(byLoss, byCollateral), maxQty), r.minQty, r.stepSize);
 
-  const distance = ask - stopTrigger;
-  const targets: Target[] = [];
-  for (const multiple of limits.takeProfitR) {
-    const price = floorGrid(ask + mul(distance, multiple), r.minPrice, r.tickSize);
-    if (r.maxPrice > 0n && price > r.maxPrice) return 'A take-profit target is above maxPrice';
-    if (price <= entryLimit) return 'A take-profit target is not above the entry limit';
-    targets.push({ r: fmt(multiple), price: fmt(price) });
-  }
+  const targets = targetPrices(limits.takeProfitR, ask, stopTrigger, entryLimit, r);
+  if (typeof targets === 'string') return targets;
   return {
     environment: ENVIRONMENT,
     symbol: candidate.symbol,
@@ -345,6 +344,24 @@ export function planLong(input: {
     riskLimitsSha256: input.limitsSha256,
     rules,
   };
+}
+
+/** Each R multiple of the stop distance above the ask, on the tick grid and above the entry limit. */
+function targetPrices(
+  multiples: bigint[],
+  ask: bigint,
+  stopTrigger: bigint,
+  entryLimit: bigint,
+  r: Record<keyof SymbolRules, bigint>,
+): Target[] | string {
+  const targets: Target[] = [];
+  for (const multiple of multiples) {
+    const price = floorGrid(ask + mul(ask - stopTrigger, multiple), r.minPrice, r.tickSize);
+    if (r.maxPrice > 0n && price > r.maxPrice) return 'A take-profit target is above maxPrice';
+    if (price <= entryLimit) return 'A take-profit target is not above the entry limit';
+    targets.push({ r: fmt(multiple), price: fmt(price) });
+  }
+  return targets;
 }
 
 /** The proposal's identity: its id and every approved term. */
@@ -399,6 +416,7 @@ export function targetQuantities(
   return [];
 }
 
+const targetLabel = (t: Target) => `${t.price} (${t.r}R)`;
 const utc = (iso: string) => `${iso.slice(0, 16).replace('T', ' ')} UTC`;
 
 /** The private Telegram proposal: every term the owner approves, in plain text. */
@@ -414,7 +432,7 @@ export function proposalText(id: string, sha256: string, plan: Plan): string {
     `Collateral: ${plan.collateral} USDT (isolated margin)`,
     `Stop trigger: ${plan.stopTrigger} (mark price; closes the whole position)`,
     `Estimated loss at stop: ${plan.estimatedLossAtStop} USDT (taker fees included; funding and slippage excluded)`,
-    `Targets (reduce-only): ${plan.targets.map((t) => `${t.price} (${t.r}R)`).join(', ')}`,
+    `Targets (reduce-only): ${plan.targets.map(targetLabel).join(', ')}`,
     `Experiment: cumulative loss ${plan.cumulativeLossBefore} USDT before this trade · budget ${plan.budgetUsdt} USDT`,
     `On approval: refused if the ask moved more than ${plan.maxPriceMoveBps} bps or limits changed`,
     `Expires: ${utc(plan.expiresAt)}`,

@@ -281,7 +281,7 @@ describe('futures-execution: proposal and approval', () => {
     const before = w.binance.calls.length;
     await w.press('r');
     expect(w.proposal()?.['status']).toBe('rejected');
-    expect(w.binance.calls.length).toBe(before);
+    expect(w.binance.calls).toHaveLength(before);
     expect(w.tg.edits().at(-1)).toContain('REJECTED — no order placed.');
     expect(w.db.rows('futures_executions')).toEqual([]);
   });

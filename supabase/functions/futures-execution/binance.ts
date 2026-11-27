@@ -89,10 +89,11 @@ export function futuresClient(deps: {
         query.set('signature', await hmacSha256Hex(deps.apiSecret, query.toString()));
       }
       const text = query.toString();
+      const url = text ? `${origin}${path}?${text}` : origin + path;
       let res: Response;
       let body: unknown;
       try {
-        res = await deps.fetch(`${origin}${path}${text ? `?${text}` : ''}`, {
+        res = await deps.fetch(url, {
           method,
           headers: signed ? { 'X-MBX-APIKEY': deps.apiKey } : {},
           redirect: 'error',
@@ -102,24 +103,29 @@ export function futuresClient(deps: {
       } catch (error) {
         return { kind: 'unknown', reason: error instanceof Error ? error.name : 'network' };
       }
-      const code = isRecord(body) && typeof body['code'] === 'number' ? body['code'] : 0;
-      const msg = isRecord(body) && typeof body['msg'] === 'string' ? body['msg'] : '';
-      if (res.ok) {
-        // A 2xx without a readable body might still be an accepted order.
-        return body === undefined
-          ? { kind: 'unknown', reason: 'unreadable 2xx' }
-          : { kind: 'ok', body };
-      }
-      const unknown =
-        res.status === 408 ||
-        code === -1006 ||
-        code === -1007 ||
-        (res.status === 503 && /unknown error/i.test(msg)) ||
-        (res.status >= 500 && res.status !== 503);
-      if (unknown) return { kind: 'unknown', reason: `HTTP ${res.status} ${code}`.trim() };
-      return { kind: 'rejected', status: res.status, code, msg: msg.slice(0, 200) };
+      return classify(res.status, body);
     },
   };
+}
+
+/** Binance's documented meaning of one answer (general info › HTTP return codes, error codes). */
+export function classify(status: number, body: unknown): Outcome {
+  // A 2xx without a readable body might still be an accepted order.
+  if (status >= 200 && status < 300) {
+    return body === undefined
+      ? { kind: 'unknown', reason: 'unreadable 2xx' }
+      : { kind: 'ok', body };
+  }
+  const code = isRecord(body) && typeof body['code'] === 'number' ? body['code'] : 0;
+  const msg = isRecord(body) && typeof body['msg'] === 'string' ? body['msg'] : '';
+  const unknown =
+    status === 408 ||
+    code === -1006 ||
+    code === -1007 ||
+    (status === 503 && /unknown error/i.test(msg)) ||
+    (status >= 500 && status !== 503);
+  if (unknown) return { kind: 'unknown', reason: `HTTP ${status} ${code}` };
+  return { kind: 'rejected', status, code, msg: msg.slice(0, 200) };
 }
 
 /** Binance says this order or algo order does not exist (it may never have been accepted). */
@@ -130,5 +136,5 @@ export const isAbsent = (outcome: Outcome) =>
 export function describe(outcome: Outcome): string {
   if (outcome.kind === 'ok') return 'ok';
   if (outcome.kind === 'unknown') return `unknown (${outcome.reason})`;
-  return `rejected ${outcome.code || outcome.status}${outcome.msg ? ` ${outcome.msg}` : ''}`;
+  return [`rejected ${outcome.code || outcome.status}`, outcome.msg].filter(Boolean).join(' ');
 }

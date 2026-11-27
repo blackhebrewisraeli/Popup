@@ -68,7 +68,9 @@ function namedKeys(raw: string | undefined): string[] {
 function constantTimeEqual(left: string, right: string): boolean {
   if (left.length !== right.length) return false;
   let difference = 0;
-  for (let i = 0; i < left.length; i++) difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  for (let i = 0; i < left.length; i++) {
+    difference |= (left.codePointAt(i) ?? 0) ^ (right.codePointAt(i) ?? 0);
+  }
   return difference === 0;
 }
 
