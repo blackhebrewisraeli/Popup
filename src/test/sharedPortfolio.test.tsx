@@ -1,5 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset } from '@/lib/assets';
 import type { Position } from '@/lib/portfolioManager';
 
@@ -22,28 +21,11 @@ vi.mock('@/lib/binance', async (importOriginal) => ({
   fetchHistoricalCandles: history.candles,
 }));
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...props }: React.ComponentProps<'a'> & { to: string }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
-vi.mock('recharts', () => ({
-  Cell: () => null,
-  Pie: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  PieChart: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  Tooltip: () => null,
-}));
-
-import { SharedPortfolioView } from '@/components/SharedPortfolioView';
 import { evaluateCandles } from '@/lib/canonicalModel';
 import {
   buildSharedPortfolioSnapshot,
   fetchSharedPortfolio,
   publishSharedPortfolio,
-  type SharedPortfolioRecord,
 } from '@/lib/sharedPortfolio';
 
 function makeAsset(overrides: Partial<Asset> & Pick<Asset, 'ticker'>): Asset {
@@ -99,8 +81,6 @@ const engineScore = (candles: ReturnType<typeof series>) => {
 
 const klines = (closes: number[], startDay = 0) =>
   closes.map((close, index) => ({ timestamp: (startDay + index) * 86_400_000, close }));
-
-afterEach(cleanup);
 
 describe('shared portfolio snapshots', () => {
   it('builds a percentage-only snapshot with no absolute amounts', async () => {
@@ -438,151 +418,5 @@ describe('shared portfolio snapshots', () => {
   it('skips the request for ids that are not UUIDs', async () => {
     await expect(fetchSharedPortfolio('not-a-uuid')).resolves.toBeNull();
     expect(database.rpc).not.toHaveBeenCalled();
-  });
-});
-
-describe('public portfolio view', () => {
-  it('shows portfolio essentials and never renders trading or credential controls', async () => {
-    const snapshot = await buildSharedPortfolioSnapshot(
-      [makePosition({ id: 'btc', ticker: 'BTC', buyPrice: 100, shares: 2 })],
-      [makeAsset({ ticker: 'BTC', name: 'Bitcoin', current_price: 120 })],
-      '2026-10-18T00:00:00.000Z',
-    );
-    const record: SharedPortfolioRecord = {
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      createdAt: snapshot.createdAt,
-      snapshot,
-    };
-
-    const { container } = render(<SharedPortfolioView record={record} />);
-
-    expect(screen.getByRole('heading', { name: 'Quant Portfolio Snapshot' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Asset allocation' })).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Quant scores' })).toBeVisible();
-    expect(
-      screen.getAllByRole('link', {
-        name: /Built with Popup — Create your own Quant Portfolio/i,
-      }),
-    ).toHaveLength(2);
-    expect(screen.queryByRole('button', { name: /trade/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/api key/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/deposit|withdraw/i)).not.toBeInTheDocument();
-
-    // Percentage-only: returns render, dollar amounts never do.
-    expect(screen.getByText('Total return')).toBeVisible();
-    expect(screen.getAllByText('+20.00%').length).toBeGreaterThan(0);
-    expect(container.textContent).not.toMatch(/\$/);
-  });
-
-  it('shows an equity holding as not scanned, never as not enough data', async () => {
-    history.candles.mockResolvedValue(series(200, 0.2));
-    const snapshot = await buildSharedPortfolioSnapshot(
-      [
-        makePosition({ id: 'aapl', ticker: 'AAPL', buyPrice: 100, shares: 3 }),
-        makePosition({ id: 'msft', ticker: 'MSFT', buyPrice: 100, shares: 1 }),
-      ],
-      [makeAsset({ ticker: 'AAPL' }), makeAsset({ ticker: 'MSFT' })],
-      '2026-10-18T00:00:00.000Z',
-    );
-    const record = (value: SharedPortfolioRecord['snapshot']): SharedPortfolioRecord => ({
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      createdAt: value.createdAt,
-      snapshot: value,
-    });
-
-    const { container, rerender } = render(<SharedPortfolioView record={record(snapshot)} />);
-
-    // Two holdings and the hero: no holding is scored, and none was ever scanned.
-    expect(screen.getAllByText('Not scanned')).toHaveLength(3);
-    expect(container.textContent).not.toMatch(/Not Enough Data|No data/);
-
-    // One scored holding: the hero shows the blend, the equity keeps its reason.
-    const btcScore = engineScore(series(200, 0.2)).signal_score;
-    rerender(
-      <SharedPortfolioView
-        record={record({
-          ...snapshot,
-          quantScore: btcScore,
-          holdings: [
-            ...snapshot.holdings,
-            { ...snapshot.holdings[0]!, ticker: 'BTC', quantScore: btcScore, scoreStatus: 'OK' },
-          ],
-        })}
-      />,
-    );
-    expect(screen.getAllByText('Not scanned')).toHaveLength(2);
-    expect(screen.getAllByText(String(Math.round(btcScore))).length).toBeGreaterThan(0);
-
-    // The hero names the reason behind the largest unscored share.
-    const [aapl, msft] = snapshot.holdings;
-    rerender(
-      <SharedPortfolioView
-        record={record({
-          ...snapshot,
-          holdings: [
-            aapl!,
-            { ...msft!, ticker: 'SOL', quantScore: null, scoreStatus: 'FETCH_FAILED' },
-          ],
-        })}
-      />,
-    );
-    expect(screen.getAllByText('Not scanned')).toHaveLength(2);
-    expect(screen.getByText('Fetch failed')).toBeVisible();
-  });
-
-  it('keeps the short-history wording for version 3 rows without a reason', async () => {
-    const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    database.maybeSingle.mockResolvedValue({
-      data: {
-        id,
-        created_at: '2026-10-18T00:00:00.000Z',
-        snapshot: {
-          version: 3,
-          createdAt: '2026-10-18T00:00:00.000Z',
-          pnlPercent: 5,
-          quantScore: null,
-          maxDrawdownPercent: null,
-          alphaPercent: null,
-          holdings: [
-            {
-              ticker: 'AAPL',
-              name: 'Apple',
-              allocationPercent: 100,
-              pnlPercent: 5,
-              quantScore: null,
-              regime: null,
-            },
-          ],
-        },
-      },
-      error: null,
-    });
-
-    render(<SharedPortfolioView record={(await fetchSharedPortfolio(id))!} />);
-
-    expect(screen.getByText('Not Enough Data')).toBeVisible();
-    expect(screen.getByText('No data')).toBeVisible();
-    expect(screen.queryByText('Not scanned')).not.toBeInTheDocument();
-  });
-
-  it('shows max drawdown and alpha, or an em dash when they are unavailable', async () => {
-    const snapshot = await buildSharedPortfolioSnapshot([], [], '2026-10-18T00:00:00.000Z');
-    const record = (risk: Partial<SharedPortfolioRecord['snapshot']>): SharedPortfolioRecord => ({
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      createdAt: snapshot.createdAt,
-      snapshot: { ...snapshot, ...risk },
-    });
-
-    const { rerender } = render(<SharedPortfolioView record={record({})} />);
-    expect(screen.getByText('Max drawdown')).toBeVisible();
-    expect(screen.getByText('Alpha')).toBeVisible();
-    expect(screen.getAllByText('—')).toHaveLength(2);
-
-    rerender(
-      <SharedPortfolioView record={record({ maxDrawdownPercent: 8.5, alphaPercent: -3.25 })} />,
-    );
-    expect(screen.getByText('-8.50%')).toBeVisible();
-    expect(screen.getByText('-3.25%')).toBeVisible();
-    expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });

@@ -104,7 +104,7 @@ function NoEntryForm({
       )}
       {recorded && (
         <output className="spot-note">
-          Saved to Account → Manual Spot experiments → No-entry decisions.
+          Saved to Journal → Manual Spot experiments → No-entry decisions.
         </output>
       )}
       {!recorded && (

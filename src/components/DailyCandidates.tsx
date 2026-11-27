@@ -3,7 +3,6 @@ import { ChevronRight, OctagonAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Fact } from '@/components/MarketScanSummary';
-import type { Asset } from '@/lib/assets';
 import { useAuth } from '@/lib/authStore';
 import {
   DISCOVERY_POLICY,
@@ -23,7 +22,7 @@ import {
 import { ageLabel, UTC_TIME } from '@/lib/scanReview';
 import { isSpotExperimentOwner } from '@/lib/spotExperiments';
 import { supabase } from '@/lib/supabaseClient';
-import { toBinanceSymbol } from '@/lib/ticker';
+import { SpotChartLink } from '@/components/SpotChartLink';
 import { cn } from '@/lib/utils';
 
 const BATCH_COLUMNS =
@@ -155,11 +154,6 @@ function attemptLabel(status: string): string {
   return ATTEMPT_LABEL[status as DiscoveryAttemptStatus] ?? status;
 }
 
-/** Popup's asset whose Binance symbol is exactly this pair; none means no detail route. */
-function assetFor(symbol: string, assets: readonly Asset[]): Asset | undefined {
-  return assets.find((asset) => toBinanceSymbol(asset.ticker) === symbol);
-}
-
 function CategoryLabel({ category }: Readonly<{ category: DiscoveryCategory }>) {
   return (
     <span className={cn('discovery-class', category !== 'unclassified' && 'is-classified')}>
@@ -171,17 +165,10 @@ function CategoryLabel({ category }: Readonly<{ category: DiscoveryCategory }>) 
 function CandidateRow({
   member,
   showWindow,
-  asset,
-  noAsset,
-  onOpenAsset,
 }: Readonly<{
   member: DiscoveryMember;
   /** False when every row's window closes at the same second; the caption then says it once. */
   showWindow: boolean;
-  asset: Asset | undefined;
-  /** Why there is no detail route, when `asset` is undefined. */
-  noAsset: string;
-  onOpenAsset: (asset: Asset) => void;
 }>) {
   return (
     <tr>
@@ -211,20 +198,7 @@ function CandidateRow({
         <CategoryLabel category={member.category} />
       </td>
       <td className="discovery-detail">
-        {asset ? (
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label={`Open ${asset.ticker} details (${member.symbol})`}
-            onClick={() => onOpenAsset(asset)}
-          >
-            {asset.ticker}
-          </Button>
-        ) : (
-          <span className="text-muted-foreground" title={noAsset}>
-            —<span className="sr-only">{noAsset}</span>
-          </span>
-        )}
+        <SpotChartLink symbol={member.symbol} />
       </td>
     </tr>
   );
@@ -323,24 +297,15 @@ function BatchNotes({ evidence }: Readonly<{ evidence: DiscoveryEvidence }>) {
 
 function CandidatesTable({
   evidence,
-  assets,
-  onOpenAsset,
 }: Readonly<{
   evidence: DiscoveryEvidence;
-  assets: readonly Asset[] | null;
-  onOpenAsset: (asset: Asset) => void;
 }>) {
   const { members, coverage } = evidence.result;
   if (members.length === 0) return null;
-  const noAsset =
-    assets === null
-      ? 'Live market data is not loaded, so no asset detail is linked'
-      : 'No Popup asset maps to this exact pair';
   const windows = new Set(members.map((member) => UTC_SECONDS.format(member.windowCloseTime)));
   const sharedWindow = windows.size === 1 ? [...windows][0] : null;
   return (
     <div className="daily-list">
-      {assets === null && <p className="daily-list-note">{noAsset}.</p>}
       <section
         className="scan-compare-scroll daily-table-scroll"
         aria-label="Candidates, scrollable"
@@ -370,7 +335,7 @@ function CandidatesTable({
                 Classification
               </th>
               <th scope="col" className="discovery-detail">
-                Asset detail
+                Chart
               </th>
             </tr>
           </thead>
@@ -380,9 +345,6 @@ function CandidatesTable({
                 key={member.symbol}
                 member={member}
                 showWindow={sharedWindow === null}
-                asset={assets === null ? undefined : assetFor(member.symbol, assets)}
-                noAsset={noAsset}
-                onOpenAsset={onOpenAsset}
               />
             ))}
           </tbody>
@@ -495,12 +457,8 @@ const LEDE = (
 
 function Board({
   feed,
-  assets,
-  onOpenAsset,
 }: Readonly<{
   feed: DailyFeed;
-  assets: readonly Asset[] | null;
-  onOpenAsset: (asset: Asset) => void;
 }>) {
   const now = useMinuteClock();
   const verified = feed.verification?.ok ? feed.verification.evidence : null;
@@ -561,9 +519,7 @@ function Board({
         <AttemptFact attempt={feed.attempt} />
       </dl>
       {verified && <BatchNotes evidence={verified} />}
-      {verified && (
-        <CandidatesTable evidence={verified} assets={assets} onOpenAsset={onOpenAsset} />
-      )}
+      {verified && <CandidatesTable evidence={verified} />}
       <div className="daily-disclosures">
         <BatchDetails verified={verified} refused={refused} collected={collected} />
         {verified && <Exclusions result={verified.result} />}
@@ -577,17 +533,7 @@ function Board({
  * its freshness and the latest attempt. Owner-only during the private beta, as the database
  * enforces. Never falls back to sample assets, assets_status or an older batch.
  */
-export function DailyCandidates({
-  assets,
-  onOpenAsset,
-}: Readonly<{
-  /**
-   * Live assets_status rows only, never sample data: they give the exact-symbol detail route.
-   * Null while live market data is not loaded; the board shows the same without detail links.
-   */
-  assets: readonly Asset[] | null;
-  onOpenAsset: (asset: Asset) => void;
-}>) {
+export function DailyCandidates() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const owner = useQuery({
@@ -648,5 +594,5 @@ export function DailyCandidates({
       </div>
     );
   }
-  return <Board feed={feed.data} assets={assets} onOpenAsset={onOpenAsset} />;
+  return <Board feed={feed.data} />;
 }

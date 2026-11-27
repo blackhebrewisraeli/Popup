@@ -34,10 +34,8 @@ vi.mock('@/lib/financeClient', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/financeClient')>();
   return { ...actual, checkSavedScanFileAsync: vi.fn(actual.checkSavedScanFileAsync) };
 });
-vi.mock('@/components/RoboAdvisor', () => ({ RoboAdvisor: () => null }));
 
 import { ResearchZone, type ResearchPlace } from '@/components/Workspace';
-import type { MarketsSource } from '@/hooks/useResearchSelection';
 import { checkSavedScanFileAsync } from '@/lib/financeClient';
 import { SAVED_SCAN_FILE_MAX_BYTES, type SavedScanFileCheck } from '@/lib/savedScanFile';
 import { arrayBufferOf, FIXTURE_NOW, savedCryptoSnapshot } from './savedCryptoScanFixture';
@@ -98,18 +96,10 @@ function fileOf(bytes: Uint8Array, name = 'scan.json', size = bytes.byteLength) 
 
 function Research() {
   const [place, setPlace] = useState<ResearchPlace>('scan');
-  const [source, setSource] = useState<MarketsSource>('market-data');
   return (
     <ResearchZone
-      pending={false}
-      failed={false}
-      empty={false}
-      onPreview={() => {}}
-      scan={<section aria-label="Market scan">The normal scan</section>}
-      markets={null}
-      alerts={null}
-      source={source}
-      onSource={setSource}
+      daily={null}
+      scan={() => <section aria-label="Market scan">The normal scan</section>}
       place={place}
       onPlace={setPlace}
     />

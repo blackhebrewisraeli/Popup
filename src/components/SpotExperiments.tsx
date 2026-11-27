@@ -493,8 +493,7 @@ function failureText(error: Error): string {
 }
 
 /**
- * The owner's Manual Spot experiments, read-only, inside the Binance Spot card. The database
- * decides access; a sign-in it does not name as the owner sees why, never an empty list.
+ * The owner's journal. The database enforces its own access check independently of Binance reads.
  */
 export function SpotExperiments({
   userId,
@@ -505,8 +504,7 @@ export function SpotExperiments({
   reveal?: boolean;
 }>) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // On mount too: the Binance card renders this section only after its owner check answers,
-  // well after the link was followed. Back/forward to the link reveals it again.
+  // Direct links and back/forward both reveal the journal section.
   useEffect(() => {
     const heading = headingRef.current;
     if (!reveal || !heading) return;
@@ -563,19 +561,18 @@ export function SpotExperiments({
       aria-labelledby="spot-experiments-title"
       className="spot-experiments"
     >
-      <h4
+      <h2
         id="spot-experiments-title"
         ref={headingRef}
         tabIndex={-1}
         className="portfolio-section-title"
       >
         Manual Spot experiments
-      </h4>
+      </h2>
       <p className="spot-note">
         Your recorded decisions on real Spot trades you place yourself on Binance, and the scans
-        they came from. Recording or linking stores a record only; Popup places no order. Separate
-        from the paper Signal Journal and every Popup ledger: nothing here is a position, total or
-        order status.
+        they came from. Link an execution to the decision that led to it. Balances and current
+        holdings are shown separately.
       </p>
       {body}
     </section>

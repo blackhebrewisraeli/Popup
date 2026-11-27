@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FEE_RATE } from '@/components/TradeTicket';
 import { MAX_SERVER_ATR_AGE_MS } from '@/hooks/usePaperRisk';
 import { REGIME_HIGH_VOLATILITY } from '@/lib/canonicalModel';
 import { ASSET_COUNT_BY_RISK, type RiskProfile } from '@/lib/portfolioBuilder';
@@ -37,8 +36,8 @@ function perProfile(marker: string): Record<RiskProfile, number> {
 }
 
 describe('paper_risk_policy matches the TypeScript engine', () => {
-  it('shares the fee, stop, risk and volatility constants', () => {
-    expect(constant('FEE_RATE')).toBe(FEE_RATE);
+  it('preserves the historical fee and shares the stop, risk and volatility constants', () => {
+    expect(constant('FEE_RATE')).toBe(0.0025);
     expect(constant('DEFAULT_ATR_STOP_MULTIPLIER')).toBe(DEFAULT_ATR_STOP_MULTIPLIER);
     expect(constant('DEFAULT_RISK_PERCENT')).toBe(DEFAULT_RISK_PERCENT);
     expect(constant('MAX_PORTFOLIO_RISK_PERCENT')).toBe(MAX_PORTFOLIO_RISK_PERCENT);

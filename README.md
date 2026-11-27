@@ -6,85 +6,32 @@
 
 **Understand the signal. Inspect the evidence. Record the decision.**
 
-A research prototype for reviewing a dated daily shortlist of liquid Binance Spot pairs,
-inspecting daily-candle model scans, and recording trades placed by hand.
+A private Binance Spot workspace for reviewing daily candidates, checking intraday charts and
+recording manual trading decisions.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/blackhebrewisraeli/Popup/ci.yml?branch=main&label=CI)](https://github.com/blackhebrewisraeli/Popup/actions/workflows/ci.yml)
 [![Stage: private testing](https://img.shields.io/badge/stage-private_testing-ff7a5c)](docs/PRODUCT_STATUS.md)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[**Open the app ↗**](https://popup-signals.vercel.app) (popup-signals.vercel.app) · [Product page](https://blackhebrewisraeli.github.io/Popup/) (overview only) · [Screenshots](#screenshots) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
+[**Open the app ↗**](https://popup-signals.vercel.app) (popup-signals.vercel.app) · [Product page](https://blackhebrewisraeli.github.io/Popup/) (overview only) · [Product status](docs/PRODUCT_STATUS.md) · [Getting started](#getting-started) · [Documentation](#documentation)
 
 </div>
 
-> [!NOTE]
-> **Private testing / pre-beta.** Popup places no orders. The owner trades on Binance by hand,
-> and Popup's owner-only Binance Spot connection is read-only. Paper Desk and Build Portfolio are
-> paused; their simulated records stay readable. The daily candidate rank is a liquidity ranking,
-> not a model score or a prediction. Investment performance has not been established.
+## Daily workflow
 
-## What Popup does today
+1. Open **Research → Daily candidates** and check the date and coverage. The shortlist is ranked
+   by rolling 24-hour quote volume. Each pair links to its intraday chart on TradingView.
+2. Open **Model scan (1D)** for context from closed daily candles. For a journal decision tied
+   to a scan, open and reproduce a saved TradingView crypto snapshot in this tab.
+3. Record a reason to stay out or a Manual Spot experiment from the snapshot. In **Journal**,
+   review recorded decisions and linked Binance Spot fills and maintain your own exit rules and
+   observations.
 
-The workspace has two tabs, **Research** and **Account**, plus a read-only Simulation history.
-
-| Research                                                                                                                                                                                                                              | Account                                                                                                                                                                                   | Simulation history (paused)                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Opens on **Daily candidates**: a dated, owner-only shortlist of Binance Spot USDT pairs ranked by 24-hour quote volume. Then **Model scan (1D)**, with the evidence behind each score and Risk warning, and the **Markets directory** | Read-only Binance Spot balances, executions and reconciliation, with **Manual Spot experiments**: owner records of real trades placed by hand. Holdings tracked by hand follow separately | Paper Desk and Build Portfolio are paused. Read and export the earlier simulated ledgers and the Decision Journal; nothing new can be booked |
-
-### A typical workflow
-
-1. **Check the daily candidates.** Read the batch date, coverage, and exclusions. The rank orders
-   pairs by 24-hour quote volume only: it is a place to start looking, not a score or a BUY signal.
-2. **Inspect the model evidence.** In Model scan (1D), check a scan's source and closed-candle
-   coverage, then its RSI, MACD, and ATR factors, market regime, and the specific Risk clauses.
-3. **Compare the evidence.** Use a compatible earlier snapshot to distinguish observed changes.
-4. **Record your own decision.** A trade you place on Binance yourself can be recorded as a Manual
-   Spot experiment: its source scan, rules, linked fills, observations, and close. Popup verifies
-   no holding and evaluates no rule.
-
-**Availability matters:** the daily batch is collected once a day by a scheduled Supabase Edge
-Function, with no browser or agent session. TradingView development scans are local and
-owner-initiated through an authenticated agent; they are not an unattended scanner in the hosted
-app. Binance live market data, TradingView alerts, and the read-only account connection are
-separate flows.
-
-## Screenshots
-
-Captured from the running application. It shows only the app's built-in synthetic data
-([how it was made](docs/PAGES.md#readme-screenshots)).
-
-![Popup's example scan: five synthetic assets, DEMO1 to DEMO5, ranked with score, setup and reason, beside the evidence for DEMO5: score 80, mean-reverting regime, and which Long and Risk conditions are met or not met](docs/screenshots/research-example-scan.png)
-
-**Model scan: each result beside its evidence.** The signed-out page's built-in example, labeled
-_Illustrative_: made-up readings for five made-up assets, scored by Popup's own model and setup
-rules. The selected result shows why a score of 80 still meets no setup. No market data.
-
-Daily candidates and Account have no labeled synthetic mode. Filling them with made-up pairs,
-balances, or trades would misrepresent real records, so they are not pictured.
-
-## Engineering highlights
-
-- **Explainable model:** a canonical TypeScript scoring engine with factor contributions and explicit insufficient-data states; a Pine Script HUD with a documented comparison contract.
-- **Reproducible research:** versioned candle contracts, captured scan inputs, and offline reproduction before reviewing saved scans.
-- **Dated discovery:** a protected Edge Function stores one Binance Spot batch a day with its policy, coverage, and exclusions; the board reads stored batches.
-- **Atomic accounting:** isolated ledgers for tracked holdings and the paused simulations, FIFO lots, and fee-aware realized P&L.
-- **Responsive compute:** indicator and backtest calculations run in a Web Worker; market updates subscribe by symbol.
-- **Scoped access:** Supabase Auth and row-level security; authenticated TradingView ingestion; owner-only Binance reads.
-- **Quality checks:** CI runs typecheck, build, lint, tests with coverage, and independent fixture reproduction.
-
-[Technical feature guide](docs/WORKSPACE_GUIDE.md) · [Architecture and file map](ARCHITECTURE.md)
-
-## Tech stack
-
-| Layer              | Tools                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| Application        | React 19, TypeScript, TanStack Start / Router / Query, Vite                                       |
-| Interface          | Tailwind CSS v4, shadcn/ui, Radix, Framer Motion                                                  |
-| Charts and compute | lightweight-charts, Recharts, Web Workers                                                         |
-| Backend            | Supabase Postgres, Auth, row-level security, Realtime, Edge Functions                             |
-| Integrations       | TradingView Pine Script v6 and webhooks; separate Binance market-data and read-only account paths |
-| Verification       | Vitest, Testing Library, ESLint, Prettier, GitHub Actions                                         |
+The daily shortlist is collected on a schedule. Creating a TradingView snapshot remains an
+owner-initiated local workflow. The workspace is restricted to the configured owner, and the
+Binance account connection is read-only. The model's scores and setups have no established
+investment performance.
 
 ## Getting started
 
@@ -137,17 +84,6 @@ npm run dev
 
 Open [http://localhost:8080](http://localhost:8080).
 
-### 5. Optional: connect TradingView
-
-1. Deploy the webhook (JWT verification is already turned off for it in [`supabase/config.toml`](./supabase/config.toml)):
-
-   ```bash
-   npx supabase functions deploy tv-webhook
-   ```
-
-2. In the app, open any asset and click **TradingView Indicator**, then click **Generate webhook token**. Copy the Pine Script after that: your token replaces `USER_SECRET_PLACEHOLDER` in its alert payloads.
-3. Follow [TradingView notification meaning and secure setup](./docs/TRADINGVIEW_NOTIFICATIONS.md) to create separate machine and phone alerts. The machine alert uses **Machine JSON**, **Any alert() function call**, and the webhook only; the phone alert uses **Human readable** and has no webhook. Alerts are recorded only: executing them is paused with the Paper Desk.
-
 ### Scripts
 
 | Command              | Purpose                            |
@@ -176,22 +112,14 @@ reference fixtures. Production builds check the database contract before deploym
 
 ## Documentation
 
-| Start here                                                                                                   | Purpose                                                                   |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| [Product status](docs/PRODUCT_STATUS.md)                                                                     | Current capabilities, private-testing boundaries, and next priorities     |
-| [Technical feature guide](docs/WORKSPACE_GUIDE.md)                                                           | Model, ledgers, position sizing, webhook flow, and implementation details |
-| [Architecture](ARCHITECTURE.md)                                                                              | Source map and feature ownership                                          |
-| [Daily discovery](docs/MARKET_SCANNER.md#daily-discovery-binance-spot-unattended)                            | How the dated daily batch is collected, ranked, and verified              |
-| [Manual Spot experiments](docs/MANUAL_SPOT_EXPERIMENTS.md)                                                   | Owner records of real trades placed by hand, and what Popup checks        |
-| [Market scanner](docs/MARKET_SCANNER.md) / [crypto scan](docs/TRADINGVIEW_CRYPTO_SCAN.md)                    | Local scan workflow, source attribution, comparison, and coverage         |
-| [Decision Journal](docs/DECISION_JOURNAL.md)                                                                 | Signal decisions and recorded evidence, now under Simulation history      |
-| [Binance Spot account](docs/BINANCE_SPOT_ACCOUNT.md) / [reconciliation](docs/BINANCE_SPOT_RECONCILIATION.md) | Owner-only read access and finite-history limits                          |
-| [Scanner research](docs/SCANNER_RESEARCH.md) / [model diagnostic](docs/MODEL_DIAGNOSTIC.md)                  | Findings, limitations, and the meaning of model conditions                |
-| [Pine comparison contract](docs/PINE_PARITY_ASSESSMENT.md)                                                   | Supported comparison between app scores and Pine HUD                      |
-| [TradingView setup](docs/TRADINGVIEW_NOTIFICATIONS.md)                                                       | Phone and webhook alerts, provenance, and secure setup                    |
-| [Strategy validation](docs/STRATEGY_VALIDATION.md)                                                           | Private decision replay and observation contracts                         |
-| [Releases](docs/RELEASE.md) / [contributing](CONTRIBUTING.md)                                                | Development checks, migrations, and review process                        |
-| [Product page](docs/PAGES.md)                                                                                | Published overview page, README screenshots, and Social Preview assets    |
+- [Product status](docs/PRODUCT_STATUS.md)
+- [Architecture and file map](ARCHITECTURE.md)
+- [Daily candidates and scan inputs](docs/MARKET_SCANNER.md)
+- [Opening a saved crypto scan](docs/MARKET_SCANNER.md#opening-a-saved-crypto-scan-file)
+- [Manual Spot journal](docs/MANUAL_SPOT_EXPERIMENTS.md)
+- [Binance Spot account reads](docs/BINANCE_SPOT_ACCOUNT.md)
+- [Historical scanner research](docs/SCANNER_RESEARCH.md)
+- [Release procedures](docs/RELEASE.md)
 
 ## Contributing and feedback
 

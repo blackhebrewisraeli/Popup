@@ -7,10 +7,8 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
-  type AnyRoute,
 } from '@tanstack/react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PortfolioContainer } from '@/lib/portfolioAccounting';
 
 /**
  * Research's entry point in the real workspace shell, on SYNTHETIC data: the collector runs
@@ -23,6 +21,7 @@ const db = vi.hoisted(() => ({
   rows: { discovery_batches: [] as unknown[], discovery_attempts: [] as unknown[] },
   reads: [] as string[],
   scanFailed: false,
+  scanInputs: vi.fn(),
 }));
 vi.mock('@/lib/supabaseClient', () => ({
   supabase: {
@@ -53,43 +52,24 @@ vi.mock('@/lib/authStore', async (importOriginal) => ({
     signOut: vi.fn(),
   }),
 }));
-const EMPTY: PortfolioContainer = {
-  type: 'real_tracking',
-  positions: [],
-  cashBalance: 0,
-  cashLedger: [],
-  transactions: [],
-  realizedPnl: 0,
-};
-vi.mock('@/lib/portfolioStore', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/portfolioStore')>()),
-  usePortfolio: () => ({
-    activePortfolioType: 'real_tracking',
-    portfolios: { paper_trading: EMPTY, long_term_sim: EMPTY, real_tracking: EMPTY },
-  }),
-}));
 vi.mock('@/lib/assets', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/assets')>()),
   fetchAssets: vi.fn(),
 }));
-vi.mock('@/hooks/useBinanceWebSocket', () => ({ useBinanceWebSocket: () => {} }));
-vi.mock('@/hooks/useAlertEngine', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/hooks/useAlertEngine')>()),
-  useAlertEngine: () => {},
-}));
 vi.mock('@/hooks/useMarketScan', () => ({
-  useMarketScan: () => ({
-    data: undefined,
-    dataUpdatedAt: 0,
-    isFetching: false,
-    isError: db.scanFailed,
-  }),
+  useMarketScan: (tickers: string[], source: string, active: boolean) => {
+    db.scanInputs(tickers, source, active);
+    return {
+      data: undefined,
+      dataUpdatedAt: 0,
+      isFetching: false,
+      isError: db.scanFailed,
+    };
+  },
 }));
-vi.mock('@/components/AccountPanel', () => ({ AccountPanel: () => <p>Account panel</p> }));
 
-import { Workspace } from '@/components/Workspace';
+import { DailyResearch, Workspace } from '@/components/Workspace';
 import { fetchAssets, type Asset } from '@/lib/assets';
-import { findTarget } from '@/lib/tourSteps';
 import { runDailyDiscovery } from '../../scripts/dailyDiscovery';
 import {
   at,
@@ -140,9 +120,14 @@ function load() {
   vi.setSystemTime(at(9));
   const root = createRootRoute({ component: Outlet });
   const shell = createRoute({ getParentRoute: () => root, id: '_workspace', component: Workspace });
-  const zones: AnyRoute[] = ['/', 'paper-trading', 'account'].map((path) =>
-    createRoute({ getParentRoute: () => shell, path }),
-  );
+  const zones = [
+    createRoute({ getParentRoute: () => shell, path: '/', component: DailyResearch }),
+    createRoute({
+      getParentRoute: () => shell,
+      path: 'account',
+      component: () => <p>Spot journal test outlet</p>,
+    }),
+  ];
   const router = createRouter({
     routeTree: root.addChildren([shell.addChildren(zones)]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -160,18 +145,13 @@ function load() {
 const places = () => screen.getByRole('tablist', { name: 'Research' });
 const place = (name: string) => within(places()).getByRole('tab', { name });
 const board = () => screen.findByRole('region', { name: 'Daily candidates' });
-const shown = (name: string) =>
-  screen.queryAllByRole('region', { name }).filter((el) => el.closest('[hidden]') === null);
-/** Text on screen: a hidden place stays mounted, so its copy is in the DOM but not shown. */
-const shownText = (text: RegExp) =>
-  screen.queryAllByText(text).filter((el) => el.closest('[hidden]') === null);
-
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.stubEnv('DEV', false);
   db.owner = true;
   db.reads = [];
   db.scanFailed = false;
+  db.scanInputs.mockClear();
   db.rows = { discovery_batches: [], discovery_attempts: [] };
   vi.mocked(fetchAssets).mockReset().mockResolvedValue([BTC]);
 });
@@ -181,125 +161,62 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('Research entry point', () => {
-  it('opens on Daily candidates, ahead of Model scan (1D) and the Markets directory', async () => {
+describe('Private Spot workspace', () => {
+  it('opens on candidates without reading the model universe, and links to the journal', async () => {
     await collect([at(0, 33, 5)]);
     load();
-    const section = await board();
+    const candidates = await board();
+    expect(within(candidates).getAllByRole('link', { name: /intraday chart/ })).toHaveLength(50);
     expect(
       within(places())
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['Daily candidates', 'Model scan (1D)', 'Markets directory']);
+    ).toEqual(['Daily candidates', 'Model scan (1D)']);
     expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
-    // One explanation of what the board is, in its own header: liquidity, not a model score.
-    expect(shownText(/model score/)).toEqual([
-      within(section).getByText(/not a BUY\/SELL signal, a model score/),
-    ]);
-    expect(within(section).getByText('Current')).toBeInTheDocument();
+    expect(fetchAssets).not.toHaveBeenCalled();
+
+    const nav = screen.getByRole('navigation', { name: 'Workspace' });
+    const journal = within(nav).getByRole('link', { name: 'Journal' });
+    expect(journal).toHaveAttribute('href', '/account');
+    fireEvent.click(journal);
+    expect(await screen.findByText('Spot journal test outlet')).toBeInTheDocument();
+    expect(journal).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('reads neither candidates nor the model universe for a different sign-in', async () => {
+    db.owner = false;
+    load();
     expect(
-      await within(section).findByRole('button', { name: 'Open BTC-USD details (BTCUSDT)' }),
+      await screen.findByText('This sign-in does not have workspace access.'),
     ).toBeInTheDocument();
-    expect(shown('Market scan')).toHaveLength(0);
-    expect(shown('Markets directory')).toHaveLength(0);
-    expect(screen.queryByRole('button', { name: /saved crypto scan/i })).toBeNull();
+    expect(db.reads).toEqual([]);
+    expect(fetchAssets).not.toHaveBeenCalled();
+    expect(screen.queryByRole('navigation', { name: 'Workspace' })).toBeNull();
+  });
 
+  it('scans only Binance Spot symbols and keeps candidates usable when the scan fails', async () => {
+    await collect([at(0, 33, 5)]);
+    vi.mocked(fetchAssets).mockResolvedValue([BTC, { ...BTC, ticker: 'AAPL' }]);
+    db.scanFailed = true;
+    load();
+    await board();
     fireEvent.click(place('Model scan (1D)'));
-    expect(place('Model scan (1D)')).toHaveAttribute('aria-selected', 'true');
-    expect(
-      screen.getByText(/existing model evaluated on closed daily \(1D\) candles/),
-    ).toBeTruthy();
-    expect(shown('Market scan')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /saved crypto scan/i })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Daily candidates' })).toBeNull();
-
-    fireEvent.click(place('Markets directory'));
-    expect(shown('Markets directory')).toHaveLength(1);
-    expect(shownText(/liquidity-based shortlist/)).toEqual([]);
-
+    await waitFor(() =>
+      expect(db.scanInputs).toHaveBeenLastCalledWith(['BTC-USD'], 'assets_status', true),
+    );
+    expect(await screen.findByRole('button', { name: 'Retry scan' })).toBeInTheDocument();
     fireEvent.click(place('Daily candidates'));
     expect(within(await board()).getByText('Current')).toBeInTheDocument();
   });
 
-  it('shows other sign-ins the access notice and reads no batch or attempt', async () => {
-    await collect([at(0, 33, 5)]);
-    db.owner = false;
-    load();
-    expect(await screen.findByText(/visible only to the configured owner/)).toBeInTheDocument();
-    expect(shownText(/model score/)).toEqual([
-      screen.getByText(/not a BUY\/SELL signal, a model score/),
-    ]);
-    expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.queryByRole('table')).toBeNull();
-    expect(db.reads.filter((table) => table.startsWith('discovery_'))).toEqual([]);
-  });
-
-  it('keeps the board usable when market data and the model scan fail', async () => {
-    await collect([at(0, 33, 5)]);
-    vi.mocked(fetchAssets).mockRejectedValue(new Error('synthetic outage'));
-    db.scanFailed = true;
-    load();
-    const section = await board();
-    await waitFor(() => expect(screen.getByText('Offline')).toBeInTheDocument());
-    expect(within(section).getByText('Current')).toBeInTheDocument();
-    expect(within(within(section).getByRole('table')).getAllByRole('row')).toHaveLength(51);
-    // No row claims its pair has no Popup asset: the detail route is simply not loaded.
-    expect(within(section).queryByRole('button', { name: /^Open / })).toBeNull();
-    expect(
-      within(section).getAllByText('Live market data is not loaded, so no asset detail is linked'),
-    ).toHaveLength(50);
-    expect(within(section).queryByText('No Popup asset maps to this exact pair')).toBeNull();
-    // The market-data banner belongs to the scan and directory, not to the board.
-    expect(screen.queryByText(/Unable to load signals/)).toBeNull();
-
-    fireEvent.click(place('Model scan (1D)'));
-    expect(screen.getByRole('alert')).toHaveTextContent('Unable to load signals');
-  });
-
-  it('never labels the board as sample data when market data comes back empty', async () => {
-    await collect([at(0, 33, 5)]);
+  it('shows an empty scan universe without substituting sample assets', async () => {
     vi.mocked(fetchAssets).mockResolvedValue([]);
     load();
-    const section = await board();
-    await waitFor(() => expect(screen.getAllByText('Sample data')).toHaveLength(1));
-    expect(screen.queryByText(/Illustrative prices and signals/)).toBeNull();
-    expect(within(section).getByText('ZCT001USDT')).toBeInTheDocument();
-    expect(within(section).getAllByText('No Popup asset maps to this exact pair')).toHaveLength(50);
-
+    await board();
     fireEvent.click(place('Model scan (1D)'));
-    expect(screen.getByText(/Illustrative prices and signals/)).toBeInTheDocument();
+    expect(
+      await screen.findByText('No Binance Spot pairs are configured for the daily model scan.'),
+    ).toBeInTheDocument();
+    expect(db.scanInputs).toHaveBeenLastCalledWith([], 'assets_status', true);
   });
-
-  it('says when no batch exists yet, with nothing standing in for it', async () => {
-    await collect([at(6, 5)]);
-    load();
-    const section = await board();
-    expect(within(section).getByText('No batch to show')).toBeInTheDocument();
-    expect(within(section).queryByRole('table')).toBeNull();
-  });
-
-  it('tours Daily candidates first, opening each Research place before pointing at it', async () => {
-    db.owner = false;
-    const router = load();
-    await screen.findByText(/visible only to the configured owner/);
-    fireEvent.click(screen.getByRole('tab', { name: 'Account' }));
-    await screen.findByText('Account panel');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Start product tour' }));
-    await screen.findByRole('heading', { name: 'Your workspace' });
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await screen.findByRole('heading', { name: 'Research › Daily candidates' }, { timeout: 3000 });
-    expect(router.state.location.pathname).toBe('/');
-    expect(findTarget(['place-daily'])).toBe(place('Daily candidates'));
-    expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await screen.findByRole('heading', { name: 'Research › Model scan (1D)' }, { timeout: 3000 });
-    expect(findTarget(['place-scan'])).toBe(place('Model scan (1D)'));
-    expect(place('Model scan (1D)')).toHaveAttribute('aria-selected', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    await screen.findByRole('heading', { name: 'Research › Daily candidates' }, { timeout: 3000 });
-    expect(place('Daily candidates')).toHaveAttribute('aria-selected', 'true');
-  }, 10_000);
 });

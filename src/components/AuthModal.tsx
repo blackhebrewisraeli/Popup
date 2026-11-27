@@ -8,10 +8,6 @@ import { cn, closeOnBackdrop } from '@/lib/utils';
 
 const CLOSE_MS = 260;
 
-type AuthMode = 'signin' | 'signup';
-
-const SUBMIT_LABEL: Record<AuthMode, string> = { signin: 'Sign In', signup: 'Create Account' };
-
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -50,7 +46,6 @@ export function AuthModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
@@ -77,7 +72,6 @@ export function AuthModal({
     if (!open) return;
     closingRef.current = false;
     setClosing(false);
-    setMode('signin');
     setEmail('');
     setPassword('');
     setRemember(true);
@@ -120,10 +114,7 @@ export function AuthModal({
     setSubmitting(true);
     setRememberMe(remember);
 
-    const { data, error: authError } =
-      mode === 'signin'
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (authError) {
       setError(authError.message);
@@ -131,13 +122,7 @@ export function AuthModal({
       return;
     }
 
-    if (mode === 'signup' && !data.session) {
-      toast.success('Account created', {
-        description: 'Check your inbox to confirm your email, then sign in.',
-      });
-    } else {
-      toast.success(mode === 'signin' ? 'Signed in' : 'Account created');
-    }
+    toast.success('Signed in');
 
     setSubmitting(false);
     close();
@@ -183,37 +168,12 @@ export function AuthModal({
         <header className="auth-header">
           <div>
             <span className="auth-eyebrow">Popup Account</span>
-            <h3 className="auth-title">{mode === 'signin' ? 'Sign in' : 'Create account'}</h3>
+            <h3 className="auth-title">Sign in</h3>
           </div>
           <button type="button" className="auth-close" onClick={close} aria-label="Close">
             <X size={18} />
           </button>
         </header>
-
-        <fieldset className="auth-mode" aria-label="Authentication mode">
-          <button
-            type="button"
-            className={cn('auth-mode-btn', mode === 'signin' && 'is-active')}
-            aria-pressed={mode === 'signin'}
-            onClick={() => {
-              setMode('signin');
-              setError(null);
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={cn('auth-mode-btn', mode === 'signup' && 'is-active')}
-            aria-pressed={mode === 'signup'}
-            onClick={() => {
-              setMode('signup');
-              setError(null);
-            }}
-          >
-            Sign Up
-          </button>
-        </fieldset>
 
         <div className="oauth-buttons">
           <button
@@ -261,7 +221,7 @@ export function AuthModal({
               className="auth-input"
               name="password"
               type="password"
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+              autoComplete="current-password"
               required
               minLength={6}
               value={password}
@@ -284,7 +244,7 @@ export function AuthModal({
             </p>
           )}
           <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? 'Please wait…' : SUBMIT_LABEL[mode]}
+            {submitting ? 'Please wait…' : 'Sign in'}
           </button>
         </div>
       </motion.form>

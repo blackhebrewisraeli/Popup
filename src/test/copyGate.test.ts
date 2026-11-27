@@ -9,16 +9,7 @@ const read = (file: string) => readFileSync(path.resolve(__dirname, '../..', fil
  * Analyzer must not brand the deterministic multi-factor engine as "AI". "AI"
  * is reserved for a future, PO-gated explanation layer (roadmap M2-11).
  */
-const SURFACES = [
-  'src/components/LandingPage.tsx',
-  'src/components/RoboAdvisor.tsx',
-  'src/routes/_workspace.index.tsx',
-  'src/components/Workspace.tsx',
-  'src/components/PaperTradingTerminal.tsx',
-  'src/components/SimulationHistory.tsx',
-  'src/lib/tourSteps.ts',
-  'README.md',
-];
+const SURFACES = ['src/routes/_workspace.index.tsx', 'src/components/Workspace.tsx', 'README.md'];
 
 describe('Quant Analyzer branding copy gate', () => {
   it.each(SURFACES)('%s contains no standalone "AI" branding', (file) => {
@@ -27,17 +18,12 @@ describe('Quant Analyzer branding copy gate', () => {
 });
 
 /**
- * The product is a research and simulation environment; copy must not promise
+ * The product is a private research workspace; copy must not promise
  * more than that (architecture review, phase 5).
  */
 const PROMISE_SURFACES = [
   ...SURFACES,
   'src/components/AccountPanel.tsx',
-  'src/components/AdInterstitialModal.tsx',
-  'src/components/LeverageSimulation.tsx',
-  'src/components/PortfolioDashboard.tsx',
-  'src/components/PricingModal.tsx',
-  'src/components/SharedPortfolioView.tsx',
   'src/lib/portfolioManager.ts',
   'package.json',
 ];

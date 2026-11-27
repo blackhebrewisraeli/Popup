@@ -658,7 +658,7 @@ describe('Evidence: an open summary, then closed sections', () => {
     );
   });
 
-  it('keeps regime apart from momentum and profile rules apart from suitability', () => {
+  it('keeps regime apart from momentum and omits portfolio profile rules', () => {
     wideScreen();
     renderScan(MIXED);
     fireEvent.click(row('CALM-USDT'));
@@ -667,21 +667,8 @@ describe('Evidence: an open summary, then closed sections', () => {
       /^[+-]\d\.\d\d% · (Bullish|Bearish|Flat) momentum$/,
     );
     expect(fact(indicators, 'Regime (selects the weights)')).toMatch(/^\S+: ATR /);
-    expect(fact(indicators, 'Risk-profile rules')).toMatch(
-      /^Meets (the \S+( · \S+)* profile rules|no profile’s rules)$/,
-    );
-    expect(indicators).toHaveTextContent(
-      'Meeting them is not an assessment of whether the asset suits you.',
-    );
-    expect(indicators.textContent).not.toMatch(/\bFits\b/);
-    const filter = screen.getByRole('combobox', { name: /^Filter by risk-profile rules/ });
-    expect([...filter.querySelectorAll('option')].map((option) => option.textContent)).toEqual([
-      'Any profile rules',
-      'Meets conservative rules',
-      'Meets moderate rules',
-      'Meets aggressive rules',
-      'Meets no profile’s rules',
-    ]);
+    expect(indicators).not.toHaveTextContent('Risk-profile rules');
+    expect(screen.queryByRole('combobox', { name: /^Filter by risk-profile rules/ })).toBeNull();
   });
 
   it('keeps stale, incomplete and unconfirmed-symbol warnings in the open summary', () => {

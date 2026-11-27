@@ -47,7 +47,6 @@ vi.mock('@/lib/authStore', async (importOriginal) => ({
 
 import { DailyCandidates } from '@/components/DailyCandidates';
 import { ResearchZone } from '@/components/Workspace';
-import type { Asset } from '@/lib/assets';
 import { evidenceSha256, selectCandidates, type DiscoveryEvidence } from '@/lib/dailyDiscovery';
 import { runDailyDiscovery } from '../../scripts/dailyDiscovery';
 import {
@@ -58,23 +57,6 @@ import {
   syntheticMarket,
   testClock,
 } from './dailyDiscoveryFixtures';
-
-const BTC: Asset = {
-  ticker: 'BTC-USD',
-  name: 'Bitcoin',
-  current_price: 1,
-  stable_signal: null,
-  radar_signal: null,
-  stable_explanation: null,
-  radar_explanation: null,
-  risk_pct: null,
-  reward_pct: null,
-  volume_spike: null,
-  rsi_14: null,
-  sma_50: null,
-  sma_200: null,
-  change_24h: null,
-};
 
 /** Runs the collector at each time against one store and serves its rows to the board. */
 async function collect(
@@ -106,15 +88,14 @@ async function collect(
   return storage;
 }
 
-function show(now: number, assets: Asset[] | null = [], onOpenAsset = vi.fn()) {
+function show(now: number) {
   vi.setSystemTime(now);
   // No wait between the board's own retry and the next read.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
   const wrap = (node: ReactNode) => (
     <QueryClientProvider client={client}>{node}</QueryClientProvider>
   );
-  render(wrap(<DailyCandidates assets={assets} onOpenAsset={onOpenAsset} />));
-  return onOpenAsset;
+  render(wrap(<DailyCandidates />));
 }
 
 const board = () => screen.findByRole('region', { name: 'Daily candidates' });
@@ -134,7 +115,7 @@ afterEach(() => {
 describe('Daily candidates', () => {
   it('shows the latest verified batch with its source, policy, coverage and candidates', async () => {
     await collect([at(0, 33, 5)]);
-    show(at(9), [BTC]);
+    show(at(9));
     const section = await board();
     expect(within(section).getByText('Current')).toBeTruthy();
     expect(
@@ -169,7 +150,7 @@ describe('Daily candidates', () => {
       within(table)
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['Rank', 'Pair', '24h quote volume (USDT)', 'Classification', 'Asset detail']);
+    ).toEqual(['Rank', 'Pair', '24h quote volume (USDT)', 'Classification', 'Chart']);
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(50);
     // Each row is named by its exact pair; rank and the exact-decimal volume follow it.
@@ -201,33 +182,22 @@ describe('Daily candidates', () => {
     expect(db.reads).toHaveLength(reads);
   });
 
-  it('tells unloaded market data apart from an unmapped pair', async () => {
+  it('opens the exact Binance Spot intraday chart for every ranked pair', async () => {
     await collect([at(0, 33, 5)]);
-    show(at(9), null);
+    show(at(9));
     const section = await board();
-    expect(
-      within(section).getByText('Live market data is not loaded, so no asset detail is linked.'),
-    ).toBeTruthy();
-    expect(within(section).queryAllByRole('button', { name: /^Open / })).toHaveLength(0);
-    const btc = within(section)
-      .getByRole('rowheader', { name: /^BTCUSDT/ })
-      .closest('tr')!;
-    expect(within(btc).getByText(/Live market data is not loaded/)).toBeTruthy();
-    expect(within(btc).queryByText('No Popup asset maps to this exact pair')).toBeNull();
-  });
-
-  it('opens Popup’s asset detail only for an exact symbol mapping', async () => {
-    await collect([at(0, 33, 5)]);
-    const onOpen = show(at(9), [BTC]);
-    const section = await board();
-    const button = within(section).getByRole('button', { name: 'Open BTC-USD details (BTCUSDT)' });
-    expect(within(section).getAllByRole('button', { name: /^Open / })).toHaveLength(1);
-    button.focus();
-    expect(document.activeElement).toBe(button);
-    fireEvent.click(button);
-    expect(onOpen).toHaveBeenCalledWith(BTC);
-    const zct = within(section).getByText('ZCT001USDT').closest('tr');
-    expect(within(zct!).getByText('No Popup asset maps to this exact pair')).toBeTruthy();
+    const charts = within(section).getAllByRole('link', { name: /^Open .* intraday chart/ });
+    expect(charts).toHaveLength(50);
+    for (const symbol of ['BTCUSDT', 'ZCT001USDT']) {
+      const link = within(section).getByRole('link', {
+        name: `Open ${symbol} intraday chart on TradingView (new tab)`,
+      });
+      const url = new URL(link.getAttribute('href')!);
+      expect(url.origin).toBe('https://www.tradingview.com');
+      expect(url.searchParams.get('symbol')).toBe(`BINANCE:${symbol}`);
+      expect(url.searchParams.get('interval')).toBe('15');
+      expect(link).toHaveAttribute('target', '_blank');
+    }
   });
 
   it('keeps the wide table in a keyboard-scrollable region', async () => {
@@ -385,22 +355,14 @@ describe('Daily candidates', () => {
 });
 
 describe('Research › Daily candidates', () => {
-  it('is its own place, shown even while the market universe is loading', () => {
+  it('opens on the candidate list and keeps saved scan controls in the scan tab', () => {
     vi.setSystemTime(at(9));
     const client = new QueryClient();
     render(
       <QueryClientProvider client={client}>
         <ResearchZone
-          pending
-          failed={false}
-          empty={false}
-          onPreview={() => undefined}
-          scan={<p>scan body</p>}
-          markets={<p>markets body</p>}
-          alerts={null}
+          scan={() => <p>scan body</p>}
           daily={<p>daily body</p>}
-          source="market-data"
-          onSource={() => undefined}
           place="daily"
           onPlace={() => undefined}
         />
@@ -411,7 +373,6 @@ describe('Research › Daily candidates', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Daily candidates',
       'Model scan (1D)',
-      'Markets directory',
     ]);
     // Opening a saved TradingView scan stays under Model scan (1D).
     expect(screen.queryByRole('button', { name: /saved crypto scan/i })).toBeNull();

@@ -13,16 +13,10 @@ describe('readDevAuthUser', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns a Basic stub user on localhost with ?devAuth=1', () => {
+  it('returns a stub user on localhost with ?devAuth=1', () => {
     at('http://localhost:8080/?devAuth=1');
     const user = readDevAuthUser();
     expect(user?.id).toBe('00000000-0000-4000-8000-000000000001');
-    expect(user?.app_metadata['is_pro']).toBe(false);
-  });
-
-  it('grants Pro with ?devAuth=pro', () => {
-    at('http://127.0.0.1:8080/?devAuth=pro');
-    expect(readDevAuthUser()?.app_metadata['is_pro']).toBe(true);
   });
 
   it('accepts the IPv6 loopback host', () => {

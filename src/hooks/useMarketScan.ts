@@ -20,7 +20,7 @@ const REFETCH_MS = 15 * 60_000;
  * One scan of the Markets universe through the canonical engine. The query's
  * `dataUpdatedAt` is the last completed scan; a failed re-scan keeps it.
  */
-export function useMarketScan(tickers: readonly string[], universeSource: string) {
+export function useMarketScan(tickers: readonly string[], universeSource: string, enabled = true) {
   const members = scanUniverse(tickers);
   return useQuery({
     queryKey: [
@@ -42,7 +42,7 @@ export function useMarketScan(tickers: readonly string[], universeSource: string
       );
       return evaluateScanAsync(inputs, { evaluationTime, universeSource });
     },
-    enabled: members.length > 0,
+    enabled: enabled && members.length > 0,
     staleTime: STALE_MS,
     refetchInterval: REFETCH_MS,
   });

@@ -135,7 +135,7 @@ function DevSourceNotes({
             : 'Reloading this page re-reads this import; it does not fetch new TradingView bars, and nothing re-scans on a schedule.'}{' '}
           A new scan needs the owner&rsquo;s agent session to retrieve bars and run the import again
           (owner runbook in docs/MARKET_SCANNER.md). Its ranks, scores and coverage are never merged
-          into the Market scan or the Markets directory.
+          into the browser’s daily model scan.
         </li>
         <li>
           Daily bars retrieved by the owner&rsquo;s agent session through TradingView&rsquo;s MCP
@@ -336,11 +336,6 @@ function ViewingNote({
           ? 'Re-scanning in this browser'
           : `computed in this browser at ${UTC_TIME.format(completedAt)} UTC`}
       </p>
-      {import.meta.env.DEV && (
-        <p className="market-scan-sub">
-          Saved TradingView scans are under Dev source: TradingView import.
-        </p>
-      )}
     </div>
   );
 }

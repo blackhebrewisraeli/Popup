@@ -285,7 +285,7 @@ describe('recording and retrieving a decision to stay out', () => {
       },
     });
     fireEvent.click(retry);
-    expect(await screen.findByText(/Saved to Account.*No-entry decisions/)).toBeVisible();
+    expect(await screen.findByText(/Saved to Journal.*No-entry decisions/)).toBeVisible();
     expect(db.inserts).toEqual([first, first]);
     expect(db.listed[0]?.filters).toEqual([
       ['eq', 'user_id', OWNER],
@@ -852,7 +852,7 @@ describe('current rules', () => {
   });
 });
 
-describe('Manual Spot experiments in Account', () => {
+describe('Manual Spot experiments in Journal', () => {
   const renderList = (userId = OWNER) => render(wrap(<SpotExperiments userId={userId} />));
 
   it('is loading until the database answers, and sends nothing for the ?devAuth stub', async () => {
@@ -1278,21 +1278,6 @@ describe('Manual Spot experiments in Account', () => {
     expect(within(review).getByRole('button', { name: 'Edit' })).toBeDisabled();
     expect(db.inserts).toHaveLength(1);
   });
-
-  it('appears only inside the Binance card, which the owner alone sees', async () => {
-    db.rpc.mockResolvedValue({ data: true, error: null });
-    db.listResult.mockResolvedValue({ data: [], error: null });
-    const hidden = render(
-      wrap(
-        <BinanceSpotBalances accountContext={OWNER} read={async () => ({ state: 'unavailable' })}>
-          <SpotExperiments userId={OWNER} />
-        </BinanceSpotBalances>,
-      ),
-    );
-    await act(async () => {});
-    expect(hidden.container).toBeEmptyDOMElement();
-    expect(db.rpc).not.toHaveBeenCalled();
-  });
 });
 
 describe('arriving from the workspace link to Manual Spot experiments', () => {
@@ -1308,18 +1293,11 @@ describe('arriving from the workspace link to Manual Spot experiments', () => {
     delete (Element.prototype as Partial<Element>).scrollIntoView;
   });
 
-  /** The Binance owner check, answered when the test says. */
-  function ownerCheck() {
-    const check = deferred<SpotRead>();
-    const read = vi.fn(() => check.promise);
-    return { read, answer: (result: SpotRead) => act(async () => check.resolve(result)) };
-  }
   const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const account = (queries: QueryClient, read: () => Promise<SpotRead>, requested: boolean) => (
     <QueryClientProvider client={queries}>
-      <BinanceSpotBalances accountContext={OWNER} read={read} requested={requested}>
-        <SpotExperiments userId={OWNER} reveal={requested} />
-      </BinanceSpotBalances>
+      <SpotExperiments userId={OWNER} reveal={requested} />
+      <BinanceSpotBalances accountContext={OWNER} read={read} />
     </QueryClientProvider>
   );
   const heading = () => screen.queryByRole('heading', { name: 'Manual Spot experiments' });
@@ -1329,46 +1307,19 @@ describe('arriving from the workspace link to Manual Spot experiments', () => {
     balances: [],
   };
 
-  it('says the owner check is out, then lands on the section only once the card renders it', async () => {
+  it('focuses journal history even when Binance cannot be read', async () => {
     db.rpc.mockResolvedValue({ data: true, error: null });
     db.listResult.mockResolvedValue({ data: [], error: null });
-    const { read, answer } = ownerCheck();
+    const read = vi.fn(async (): Promise<SpotRead> => ({ state: 'unavailable' }));
     render(account(client(), read, true));
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Checking whether this sign-in can open Manual Spot experiments…',
-    );
-    expect(heading()).toBeNull();
-    expect(db.rpc).not.toHaveBeenCalled();
-
-    await answer(connected);
     expect(heading()).toHaveFocus();
     expect(scrolled.at(-1)).toBe(heading());
     expect(heading()?.closest('section')).toHaveAttribute('id', SPOT_EXPERIMENTS_ANCHOR);
-    expect(screen.queryByText(/^Checking whether/)).toBeNull();
+    await waitFor(() =>
+      expect(db.listed.some(({ table }) => table === 'spot_experiments')).toBe(true),
+    );
     expect(read).toHaveBeenCalledTimes(1);
-  });
-
-  it('tells any other sign-in the section is not available, showing and reading none of it', async () => {
-    for (const result of [
-      { state: 'unavailable' },
-      { state: 'error', error: 'forbidden' },
-      { state: 'error', error: 'unauthenticated' },
-    ] as SpotRead[]) {
-      const { read, answer } = ownerCheck();
-      const { container, unmount } = render(account(client(), read, true));
-      await answer(result);
-      const notice = screen.getByRole('status');
-      expect(notice).toHaveTextContent(
-        'Manual Spot experiments are not available for this sign-in.',
-      );
-      expect(notice).toHaveFocus();
-      expect(container.childElementCount).toBe(1);
-      expect(heading()).toBeNull();
-      expect(read).toHaveBeenCalledTimes(1);
-      unmount();
-    }
-    expect(db.rpc).not.toHaveBeenCalled();
-    expect(db.listed).toEqual([]);
+    expect(screen.queryByRole('region', { name: /^Binance Spot/ })).toBeNull();
   });
 
   it('takes focus only when the link asks, as on back/forward with the section already shown', async () => {

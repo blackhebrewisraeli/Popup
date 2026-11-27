@@ -195,7 +195,7 @@ only when the owner presses **Confirm and record** after **Review record**.
 
 From an evaluated Binance Spot USDT pair in a reproduced saved scan, open **I reviewed this pair
 and chose to stay out**, enter your reason, and select **Save no-entry decision**. You can find
-the decision under **Account → Manual Spot experiments → No-entry decisions**. Expand its row to
+the decision under **Journal → Manual Spot experiments → No-entry decisions**. Expand its row to
 see the reason, saved scan ID, snapshot hash and copied evidence. The time shown is when the
 database recorded the decision, in UTC.
 
@@ -241,11 +241,10 @@ same submission uses the same ID if the first response was lost.
 
 ## Viewing in Account
 
-**Manual Spot experiments** sits inside Account's **Binance Spot** card, the first section after
-the Account heading, so only the owner the `binance-spot-account` function recognizes sees it. The database still decides what it shows.
-The workspace banner links to it at `/account#spot-experiments` for every sign-in. Once the card
-renders, the heading takes focus. Until then the card's place says the check is running, and for
-anyone else it says the section is not available.
+**Manual Spot experiments** opens at the top of **Journal** (`/account`). Direct links to
+`/account#spot-experiments` focus its heading. Journal access uses the database's owner check and
+works independently of the Binance account connection. Binance balances and executions appear
+below it.
 
 - **States.** Loading, empty, unavailable (the database names no owner, or another one), refused
   (permission denied), and failed. A failure never shows an empty list in its place.
