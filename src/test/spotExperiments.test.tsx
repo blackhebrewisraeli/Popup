@@ -179,8 +179,7 @@ async function openDisclosure(section: HTMLElement) {
   await waitFor(() => expect(section.querySelector('.spot-record')).not.toBeNull());
 }
 
-/** The selected pair's scenario section with Record experiment opened. */
-async function openRecord(choice: { saved?: TradingViewSavedScan } = { saved }) {
+function selectSpotPair(choice: { saved?: TradingViewSavedScan } = { saved }) {
   render(
     wrap(
       <MarketScanSummary
@@ -195,6 +194,12 @@ async function openRecord(choice: { saved?: TradingViewSavedScan } = { saved }) 
     ),
   );
   fireEvent.click(screen.getByRole('button', { name: /^ZCTLONG-USDT, rank/ }));
+  return screen.getByRole('region', { name: 'ZCTLONG-USDT evidence' });
+}
+
+/** The selected pair's scenario section with Record experiment opened. */
+async function openRecord(choice: { saved?: TradingViewSavedScan } = { saved }) {
+  selectSpotPair(choice);
   const section = screen.getByRole('region', { name: 'Manual Spot scenario' });
   await openDisclosure(section);
   return section;
@@ -238,8 +243,14 @@ function deferred<T>() {
 describe('recording and retrieving a decision to stay out', () => {
   it('recovers a lost save with the same ID and shows the saved evidence in Account', async () => {
     db.rpc.mockResolvedValue({ data: true, error: null });
-    const research = await openRecord();
-    fireEvent.click(within(research).getByText('I reviewed this pair and chose to stay out'));
+    const research = selectSpotPair();
+    const action = within(research).getByText('I reviewed this pair and chose to stay out');
+    expect(
+      action.compareDocumentPosition(within(research).getByText('Model conditions')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(db.rpc).not.toHaveBeenCalled();
+    fireEvent.click(action);
     const reason = await screen.findByLabelText('Why did you choose to stay out?');
     const save = screen.getByRole('button', { name: 'Save no-entry decision' });
     fireEvent.change(reason, { target: { value: '   ' } });
@@ -297,16 +308,14 @@ describe('recording and retrieving a decision to stay out', () => {
   });
 
   it('requires a reproduced saved scan and the configured owner', async () => {
-    const published = await openRecord({});
+    const published = selectSpotPair({});
     expect(within(published).queryByText('I reviewed this pair and chose to stay out')).toBeNull();
 
     cleanup();
     db.rpc.mockResolvedValue({ data: false, error: null });
-    const savedScan = await openRecord();
+    const savedScan = selectSpotPair();
     fireEvent.click(within(savedScan).getByText('I reviewed this pair and chose to stay out'));
-    await waitFor(() =>
-      expect(within(savedScan).getAllByText(/Recording unavailable/)).toHaveLength(2),
-    );
+    expect(await within(savedScan).findByText(/Recording unavailable/)).toBeVisible();
     expect(screen.queryByLabelText('Why did you choose to stay out?')).toBeNull();
     expect(db.inserts).toHaveLength(0);
   });
