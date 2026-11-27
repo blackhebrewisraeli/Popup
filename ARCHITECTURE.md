@@ -11,6 +11,7 @@ also enforce access at the data boundary.
 | `/` → Model scan (1D)  | `src/components/MarketScanSummary.tsx`, `ScanReview.tsx` | Uses the crypto tickers configured in `assets_status` and evaluates closed Binance daily candles with `marketScanner.ts` and `canonicalModel.ts`.                                                          |
 | Open saved crypto scan | `src/components/SavedScanFile.tsx`                       | Hashes and reproduces the selected snapshot in the browser worker. The file stays in memory. Verified evidence can be attached to owner decisions.                                                         |
 | `/account` → Journal   | `src/components/AccountPanel.tsx`, `SpotExperiments.tsx` | Uses the read-only `binance-spot-account` function for Binance reads. Supabase owns the manual experiment records, linked fills, observations and no-entry decisions.                                      |
+| Telegram (no UI)       | `supabase/functions/futures-execution`                   | Owner-approved live USDⓈ-M Futures Longs at 5× isolated, off by default and gated on an approved entry rule. See [Futures execution](docs/FUTURES_EXECUTION.md).                                           |
 
 The route layout is `src/routes/_workspace.tsx`. The file-based router generates
 `src/routeTree.gen.ts`. The two pages share a private shell with navigation, theme and sign-out.

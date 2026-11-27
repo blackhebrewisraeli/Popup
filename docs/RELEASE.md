@@ -270,3 +270,38 @@ Binance preflight ([MARKET_SCANNER.md › Activation](./MARKET_SCANNER.md#activa
 - Database: forward-only. Never drop the tables or delete their rows to undo this (the triggers
   refuse it). To withdraw access, revoke the `authenticated` grants in a new migration, after
   rolling the frontend back.
+
+## Futures execution (20261128120000)
+
+Storage for [owner-approved Futures execution](./FUTURES_EXECUTION.md). The migration only expands:
+
+- It adds three tables (`futures_proposals`, `futures_executions`, `futures_events`), their indexes,
+  two trigger functions (`futures_guard_proposal()`, `futures_guard_execution()`) and their
+  triggers.
+- Only `service_role` gets column-level grants. No browser role can read or write the tables. It
+  changes no existing table, policy, grant, function or row, and backfills nothing.
+
+No frontend reads the tables and `DB_CONTRACT` is unchanged. The gate still requires every
+migration in the commit to be applied, so the database goes first.
+
+**Order: database, then merge. Activation is a separate owner decision.**
+
+1. From a checkout of the PR's final head, run `supabase db push --dry-run`. It should list only
+   `20261128120000`. Then run `supabase db push`.
+2. From the same checkout, run the contract check above. It must report all 35 migrations applied.
+3. Merge. The production build passes the gate. Nothing in the app changes, and nothing trades:
+   the `futures-execution` function is not deployed by a merge, and live entries stay off until
+   the [activation steps](./FUTURES_EXECUTION.md#activation-owner-only) are complete.
+
+**Between steps 1 and 3**, production runs the older frontend, which never reads these tables.
+
+**Rollback.**
+
+- Frontend: Instant Rollback to a deployment from before this change is safe. It never reads the
+  tables.
+- Trading: unset `FUTURES_LIVE_ENABLED` to stop proposals and approvals. Reconciliation of an open
+  position continues. To stop everything, also delete the Futures key on Binance and unschedule
+  `futures-execution-tick`.
+- Database: forward-only. Never drop the tables or delete their rows: they are the record of every
+  proposal, decision and order outcome. To withdraw access, revoke the `service_role` grants in a
+  new migration.
