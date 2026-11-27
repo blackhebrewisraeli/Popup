@@ -16,17 +16,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * rows and records every table read. Market data and the model scan are stubbed so each can fail
  * or come back empty on its own.
  */
+const OWNER = { id: '00000000-0000-4000-8000-0000000000d1', email: 'owner@example.test' };
 const db = vi.hoisted(() => ({
+  user: null as { id: string; email: string } | null,
   owner: true,
+  ownerError: false,
+  ownerChecks: 0,
   rows: { discovery_batches: [] as unknown[], discovery_attempts: [] as unknown[] },
   reads: [] as string[],
   scanFailed: false,
   scanInputs: vi.fn(),
 }));
 vi.mock('@/lib/supabaseClient', () => ({
+  setRememberMe: vi.fn(),
   supabase: {
+    auth: { signInWithPassword: vi.fn(), signUp: vi.fn(), signInWithOAuth: vi.fn() },
     rpc: async (name: string) => {
       if (name !== 'is_binance_spot_owner') throw new Error(`Unexpected RPC ${name}`);
+      db.ownerChecks += 1;
+      if (db.ownerError) return { data: null, error: { message: 'network down', code: '' } };
       return { data: db.owner, error: null };
     },
     from: (table: string) => {
@@ -47,7 +55,7 @@ vi.mock('@/lib/supabaseClient', () => ({
 vi.mock('@/lib/authStore', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/authStore')>()),
   useAuth: () => ({
-    user: { id: '00000000-0000-4000-8000-0000000000d1', email: 'owner@example.test' },
+    user: db.user,
     loading: false,
     signOut: vi.fn(),
   }),
@@ -148,7 +156,10 @@ const board = () => screen.findByRole('region', { name: 'Daily candidates' });
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.stubEnv('DEV', false);
+  db.user = OWNER;
   db.owner = true;
+  db.ownerError = false;
+  db.ownerChecks = 0;
   db.reads = [];
   db.scanFailed = false;
   db.scanInputs.mockClear();
@@ -194,6 +205,34 @@ describe('Private Spot workspace', () => {
     expect(screen.queryByRole('navigation', { name: 'Workspace' })).toBeNull();
   });
 
+  it('asks a signed-out visitor to sign in without checking access or reading data', async () => {
+    db.user = null;
+    load();
+    expect(
+      await screen.findByRole('heading', { name: 'Private Spot workspace' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('dialog', { name: 'Popup account' })).toBeInTheDocument();
+    expect(db.ownerChecks).toBe(0);
+    expect(db.reads).toEqual([]);
+    expect(fetchAssets).not.toHaveBeenCalled();
+    expect(screen.queryByRole('navigation', { name: 'Workspace' })).toBeNull();
+  });
+
+  it('withholds the workspace until a failed access check succeeds on retry', async () => {
+    db.ownerError = true;
+    load();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not check workspace access.');
+    expect(screen.queryByRole('navigation', { name: 'Workspace' })).toBeNull();
+    expect(db.reads).toEqual([]);
+
+    db.ownerError = false;
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('navigation', { name: 'Workspace' })).toBeInTheDocument();
+    expect(await board()).toBeInTheDocument();
+  });
+
   it('scans only Binance Spot symbols and keeps candidates usable when the scan fails', async () => {
     await collect([at(0, 33, 5)]);
     vi.mocked(fetchAssets).mockResolvedValue([BTC, { ...BTC, ticker: 'AAPL' }]);
@@ -207,6 +246,23 @@ describe('Private Spot workspace', () => {
     expect(await screen.findByRole('button', { name: 'Retry scan' })).toBeInTheDocument();
     fireEvent.click(place('Daily candidates'));
     expect(within(await board()).getByText('Current')).toBeInTheDocument();
+  });
+
+  it('offers a retry when the scan universe fails to load, then scans the loaded pairs', async () => {
+    vi.mocked(fetchAssets).mockRejectedValue(new Error('assets_status unavailable'));
+    load();
+    await board();
+    fireEvent.click(place('Model scan (1D)'));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not load the Binance Spot scan universe.');
+    expect(db.scanInputs).toHaveBeenLastCalledWith([], 'assets_status', true);
+
+    vi.mocked(fetchAssets).mockResolvedValue([BTC]);
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(db.scanInputs).toHaveBeenLastCalledWith(['BTC-USD'], 'assets_status', true),
+    );
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
   it('shows an empty scan universe without substituting sample assets', async () => {
