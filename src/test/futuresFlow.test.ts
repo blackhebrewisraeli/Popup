@@ -118,11 +118,15 @@ function world(env: Record<string, string | undefined> = {}) {
     settings,
     post,
     tick,
+    admin: async (action: string) => {
+      const res = await post({ apikey: SECRET_KEY }, { action });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    },
     message: (text: string) =>
       telegramPost({ message: { message_id: 1, from: { id: OWNER }, chat: privateChat, text } }),
     /** Press a button on the latest proposal message, as the owner unless told otherwise. */
     press(
-      action: 'a' | 'r',
+      action: 'a' | 'r' | 'ta' | 'tr',
       options: { from?: number; chat?: Record<string, unknown>; data?: string } = {},
     ) {
       const message = [...tg.calls]
@@ -593,6 +597,140 @@ describe('futures-execution: fills, unknown results, failures and results', () =
     expect(w.text()).toContain('PROTECTION FAILED: The stop finished but a long position remains');
     expect(w.binance.state.position).toBe(0);
     expect(w.execution()?.['state']).toBe('closed');
+  });
+});
+
+describe('futures-execution: Telegram smoke test', () => {
+  // Only the Telegram and storage secrets: no Binance key, no rule, no limits, live off.
+  const telegramOnly = {
+    BINANCE_FUTURES_API_KEY: undefined,
+    BINANCE_FUTURES_API_SECRET: undefined,
+    FUTURES_LIVE_ENABLED: undefined,
+    FUTURES_ENTRY_RULE: undefined,
+    FUTURES_RISK_LIMITS: undefined,
+  };
+
+  it('registers the webhook from the stored secrets and returns none of them', async () => {
+    const w = world(telegramOnly);
+    const { status, body } = await w.admin('telegram_setup');
+    expect(status).toBe(200);
+    expect(body).toEqual({
+      webhookSet: true,
+      bot: '@PopupFuturesBot',
+      webhookUrlMatches: true,
+      pendingUpdates: 0,
+      lastError: null,
+    });
+    expect(w.tg.calls.find((c) => c.method === 'setWebhook')?.body).toEqual({
+      url: 'https://synthetic.invalid/functions/v1/futures-execution?forceFunctionRegion=eu-west-1',
+      secret_token: WEBHOOK_SECRET,
+      allowed_updates: ['callback_query'],
+      drop_pending_updates: true,
+    });
+    expect(JSON.stringify(body)).not.toContain(WEBHOOK_SECRET);
+    expect(JSON.stringify(body)).not.toContain(BOT_TOKEN);
+    expect(w.binance.calls).toEqual([]);
+  });
+
+  it('runs Approve, a duplicate press and a late Reject on a TEST, with no Binance or proposal', async () => {
+    const w = world(telegramOnly);
+    expect((await w.admin('telegram_test')).body).toEqual({
+      sent: true,
+      test: '00000000',
+      expiresAt: '2026-11-27T12:10:00.000Z',
+    });
+    const message = w.tg.calls.find((c) => c.method === 'sendMessage');
+    expect(message?.body['chat_id']).toBe(OWNER);
+    expect(String(message?.body['text'])).toMatch(/^TEST — Telegram smoke test/);
+    expect(String(message?.body['text'])).toContain('This is not a trading proposal.');
+
+    await w.press('ta');
+    await w.press('ta');
+    await w.press('tr');
+    expect(w.tg.answers()).toEqual([
+      'TEST approved — no order placed.',
+      'TEST already approved — nothing was done.',
+      'TEST already approved — nothing was done.',
+    ]);
+    // The decision is shown, and the buttons stay so the duplicate can be pressed.
+    const edit = w.tg.calls.find((c) => c.method === 'editMessageText')?.body;
+    expect(String(edit?.['text'])).toContain('TEST APPROVED by the owner at 12:00:00 UTC.');
+    expect(JSON.stringify(edit?.['reply_markup'])).toContain('ta:');
+    expect(w.db.rows('futures_telegram_tests')).toMatchObject([
+      { status: 'approved', decided_by: OWNER, telegram_message_id: 500 },
+    ]);
+    expect(w.db.rows('futures_events').map((e) => e['kind'])).toEqual([
+      'telegram_test_sent',
+      'telegram_test_approved',
+      'telegram_test_duplicate',
+      'telegram_test_duplicate',
+    ]);
+    expect(w.db.rows('futures_proposals')).toEqual([]);
+    expect(w.db.rows('futures_executions')).toEqual([]);
+    expect(w.binance.calls).toEqual([]);
+  });
+
+  it('records a Reject, and keeps one TEST pending at a time', async () => {
+    const w = world(telegramOnly);
+    await w.admin('telegram_test');
+    expect((await w.admin('telegram_test')).body).toEqual({
+      sent: false,
+      reason: 'A TEST is already pending: press its buttons or let it expire',
+    });
+    await w.press('tr');
+    expect(w.tg.answers()).toEqual(['TEST rejected — no order placed.']);
+    expect((await w.admin('telegram_test')).body['sent']).toBe(true);
+  });
+
+  it('answers Not authorized to anyone but the owner in their private chat', async () => {
+    const w = world(telegramOnly);
+    await w.admin('telegram_test');
+    await w.press('ta', { from: 99 });
+    await w.press('ta', { chat: { id: OWNER, type: 'group' } });
+    await w.press('ta', { chat: { id: 77, type: 'private' } });
+    expect(w.tg.answers()).toEqual(['Not authorized.', 'Not authorized.', 'Not authorized.']);
+    expect(w.db.rows('futures_telegram_tests')[0]?.['status']).toBe('pending');
+    expect((await w.post({ [SECRET_HEADER]: 'wrong' }, {})).status).toBe(401);
+  });
+
+  it('refuses a press after expiry or on another message, then sends a fresh TEST', async () => {
+    const w = world(telegramOnly);
+    await w.admin('telegram_test');
+    const id = String(w.db.rows('futures_telegram_tests')[0]?.['id']);
+    w.clock.advance(10 * 60 * 1000);
+    await w.press('ta');
+    expect(w.tg.answers()).toEqual(['TEST expired — nothing was done.']);
+    expect((await w.admin('telegram_test')).body['sent']).toBe(true);
+    expect(w.db.rows('futures_telegram_tests').map((t) => t['status'])).toEqual([
+      'expired',
+      'pending',
+    ]);
+    await w.press('ta', { data: `ta:${id}` });
+    expect(w.tg.answers().at(-1)).toBe('This button does not match the TEST. Nothing was done.');
+  });
+
+  it('refuses a live proposal press while trading is not configured', async () => {
+    const w = world(telegramOnly);
+    await w.admin('telegram_test');
+    await w.press('ta', { data: 'a:00000000-0000-4000-8000-000000000001:00000000' });
+    expect(w.tg.answers()).toEqual(['Futures trading is not configured. Nothing was done.']);
+    expect(w.binance.calls).toEqual([]);
+  });
+
+  it('needs the Telegram secrets, and only known actions', async () => {
+    const w = world({ ...telegramOnly, TELEGRAM_BOT_TOKEN: undefined });
+    expect(await w.admin('telegram_test')).toEqual({
+      status: 503,
+      body: { error: 'Not configured', missing: ['TELEGRAM_BOT_TOKEN'] },
+    });
+    const noSecret = world({ ...telegramOnly, TELEGRAM_WEBHOOK_SECRET: undefined });
+    expect((await noSecret.admin('telegram_setup')).status).toBe(503);
+    const ids = world({ ...telegramOnly, TELEGRAM_OWNER_USER_ID: '@owner' });
+    expect((await ids.admin('telegram_test')).body).toEqual({
+      error: 'Not configured',
+      missing: ['TELEGRAM_OWNER_USER_ID (numeric)'],
+    });
+    expect((await world(telegramOnly).admin('trade')).status).toBe(400);
   });
 });
 

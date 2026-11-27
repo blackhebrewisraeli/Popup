@@ -8,6 +8,9 @@
 //                     the bot are acted on. Work runs after the 200 reply.
 //   Scheduled tick    apikey must be a project secret key (as for the scheduled feeds): expire
 //                     proposals, reconcile open executions, record results, run the entry rule.
+//                     With {"action":"telegram_setup"} or {"action":"telegram_test"} it instead
+//                     registers the webhook or sends a TEST message (telegramTest.ts). Neither
+//                     needs the Binance key or touches proposals.
 //
 // Storage uses the project's secret key against tables no browser role can read or write. Binance
 // credentials are this function's own BINANCE_FUTURES_* secrets, refused if they equal the Spot
@@ -16,28 +19,36 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { futuresClient } from './binance.ts';
 import {
+  type CallbackQuery,
   decide,
   type EngineDeps,
   type ExecutionRow,
   FINAL_STATES,
   type ProposalRow,
   type Store,
-  type Telegram,
   tick,
 } from './engine.ts';
 import { parseRiskLimits, RISK_ENV } from './plan.ts';
+import {
+  decideTelegramTest,
+  isTestData,
+  sendTelegramTest,
+  setupTelegram,
+  type TelegramTestDeps,
+} from './telegramTest.ts';
 
 export const REGION = 'eu-west-1';
 export const SECRET_HEADER = 'x-telegram-bot-api-secret-token';
 const TELEGRAM_TIMEOUT_MS = 8000;
-const REQUIRED = [
+/** Telegram and storage: enough for the webhook, the TEST message and button presses. */
+const BASE_REQUIRED = [
   'SUPABASE_URL',
-  'BINANCE_FUTURES_API_KEY',
-  'BINANCE_FUTURES_API_SECRET',
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_OWNER_USER_ID',
   'TELEGRAM_OWNER_CHAT_ID',
 ] as const;
+/** Added for anything that may reach Binance: the tick and live proposal decisions. */
+const TRADING_REQUIRED = ['BINANCE_FUTURES_API_KEY', 'BINANCE_FUTURES_API_SECRET'] as const;
 
 export interface FuturesDeps {
   env: (name: string) => string | undefined;
@@ -78,7 +89,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const ID = /^-?\d{1,16}$/;
 
-export function telegramApi(deps: Pick<FuturesDeps, 'fetch' | 'log'>, token: string): Telegram {
+export function telegramApi(
+  deps: Pick<FuturesDeps, 'fetch' | 'log'>,
+  token: string,
+): TelegramTestDeps['telegram'] {
   // The URL carries the token: never log it.
   const call = async (method: string, body: Record<string, unknown>): Promise<unknown> => {
     try {
@@ -102,31 +116,29 @@ export function telegramApi(deps: Pick<FuturesDeps, 'fetch' | 'log'>, token: str
     }
     return null;
   };
+  const keyboard = (buttons: { text: string; data: string }[]) => ({
+    inline_keyboard: [buttons.map((b) => ({ text: b.text, callback_data: b.data }))],
+  });
   return {
+    raw: call,
     async send(chatId, text, buttons) {
       const result = await call('sendMessage', {
         chat_id: chatId,
         text,
         link_preview_options: { is_disabled: true },
-        ...(buttons
-          ? {
-              reply_markup: {
-                inline_keyboard: [buttons.map((b) => ({ text: b.text, callback_data: b.data }))],
-              },
-            }
-          : {}),
+        ...(buttons ? { reply_markup: keyboard(buttons) } : {}),
       });
       return isRecord(result) && typeof result['message_id'] === 'number'
         ? result['message_id']
         : null;
     },
-    async edit(chatId, messageId, text) {
+    async edit(chatId, messageId, text, buttons) {
       // An empty keyboard removes the buttons, so a decided proposal can't be pressed again.
       await call('editMessageText', {
         chat_id: chatId,
         message_id: messageId,
         text,
-        reply_markup: { inline_keyboard: [] },
+        reply_markup: buttons ? keyboard(buttons) : { inline_keyboard: [] },
       });
     },
     async answer(callbackQueryId, text) {
@@ -245,12 +257,33 @@ export function supabaseStore(client: SupabaseClient, log: (line: string) => voi
   };
 }
 
-async function engineDeps(deps: FuturesDeps): Promise<EngineDeps | { missing: string[] }> {
+type Base = TelegramTestDeps;
+
+function baseDeps(deps: FuturesDeps): Base | { missing: string[] } {
   const secretKey = namedKeys(deps.env('SUPABASE_SECRET_KEYS'))[0];
-  const missing: string[] = REQUIRED.filter((name) => !deps.env(name));
+  const missing: string[] = BASE_REQUIRED.filter((name) => !deps.env(name));
   if (!secretKey) missing.push('SUPABASE_SECRET_KEYS');
-  const owner = deps.env('TELEGRAM_OWNER_CHAT_ID') ?? '';
-  if (missing.length === 0 && !ID.test(owner)) missing.push('TELEGRAM_OWNER_CHAT_ID (numeric)');
+  for (const name of ['TELEGRAM_OWNER_USER_ID', 'TELEGRAM_OWNER_CHAT_ID']) {
+    const value = deps.env(name);
+    if (value && !ID.test(value)) missing.push(`${name} (numeric)`);
+  }
+  if (missing.length > 0) return { missing };
+  const env = (name: string) => deps.env(name) as string;
+  return {
+    client: deps.createClient(env('SUPABASE_URL'), secretKey as string),
+    telegram: telegramApi(deps, env('TELEGRAM_BOT_TOKEN')),
+    ownerChatId: Number(env('TELEGRAM_OWNER_CHAT_ID')),
+    now: deps.now,
+    randomUUID: deps.randomUUID,
+    log: deps.log,
+  };
+}
+
+async function engineDeps(
+  deps: FuturesDeps,
+  base: Base,
+): Promise<EngineDeps | { missing: string[] }> {
+  const missing: string[] = TRADING_REQUIRED.filter((name) => !deps.env(name));
   if (
     missing.length === 0 &&
     deps.env('BINANCE_FUTURES_API_KEY') === deps.env('BINANCE_SPOT_API_KEY')
@@ -258,17 +291,16 @@ async function engineDeps(deps: FuturesDeps): Promise<EngineDeps | { missing: st
     missing.push('BINANCE_FUTURES_API_KEY (must differ from the Spot key)');
   }
   if (missing.length > 0) return { missing };
-  const env = (name: string) => deps.env(name) as string;
   return {
-    store: supabaseStore(deps.createClient(env('SUPABASE_URL'), secretKey as string), deps.log),
+    store: supabaseStore(base.client, deps.log),
     binance: futuresClient({
       fetch: deps.fetch,
       now: deps.now,
-      apiKey: env('BINANCE_FUTURES_API_KEY'),
-      apiSecret: env('BINANCE_FUTURES_API_SECRET'),
+      apiKey: deps.env('BINANCE_FUTURES_API_KEY') as string,
+      apiSecret: deps.env('BINANCE_FUTURES_API_SECRET') as string,
     }),
-    telegram: telegramApi(deps, env('TELEGRAM_BOT_TOKEN')),
-    ownerChatId: Number(owner),
+    telegram: base.telegram,
+    ownerChatId: base.ownerChatId,
     risk: await parseRiskLimits(deps.env(RISK_ENV)),
     liveEnabled: deps.env('FUTURES_LIVE_ENABLED') === 'true',
     now: deps.now,
@@ -298,35 +330,48 @@ function guarded(deps: FuturesDeps, label: string, work: () => Promise<unknown>)
   );
 }
 
-async function telegramUpdate(req: Request, deps: FuturesDeps, engine: EngineDeps) {
+async function telegramUpdate(req: Request, deps: FuturesDeps, base: Base) {
   const update: unknown = await req.json().catch(() => null);
   const query = isRecord(update) ? update['callback_query'] : null;
-  if (isRecord(query)) {
-    const from = isRecord(query['from']) ? query['from'] : {};
-    const message = isRecord(query['message']) ? query['message'] : {};
-    const id = String(query['id']);
-    if (!isOwner(deps, from['id'], message['chat'])) {
-      deps.log(
-        JSON.stringify({
-          fn: 'futures-execution',
-          refused: 'callback from a non-owner or non-private chat',
-        }),
-      );
-      guarded(deps, 'answer', () => engine.telegram.answer(id, 'Not authorized.'));
-      return json({ ok: true });
-    }
-    guarded(deps, 'decide', () =>
-      decide(engine, {
-        id,
-        fromId: Number(from['id']),
-        messageId: typeof message['message_id'] === 'number' ? message['message_id'] : null,
-        data: query['data'],
+  // Everything but a button press, from anyone, is ignored with a 200 so Telegram does not redeliver.
+  if (!isRecord(query)) return json({ ok: true });
+  const from = isRecord(query['from']) ? query['from'] : {};
+  const message = isRecord(query['message']) ? query['message'] : {};
+  const id = String(query['id']);
+  if (!isOwner(deps, from['id'], message['chat'])) {
+    deps.log(
+      JSON.stringify({
+        fn: 'futures-execution',
+        refused: 'callback from a non-owner or non-private chat',
       }),
     );
+    guarded(deps, 'answer', () => base.telegram.answer(id, 'Not authorized.'));
     return json({ ok: true });
   }
-  // Everything else, from anyone, is ignored with a 200 so Telegram does not redeliver it.
+  const press: CallbackQuery = {
+    id,
+    fromId: Number(from['id']),
+    messageId: typeof message['message_id'] === 'number' ? message['message_id'] : null,
+    data: query['data'],
+  };
+  if (isTestData(press.data)) {
+    guarded(deps, 'test', () => decideTelegramTest(base, press));
+    return json({ ok: true });
+  }
+  const engine = await engineDeps(deps, base);
+  guarded(deps, 'decide', () =>
+    'missing' in engine
+      ? base.telegram.answer(id, 'Futures trading is not configured. Nothing was done.')
+      : decide(engine, press),
+  );
   return json({ ok: true });
+}
+
+async function adminAction(deps: FuturesDeps, base: Base, action: unknown): Promise<Response> {
+  if (action === 'telegram_test') return json(await sendTelegramTest(base));
+  const secret = deps.env('TELEGRAM_WEBHOOK_SECRET');
+  if (!secret) return json({ error: 'Not configured', missing: ['TELEGRAM_WEBHOOK_SECRET'] }, 503);
+  return json(await setupTelegram(base, deps.env('SUPABASE_URL') as string, secret));
 }
 
 export async function handleFutures(req: Request, deps: FuturesDeps): Promise<Response> {
@@ -344,9 +389,17 @@ export async function handleFutures(req: Request, deps: FuturesDeps): Promise<Re
       return json({ error: 'Unauthorized' }, 401);
     }
   }
-  const engine = await engineDeps(deps);
+  const base = baseDeps(deps);
+  if ('missing' in base) return json({ error: 'Not configured', missing: base.missing }, 503);
+  if (telegramSecret !== null) return telegramUpdate(req, deps, base);
+  const body: unknown = await req.json().catch(() => ({}));
+  const action = isRecord(body) ? body['action'] : undefined;
+  if (action === 'telegram_setup' || action === 'telegram_test') {
+    return adminAction(deps, base, action);
+  }
+  if (action !== undefined) return json({ error: 'Unknown action' }, 400);
+  const engine = await engineDeps(deps, base);
   if ('missing' in engine) return json({ error: 'Not configured', missing: engine.missing }, 503);
-  if (telegramSecret !== null) return telegramUpdate(req, deps, engine);
   try {
     const summary = await tick(engine, deps.env('FUTURES_ENTRY_RULE') || undefined);
     deps.log(JSON.stringify({ fn: 'futures-execution', tick: summary }));
