@@ -1,13 +1,13 @@
-// Owner-approved Binance USDⓈ-M Futures Demo execution: handler.ts holds the logic and refusals.
-// Deploy, set secrets and register the webhook and schedule only with the owner's go-ahead
-// (docs/FUTURES_DEMO_EXECUTION.md).
+// Owner-approved Binance USDⓈ-M Futures execution: handler.ts holds the logic and refusals. Off by
+// default. Deploy, set secrets, register the webhook and schedule, and activate only on the owner's
+// own decision (docs/FUTURES_EXECUTION.md).
 import { createClient } from '@supabase/supabase-js';
-import { handleFuturesDemo } from './handler.ts';
+import { handleFutures } from './handler.ts';
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 Deno.serve((req) =>
-  handleFuturesDemo(req, {
+  handleFutures(req, {
     env: (name) => Deno.env.get(name),
     fetch,
     now: Date.now,

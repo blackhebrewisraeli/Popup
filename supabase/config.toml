@@ -25,6 +25,11 @@ verify_jwt = false
 [functions.binance-spot-account]
 verify_jwt = true
 
+# Owner-approved live Futures execution, off by default. Telegram can't send a JWT: the handler
+# requires the webhook secret header (Telegram) or a project secret key (the scheduled tick).
+[functions.futures-execution]
+verify_jwt = false
+
 [db]
 # Match production so the CI fresh-database check runs the same Postgres.
 major_version = 17

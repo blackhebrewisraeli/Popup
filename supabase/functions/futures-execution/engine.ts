@@ -1,4 +1,4 @@
-// The Futures Demo state machine (docs/FUTURES_DEMO_EXECUTION.md). Storage, Binance and Telegram
+// The live Binance USDⓈ-M Futures state machine (docs/FUTURES_EXECUTION.md). Storage, Binance and Telegram
 // are injected, so vitest drives it against stubs. Every Binance write uses a client order ID
 // derived from the proposal, and an ambiguous answer is reconciled by querying that ID before any
 // retry.
@@ -14,8 +14,10 @@
 //   closed         position verified flat and no exit order left open                       [final]
 //   abandoned      found claimed after a restart: no entry had been sent                    [final]
 // Any state that is not final blocks new proposals and entries (also a database constraint).
+// Nothing proposes or executes unless FUTURES_LIVE_ENABLED is exactly "true", the owner's risk
+// limits are set, and FUTURES_ENTRY_RULE names a rule in ENTRY_RULES. Reconciliation always runs.
 
-import { type DemoClient, describe, isAbsent, type Outcome, RECV_WINDOW_MS } from './binance.ts';
+import { type FuturesClient, describe, isAbsent, type Outcome, RECV_WINDOW_MS } from './binance.ts';
 import {
   callbackData,
   type Candidate,
@@ -23,6 +25,8 @@ import {
   ENVIRONMENT,
   fmt,
   LEVERAGE,
+  riskDrift,
+  signedDec,
   parseCallbackData,
   parseSymbolRules,
   type Plan,
@@ -47,7 +51,6 @@ export interface ProposalRow {
   id: string;
   expires_at: string;
   symbol: string;
-  synthetic: boolean;
   plan: Plan;
   plan_sha256: string;
   telegram_chat_id: number;
@@ -73,11 +76,15 @@ export interface ExecutionRow {
   detail: string | null;
   alerted: string | null;
   lease_until: string | null;
+  /** Net USDT from Binance income (realized PnL, commission, funding) once closed; else null. */
+  realized_pnl: string | null;
 }
 
 export interface Store {
   pendingProposal(): Promise<ProposalRow | null>;
   openExecutions(): Promise<ExecutionRow[]>;
+  /** Closed executions that had a fill: the experiment's realized results. */
+  closedExecutions(): Promise<ExecutionRow[]>;
   /** 'conflict' when another proposal is pending (one at a time). */
   insertProposal(
     row: Omit<ProposalRow, 'status' | 'telegram_message_id'> & { environment: typeof ENVIRONMENT },
@@ -113,45 +120,48 @@ export interface Telegram {
 
 export interface EngineDeps {
   store: Store;
-  demo: DemoClient;
+  binance: FuturesClient;
   telegram: Telegram;
   ownerChatId: number;
   /** Null when the owner's limits are unset or invalid: no proposal or approval then. */
   risk: { limits: RiskLimits; sha256: string } | { error: string };
-  /** FUTURES_DEMO_ENABLED: off stops proposals and approvals, never reconciliation. */
-  entriesEnabled: boolean;
+  /** FUTURES_LIVE_ENABLED: off (the default) stops proposals and approvals, never reconciliation. */
+  liveEnabled: boolean;
   now: () => number;
   sleep: (ms: number) => Promise<void>;
   randomUUID: () => string;
   log: (line: string) => void;
 }
 
-/** Candidate detection. Empty until the owner approves a Futures entry rule (see the docs). */
+/**
+ * Owner-approved candidate detection, by rule id. Empty: no Futures entry rule has been approved,
+ * so nothing is proposed. A rule lands here only through a reviewed PR, and runs only when the
+ * owner also names it in FUTURES_ENTRY_RULE. Synthetic candidates exist only in local tests.
+ */
 export const ENTRY_RULES: Record<string, (deps: EngineDeps) => Promise<Candidate | null>> = {};
 
 /** Hosted Edge Functions stop at 150 s wall clock; a lapsed lease hands the row to the tick. */
 export const LEASE_MS = 150_000;
 const RECONCILE_GRACE_MS = 5_000;
 const MAX_CLOSE_ATTEMPTS = 10;
-const SYNTHETIC_REASON =
-  'SYNTHETIC demonstration candidate requested by the owner. No entry rule produced it.';
+const INCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const hex = (id: string) => id.replaceAll('-', '').slice(0, 28);
 /** Binance client order IDs: ^[.A-Z:/a-z0-9_-]{1,36}$. */
-export const entryOrderId = (id: string) => `pd-${hex(id)}`;
-const stopAlgoId = (id: string) => `pd-${hex(id)}-s`;
-const targetAlgoId = (id: string, i: number) => `pd-${hex(id)}-t${i + 1}`;
-const closeOrderId = (id: string, attempt: number) => `pd-${hex(id)}-x${attempt}`;
+export const entryOrderId = (id: string) => `pf-${hex(id)}`;
+const stopAlgoId = (id: string) => `pf-${hex(id)}-s`;
+const targetAlgoId = (id: string, i: number) => `pf-${hex(id)}-t${i + 1}`;
+const closeOrderId = (id: string, attempt: number) => `pf-${hex(id)}-x${attempt}`;
 
 async function okBody(
   deps: EngineDeps,
-  route: Parameters<DemoClient['call']>[0],
+  route: Parameters<FuturesClient['call']>[0],
   params?: Record<string, string>,
 ) {
-  const outcome = await deps.demo.call(route, params);
+  const outcome = await deps.binance.call(route, params);
   return outcome.kind === 'ok' ? outcome.body : null;
 }
 
@@ -159,21 +169,28 @@ async function okBody(
 
 /** Propose one Long for this candidate and send it to the owner, or say why not. */
 export async function propose(deps: EngineDeps, candidate: Candidate): Promise<string> {
-  if (!deps.entriesEnabled) return 'Futures Demo entries are disabled (FUTURES_DEMO_ENABLED).';
+  if (!deps.liveEnabled) return 'Live Futures entries are disabled (FUTURES_LIVE_ENABLED).';
+  if (!ENTRY_RULES[candidate.rule])
+    return `No proposal: ${candidate.rule} is not an approved rule.`;
   if ('error' in deps.risk) return `No proposal: ${deps.risk.error}.`;
   if ((await deps.store.openExecutions()).length > 0) {
-    return 'No proposal: a Demo execution is still open or unresolved.';
+    return 'No proposal: a Futures execution is still open or unresolved.';
   }
   if (await deps.store.pendingProposal()) return 'No proposal: another proposal is still pending.';
   const symbol = candidate.symbol;
-  const [info, book, premium] = await Promise.all([
+  const loss = await cumulativeLoss(deps);
+  if (typeof loss === 'string') return `No proposal: ${loss}.`;
+  const [info, book, premium, commission] = await Promise.all([
     okBody(deps, 'exchangeInfo'),
     okBody(deps, 'bookTicker', { symbol }),
     okBody(deps, 'premiumIndex', { symbol }),
+    okBody(deps, 'commissionRate', { symbol }),
   ]);
   const rules = parseSymbolRules(info, symbol);
   if (typeof rules === 'string') return `No proposal: ${rules}.`;
-  if (!isRecord(book) || !isRecord(premium)) return 'No proposal: Binance prices are unavailable.';
+  if (!isRecord(book) || !isRecord(premium) || !isRecord(commission)) {
+    return 'No proposal: Binance prices or the fee rate are unavailable.';
+  }
   const id = deps.randomUUID();
   const plan = planLong({
     candidate,
@@ -182,6 +199,8 @@ export async function propose(deps: EngineDeps, candidate: Candidate): Promise<s
     rules,
     ask: String(book['askPrice']),
     mark: String(premium['markPrice']),
+    takerFeeRate: String(commission['takerCommissionRate']),
+    cumulativeLoss: loss,
     expiresAt: iso(deps.now() + deps.risk.limits.proposalTtlSeconds * 1000),
   });
   if (typeof plan === 'string') return `No proposal: ${plan}.`;
@@ -191,7 +210,6 @@ export async function propose(deps: EngineDeps, candidate: Candidate): Promise<s
     environment: ENVIRONMENT,
     expires_at: plan.expiresAt,
     symbol,
-    synthetic: plan.synthetic,
     plan,
     plan_sha256: sha256,
     telegram_chat_id: deps.ownerChatId,
@@ -207,16 +225,9 @@ export async function propose(deps: EngineDeps, candidate: Candidate): Promise<s
     return 'Proposal stored but the Telegram message failed; it will expire unapproved.';
   }
   await deps.store.setTelegramMessage(id, messageId);
-  await deps.store.event(id, 'proposed', { sha256, synthetic: plan.synthetic, rule: plan.rule });
+  await deps.store.event(id, 'proposed', { sha256, rule: plan.rule });
   return `Proposed ${id}.`;
 }
-
-export const syntheticCandidate = (symbol: string): Candidate => ({
-  symbol,
-  rule: 'synthetic',
-  synthetic: true,
-  signalReason: SYNTHETIC_REASON,
-});
 
 // ---------------------------------------------------------------- decisions
 
@@ -245,8 +256,8 @@ export async function decide(deps: EngineDeps, query: CallbackQuery): Promise<vo
     await deps.store.event(proposal.id, 'decision_refused', { reason: 'binding' });
     return answer('This button does not match the stored proposal. Nothing was done.');
   }
-  if (parsed.action === 'approve' && !deps.entriesEnabled) {
-    return answer('Futures Demo entries are disabled. Nothing was done.');
+  if (parsed.action === 'approve' && !deps.liveEnabled) {
+    return answer('Live Futures entries are disabled. Nothing was done.');
   }
   const status = parsed.action === 'approve' ? 'approved' : 'rejected';
   const result = await deps.store.decide(proposal.id, status, query.fromId);
@@ -267,11 +278,11 @@ export async function decide(deps: EngineDeps, query: CallbackQuery): Promise<vo
     );
     return;
   }
-  await answer('Approved. Rechecking, then executing in Binance Demo.');
+  await answer('Approved. Rechecking, then executing on Binance Futures.');
   await deps.telegram.edit(
     proposal.telegram_chat_id,
     messageId,
-    `${header}\n\nAPPROVED — executing in Demo; status follows.`,
+    `${header}\n\nAPPROVED — rechecking and executing; status follows.`,
   );
   await execute(deps, proposal);
 }
@@ -279,7 +290,7 @@ export async function decide(deps: EngineDeps, query: CallbackQuery): Promise<vo
 // ---------------------------------------------------------------- execution
 
 const report = (deps: EngineDeps, p: ProposalRow, text: string) =>
-  deps.telegram.send(p.telegram_chat_id, `Futures DEMO ${p.symbol} · ${p.id.slice(0, 8)}\n${text}`);
+  deps.telegram.send(p.telegram_chat_id, `Futures ${p.symbol} · ${p.id.slice(0, 8)}\n${text}`);
 
 async function setState(deps: EngineDeps, ex: ExecutionRow, patch: Partial<ExecutionRow>) {
   Object.assign(ex, patch);
@@ -300,6 +311,12 @@ async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | nul
     return 'The owner risk limits changed since the proposal';
   if (deps.now() >= Date.parse(p.expires_at)) return 'The proposal expired';
   if (!deps.risk.limits.symbols.includes(symbol)) return `${symbol} is no longer an allowed symbol`;
+  const loss = await cumulativeLoss(deps);
+  if (typeof loss === 'string') return loss;
+  const overRisk = riskDrift(plan, deps.risk.limits, loss);
+  if (overRisk) return overRisk;
+  const keyRefusal = keyPermissionRefusal(await okBody(deps, 'apiRestrictions'));
+  if (keyRefusal) return keyRefusal;
 
   const book = await okBody(deps, 'bookTicker', { symbol });
   if (!isRecord(book)) return 'Could not read the current ask';
@@ -326,12 +343,12 @@ async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | nul
   let symbolConfig = await readSymbolConfig(deps, symbol);
   if (!symbolConfig) return 'Could not read the symbol configuration';
   if (symbolConfig.marginType !== 'ISOLATED') {
-    const set = await deps.demo.call('setMarginType', { symbol, marginType: 'ISOLATED' });
+    const set = await deps.binance.call('setMarginType', { symbol, marginType: 'ISOLATED' });
     if (set.kind === 'rejected' && set.code !== -4046)
       return `Isolated margin not set: ${describe(set)}`;
   }
   if (symbolConfig.leverage !== LEVERAGE) {
-    const set = await deps.demo.call('setLeverage', { symbol, leverage: String(LEVERAGE) });
+    const set = await deps.binance.call('setLeverage', { symbol, leverage: String(LEVERAGE) });
     if (set.kind === 'rejected') return `Leverage not set: ${describe(set)}`;
   }
   symbolConfig = await readSymbolConfig(deps, symbol);
@@ -353,9 +370,86 @@ async function preflight(deps: EngineDeps, p: ProposalRow): Promise<string | nul
     : undefined;
   const available = isRecord(usdt) ? dec(usdt['availableBalance']) : null;
   if (available === null) return 'Could not read the available USDT balance';
-  if (available < (dec(plan.initialMargin) as bigint))
-    return 'Available USDT is below the initial margin';
+  if (available < (dec(plan.collateral) as bigint)) return 'Available USDT is below the collateral';
   return null;
+}
+
+const KEY_MUST_BE_ON = ['enableReading', 'enableFutures'];
+const KEY_MUST_BE_OFF = [
+  'enableWithdrawals',
+  'enableInternalTransfer',
+  'permitsUniversalTransfer',
+  'enableSpotAndMarginTrading',
+  'enableMargin',
+  'enableVanillaOptions',
+  'enablePortfolioMarginTrading',
+];
+
+/** The trading key may read and trade USDⓈ-M Futures only: no withdrawal, transfer or other market. */
+export function keyPermissionRefusal(body: unknown): string | null {
+  if (!isRecord(body)) return 'Could not verify the API key permissions';
+  const missing = KEY_MUST_BE_ON.filter((name) => body[name] !== true);
+  if (missing.length > 0) return `The API key lacks ${missing.join(', ')}`;
+  const extra = KEY_MUST_BE_OFF.filter((name) => body[name] !== false);
+  if (extra.length > 0) return `The API key must not have ${extra.join(', ')}`;
+  return null;
+}
+
+/**
+ * The experiment's cumulative loss: the sum of every losing closed trade's net result (wins do
+ * not offset it). A closed trade whose result is not yet verified stops new entries.
+ */
+async function cumulativeLoss(deps: EngineDeps): Promise<bigint | string> {
+  let loss = 0n;
+  for (const ex of await deps.store.closedExecutions()) {
+    const pnl = signedDec(ex.realized_pnl);
+    if (pnl === null)
+      return `The realized result of ${ex.proposal_id.slice(0, 8)} is not verified yet`;
+    if (pnl < 0n) loss -= pnl;
+  }
+  return loss;
+}
+
+/**
+ * Net USDT for the symbol since the entry, from Binance income: realized PnL, commissions and
+ * funding. Null when any of them is in another asset, a page could be truncated, or no realized
+ * PnL is recorded yet. Assumes no other trading on this symbol meanwhile (preflight requires it
+ * flat with no orders before the entry).
+ */
+async function incomeSinceEntry(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow) {
+  const start = Date.parse(ex.entry_submitted_at ?? '') - 1000;
+  if (!Number.isFinite(start)) return null;
+  let total = 0n;
+  let realized = false;
+  for (let from = start; from <= deps.now(); from += INCOME_WINDOW_MS) {
+    const to = Math.min(from + INCOME_WINDOW_MS - 1, deps.now());
+    const rows = await okBody(deps, 'income', {
+      symbol: p.symbol,
+      startTime: String(from),
+      endTime: String(to),
+      limit: '1000',
+    });
+    if (!Array.isArray(rows) || rows.length >= 1000) return null;
+    for (const row of rows) {
+      if (!isRecord(row) || row['symbol'] !== p.symbol) continue;
+      const type = row['incomeType'];
+      if (type !== 'REALIZED_PNL' && type !== 'COMMISSION' && type !== 'FUNDING_FEE') continue;
+      const amount = signedDec(row['income']);
+      if (row['asset'] !== 'USDT' || amount === null) return null;
+      realized ||= type === 'REALIZED_PNL';
+      total += amount;
+    }
+  }
+  return realized ? fmt(total) : null;
+}
+
+/** Record a closed trade's net result once Binance shows it; the tick retries until it does. */
+async function recordResult(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow) {
+  if (ex.realized_pnl !== null || ex.filled_qty === null) return;
+  const pnl = await incomeSinceEntry(deps, p, ex);
+  if (pnl === null) return;
+  await setState(deps, ex, { realized_pnl: pnl });
+  await report(deps, p, `RESULT: net ${pnl} USDT (realized PnL, fees and funding from Binance).`);
 }
 
 async function readSymbolConfig(deps: EngineDeps, symbol: string) {
@@ -404,11 +498,12 @@ async function execute(deps: EngineDeps, p: ProposalRow): Promise<void> {
     detail: null,
     alerted: null,
     lease_until: iso(deps.now() + LEASE_MS),
+    realized_pnl: null,
   };
   const { proposal_id, state, entry_client_order_id, lease_until } = ex;
   const claim = { proposal_id, state, entry_client_order_id, lease_until };
   if ((await deps.store.insertExecution(claim)) === 'blocked') {
-    await report(deps, p, 'NOT EXECUTED: another Demo execution is still open or unresolved.');
+    await report(deps, p, 'NOT EXECUTED: another Futures execution is still open or unresolved.');
     return;
   }
   try {
@@ -419,7 +514,7 @@ async function execute(deps: EngineDeps, p: ProposalRow): Promise<void> {
       return;
     }
     await setState(deps, ex, { state: 'entry_unknown', entry_submitted_at: iso(deps.now()) });
-    const sent = await deps.demo.call('newOrder', {
+    const sent = await deps.binance.call('newOrder', {
       symbol: p.symbol,
       side: 'BUY',
       type: 'LIMIT',
@@ -435,7 +530,7 @@ async function execute(deps: EngineDeps, p: ProposalRow): Promise<void> {
         state: 'not_filled',
         detail: `Entry rejected: ${describe(sent)}`,
       });
-      await report(deps, p, `ENTRY REJECTED by Binance Demo: ${describe(sent)}. No position.`);
+      await report(deps, p, `ENTRY REJECTED by Binance: ${describe(sent)}. No position.`);
       return;
     }
     if (sent.kind === 'ok') await applyEntry(deps, p, ex, sent.body);
@@ -449,7 +544,7 @@ async function execute(deps: EngineDeps, p: ProposalRow): Promise<void> {
         deps,
         p,
         ex,
-        'Entry status UNKNOWN at Binance Demo. Reconciling every minute; new entries blocked.',
+        'Entry status UNKNOWN at Binance. Reconciling every minute; new entries blocked.',
       );
       return;
     }
@@ -502,7 +597,7 @@ function parseOrder(body: unknown): OrderView | null {
 const LIVE = new Set(['NEW', 'PARTIALLY_FILLED']);
 
 async function queryEntry(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow) {
-  return deps.demo.call('queryOrder', {
+  return deps.binance.call('queryOrder', {
     symbol: p.symbol,
     origClientOrderId: ex.entry_client_order_id,
   });
@@ -518,7 +613,7 @@ async function reconcileEntry(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow
         state: 'not_filled',
         detail: 'Entry order not found at Binance; it was never placed',
       });
-      await report(deps, p, 'ENTRY NOT PLACED: Binance Demo has no such order. No position.');
+      await report(deps, p, 'ENTRY NOT PLACED: Binance has no such order. No position.');
     }
     return;
   }
@@ -530,7 +625,7 @@ async function applyEntry(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow, bo
   if (!order) return;
   if (LIVE.has(order.status)) {
     // IOC should never rest; if it does, cancel the remainder and read the final fill.
-    await deps.demo.call('cancelOrder', {
+    await deps.binance.call('cancelOrder', {
       symbol: p.symbol,
       origClientOrderId: ex.entry_client_order_id,
     });
@@ -572,7 +667,7 @@ async function ensureAlgo(deps: EngineDeps, spec: AlgoSpec): Promise<AlgoStatus>
   const { clientAlgoId } = spec;
   let last = 'not attempted';
   for (let attempt = 0; attempt < 3; attempt++) {
-    const found = await deps.demo.call('queryAlgoOrder', { clientAlgoId });
+    const found = await deps.binance.call('queryAlgoOrder', { clientAlgoId });
     if (found.kind === 'ok' && isRecord(found.body)) {
       const status = String(found.body['algoStatus']);
       if (status === 'NEW' || status === 'TRIGGERED' || status === 'FINISHED')
@@ -582,7 +677,7 @@ async function ensureAlgo(deps: EngineDeps, spec: AlgoSpec): Promise<AlgoStatus>
       await deps.sleep(1000 * (attempt + 1));
       continue;
     }
-    const sent = await deps.demo.call('newAlgoOrder', { algoType: 'CONDITIONAL', ...spec });
+    const sent = await deps.binance.call('newAlgoOrder', { algoType: 'CONDITIONAL', ...spec });
     last = describe(sent);
     if (sent.kind === 'rejected' && !isDuplicate(sent))
       return { clientAlgoId, status: 'FAILED', detail: last };
@@ -655,6 +750,7 @@ async function watch(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Promis
         p,
         'CLOSED: position is flat and every remaining exit order was cancelled and verified gone.',
       );
+      await recordResult(deps, p, ex);
     } else {
       await emergency(
         deps,
@@ -683,8 +779,8 @@ async function watch(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Promis
 /** Cancel every open order and algo order on the symbol, then confirm none is left. */
 async function cancelSiblings(deps: EngineDeps, p: ProposalRow): Promise<boolean> {
   const symbol = p.symbol;
-  await deps.demo.call('cancelAllAlgoOpenOrders', { symbol });
-  await deps.demo.call('cancelAllOpenOrders', { symbol });
+  await deps.binance.call('cancelAllAlgoOpenOrders', { symbol });
+  await deps.binance.call('cancelAllOpenOrders', { symbol });
   const [orders, algos] = await Promise.all([
     okBody(deps, 'openOrders', { symbol }),
     okBody(deps, 'openAlgoOrders', { symbol }),
@@ -712,7 +808,7 @@ async function emergency(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow, rea
 
 /** Exposure-reducing close: cancel, sell the long reduce-only, confirm flat and no orders left. */
 async function flatten(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Promise<void> {
-  await deps.demo.call('cancelOrder', {
+  await deps.binance.call('cancelOrder', {
     symbol: p.symbol,
     origClientOrderId: ex.entry_client_order_id,
   });
@@ -720,7 +816,7 @@ async function flatten(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Prom
   if (amount !== null && amount > 0n && ex.close_attempts < MAX_CLOSE_ATTEMPTS) {
     const attempt = ex.close_attempts + 1;
     await setState(deps, ex, { close_attempts: attempt });
-    const sent = await deps.demo.call('newOrder', {
+    const sent = await deps.binance.call('newOrder', {
       symbol: p.symbol,
       side: 'SELL',
       type: 'MARKET',
@@ -743,6 +839,7 @@ async function flatten(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Prom
       p,
       'RESOLVED: position verified flat and no order left open. New entries are unblocked.',
     );
+    await recordResult(deps, p, ex);
     return;
   }
   const where = amount === null ? 'unreadable' : fmt(amount);
@@ -750,7 +847,7 @@ async function flatten(deps: EngineDeps, p: ProposalRow, ex: ExecutionRow): Prom
     deps,
     p,
     ex,
-    `UNRESOLVED: position ${where} ${p.symbol} or orders still open after the close attempt. Retrying every minute; new entries blocked. Check Binance Demo.`,
+    `UNRESOLVED: position ${where} ${p.symbol} or orders still open after the close attempt. Retrying every minute; new entries blocked. Check Binance.`,
   );
 }
 
@@ -760,12 +857,19 @@ export interface TickSummary {
   expired: number;
   reconciled: { id: string; from: string; to: string }[];
   skipped: string[];
+  results: number;
   rule: string;
 }
 
 /** Expire stale proposals, reconcile every open execution (also after a restart), run the rule. */
 export async function tick(deps: EngineDeps, rule: string | undefined): Promise<TickSummary> {
-  const summary: TickSummary = { expired: 0, reconciled: [], skipped: [], rule: 'none configured' };
+  const summary: TickSummary = {
+    expired: 0,
+    reconciled: [],
+    skipped: [],
+    results: 0,
+    rule: '',
+  };
   for (const p of await deps.store.expireDue(iso(deps.now()))) {
     summary.expired++;
     await deps.store.event(p.id, 'expired', {});
@@ -794,13 +898,19 @@ export async function tick(deps: EngineDeps, rule: string | undefined): Promise<
     }
     summary.reconciled.push({ id: ex.proposal_id, from, to: ex.state });
   }
-  if (rule) {
-    const detect = ENTRY_RULES[rule];
-    if (!detect) summary.rule = `${rule} is not an approved entry rule; nothing detected`;
-    else {
-      const candidate = await detect(deps);
-      summary.rule = candidate ? await propose(deps, candidate) : `${rule}: no candidate`;
-    }
+  for (const ex of await deps.store.closedExecutions()) {
+    if (ex.realized_pnl !== null) continue;
+    const p = await deps.store.getProposal(ex.proposal_id);
+    if (p) await recordResult(deps, p, ex);
+    if (ex.realized_pnl !== null) summary.results++;
+  }
+  const detect = rule ? ENTRY_RULES[rule] : undefined;
+  if (!rule) summary.rule = 'no entry rule configured';
+  else if (!detect) summary.rule = `${rule} is not an approved entry rule; nothing detected`;
+  else if (!deps.liveEnabled) summary.rule = 'live entries disabled (FUTURES_LIVE_ENABLED)';
+  else {
+    const candidate = await detect(deps);
+    summary.rule = candidate ? await propose(deps, candidate) : `${rule}: no candidate`;
   }
   return summary;
 }

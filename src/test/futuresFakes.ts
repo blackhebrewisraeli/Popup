@@ -1,11 +1,11 @@
 /**
- * SYNTHETIC stand-ins for the futures-demo function's three dependencies. Nothing here reaches a
- * network, and no production value is used.
+ * SYNTHETIC local stand-ins for the futures-execution function's three dependencies. Nothing here
+ * reaches a network or Binance, and no production value is used.
  *
- * - binanceDemo: a stateful Binance Futures Demo at the HTTP level (orders, algo orders, one-way
- *   position, account and symbol settings). It checks the signature, and a route can be scripted to
- *   time out, apply-then-time-out (the order is accepted but the answer is lost) or answer a canned
- *   error.
+ * - binanceFake: a stateful USDⓈ-M Futures account at the HTTP level (orders, algo orders, one-way
+ *   position, account and symbol settings, key permissions, fees, income). It checks the signature,
+ *   and a route can be scripted to time out, apply-then-time-out (the order is accepted but the
+ *   answer is lost) or answer a canned error.
  * - telegram: records Bot API calls and numbers sent messages.
  * - fakeSupabase: the PostgREST surface supabaseStore uses, holding rows as JSON (like jsonb) and
  *   enforcing what the migration enforces: one pending proposal, decided once, approval refused at
@@ -15,14 +15,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { hmacSha256Hex } from '../../supabase/functions/binance-spot-account/handler';
 
 export const SYMBOL = 'ZCTAUSDT';
-export const API_KEY = 'synthetic-demo-key';
-export const API_SECRET = 'synthetic-demo-secret';
+export const API_KEY = 'synthetic-futures-key';
+export const API_SECRET = 'synthetic-futures-secret';
 export const BOT_TOKEN = '123456:synthetic-token';
 /** SYNTHETIC owner limits for tests; production has none until the owner sets them. */
 export const RISK = {
   symbols: [SYMBOL],
-  maxLossUsdt: '2',
-  maxNotionalUsdt: '100',
+  maxLossPerTradeUsdt: '2',
+  maxCumulativeLossUsdt: '10',
   stopDistancePercent: '1',
   takeProfitR: ['1', '2'],
   entrySlippageBps: 10,
@@ -56,7 +56,7 @@ const timeout = () => Promise.reject(new DOMException('synthetic timeout', 'Time
 const respond = (status: number, body: unknown) =>
   Promise.resolve(new Response(JSON.stringify(body), { status }));
 
-export function binanceDemo() {
+export function binanceFake(now: () => number) {
   const state = {
     ask: '100.00',
     mark: '100.00',
@@ -69,9 +69,46 @@ export function binanceDemo() {
     position: 0,
     /** Share of an IOC entry that fills. */
     fillRatio: 1,
+    takerRate: '0.0005',
+    commissionAsset: 'USDT',
+    permissions: {
+      enableReading: true,
+      enableFutures: true,
+      enableWithdrawals: false,
+      enableInternalTransfer: false,
+      permitsUniversalTransfer: false,
+      enableSpotAndMarginTrading: false,
+      enableMargin: false,
+      enableVanillaOptions: false,
+      enablePortfolioMarginTrading: false,
+      ipRestrict: false,
+    } as Row,
+    entryPrice: 0,
+    income: [] as Row[],
     orders: new Map<string, Row>(),
     algos: new Map<string, Row>(),
   };
+  const money = (n: number) => n.toFixed(8);
+  /** Income Binance would write for one fill: commission always, realized PnL when reducing. */
+  function fillIncome(side: string, filled: number, price: number) {
+    const time = now();
+    state.income.push({
+      symbol: SYMBOL,
+      incomeType: 'COMMISSION',
+      income: money(-filled * price * Number(state.takerRate)),
+      asset: state.commissionAsset,
+      time,
+    });
+    if (side === 'SELL') {
+      state.income.push({
+        symbol: SYMBOL,
+        incomeType: 'REALIZED_PNL',
+        income: money((price - state.entryPrice) * filled),
+        asset: 'USDT',
+        time,
+      });
+    }
+  }
   const calls: { route: string; params: Record<string, string> }[] = [];
   const script = new Map<string, Scripted[]>();
   let nextId = 1000;
@@ -181,10 +218,15 @@ export function binanceDemo() {
           filled = p['reduceOnly'] === 'true' ? Math.min(requested, state.position) : requested;
           state.position = Number(qty(state.position - filled));
           status = 'FILLED';
+          fillIncome('SELL', filled, Number(state.mark));
         } else {
           filled = Number(qty(requested * state.fillRatio));
           state.position = Number(qty(state.position + filled));
           status = filled === requested ? 'FILLED' : 'EXPIRED';
+          if (filled > 0) {
+            state.entryPrice = Number(p['price']);
+            fillIncome('BUY', filled, Number(p['price']));
+          }
         }
         const order = {
           orderId: nextId++,
@@ -237,12 +279,31 @@ export function binanceDemo() {
           status: 200,
           body: { code: 200, msg: 'The operation of cancel all open order is done.' },
         };
+      case 'GET /sapi/v1/account/apiRestrictions':
+        return { status: 200, body: state.permissions };
+      case 'GET /fapi/v1/commissionRate':
+        return {
+          status: 200,
+          body: {
+            symbol: SYMBOL,
+            makerCommissionRate: '0.0002',
+            takerCommissionRate: state.takerRate,
+          },
+        };
+      case 'GET /fapi/v1/income': {
+        const from = Number(p['startTime']);
+        const to = Number(p['endTime']);
+        return {
+          status: 200,
+          body: state.income.filter((r) => Number(r['time']) >= from && Number(r['time']) <= to),
+        };
+      }
       default:
         throw new Error(`unexpected Binance route ${route}`);
     }
   }
 
-  async function demoFetch(url: URL, init?: RequestInit): Promise<Response> {
+  async function binanceFetch(url: URL, init?: RequestInit): Promise<Response> {
     const route = `${init?.method ?? 'GET'} ${url.pathname}`;
     const params = Object.fromEntries(url.searchParams);
     if ('signature' in params) {
@@ -274,15 +335,16 @@ export function binanceDemo() {
       script.set(route, [...(script.get(route) ?? []), ...answers]);
     },
     count: (route: string) => calls.filter((c) => c.route === route).length,
-    /** The stop fired at Binance: the long is closed and the stop is finished. */
-    triggerStop() {
+    /** The stop fired at Binance at its trigger: the long is closed and the stop is finished. */
+    triggerStop(price: number) {
+      fillIncome('SELL', state.position, price);
       state.position = 0;
       for (const algo of state.algos.values()) {
         if (algo['type'] === 'STOP_MARKET' && algo['algoStatus'] === 'NEW')
           algo['algoStatus'] = 'FINISHED';
       }
     },
-    demoFetch,
+    binanceFetch,
   };
 }
 
@@ -316,22 +378,21 @@ export function telegram() {
 const FINAL = ['refused', 'not_filled', 'closed', 'abandoned'];
 /** The migration's column grants to service_role and its NOT NULL columns without defaults. */
 const INSERTABLE: Record<string, string[]> = {
-  futures_demo_proposals: [
+  futures_proposals: [
     'id',
     'expires_at',
     'environment',
     'symbol',
-    'synthetic',
     'plan',
     'plan_sha256',
     'telegram_chat_id',
   ],
-  futures_demo_executions: ['proposal_id', 'state', 'entry_client_order_id', 'lease_until'],
-  futures_demo_events: ['proposal_id', 'kind', 'detail'],
+  futures_executions: ['proposal_id', 'state', 'entry_client_order_id', 'lease_until'],
+  futures_events: ['proposal_id', 'kind', 'detail'],
 };
 const UPDATABLE: Record<string, string[]> = {
-  futures_demo_proposals: ['telegram_message_id', 'status', 'decided_by'],
-  futures_demo_executions: [
+  futures_proposals: ['telegram_message_id', 'status', 'decided_by'],
+  futures_executions: [
     'state',
     'entry_submitted_at',
     'filled_qty',
@@ -341,22 +402,22 @@ const UPDATABLE: Record<string, string[]> = {
     'detail',
     'alerted',
     'lease_until',
+    'realized_pnl',
   ],
-  futures_demo_events: [],
+  futures_events: [],
 };
 const REQUIRED_ON_INSERT: Record<string, string[]> = {
-  futures_demo_proposals: [
+  futures_proposals: [
     'id',
     'expires_at',
     'environment',
     'symbol',
-    'synthetic',
     'plan',
     'plan_sha256',
     'telegram_chat_id',
   ],
-  futures_demo_executions: ['proposal_id', 'state', 'entry_client_order_id'],
-  futures_demo_events: ['kind'],
+  futures_executions: ['proposal_id', 'state', 'entry_client_order_id'],
+  futures_events: ['kind'],
 };
 type Result = { data: unknown; error: { code: string; message: string } | null };
 const failure = (code: string, message: string): Result => ({
@@ -366,9 +427,9 @@ const failure = (code: string, message: string): Result => ({
 
 export function fakeSupabase(clock: Clock) {
   const tables: Record<string, string[]> = {
-    futures_demo_proposals: [],
-    futures_demo_executions: [],
-    futures_demo_events: [],
+    futures_proposals: [],
+    futures_executions: [],
+    futures_events: [],
   };
   const rows = (table: string) =>
     (tables[table] as string[]).map((text) => JSON.parse(text) as Row);
@@ -384,7 +445,7 @@ export function fakeSupabase(clock: Clock) {
     if (denied.length > 0) return failure('42501', `permission denied for ${denied.join(', ')}`);
     const missing = (REQUIRED_ON_INSERT[table] ?? []).filter((column) => row[column] == null);
     if (missing.length > 0) return failure('23502', `null value in ${missing.join(', ')}`);
-    if (table === 'futures_demo_proposals') {
+    if (table === 'futures_proposals') {
       if (list.some((r) => r['id'] === row['id'] || r['status'] === 'pending'))
         return failure('23505', 'duplicate');
       Object.assign(row, {
@@ -394,12 +455,11 @@ export function fakeSupabase(clock: Clock) {
         decided_by: null,
         created_at: nowIso(),
       });
-    } else if (table === 'futures_demo_executions') {
-      if (row['state'] !== 'claimed')
-        return failure('42501', 'futures_demo_execution_starts_claimed');
-      const proposal = rows('futures_demo_proposals').find((p) => p['id'] === row['proposal_id']);
+    } else if (table === 'futures_executions') {
+      if (row['state'] !== 'claimed') return failure('42501', 'futures_execution_starts_claimed');
+      const proposal = rows('futures_proposals').find((p) => p['id'] === row['proposal_id']);
       if (proposal?.['status'] !== 'approved')
-        return failure('42501', 'futures_demo_execution_not_approved');
+        return failure('42501', 'futures_execution_not_approved');
       if (
         list.some(
           (r) => r['proposal_id'] === row['proposal_id'] || !FINAL.includes(String(r['state'])),
@@ -415,6 +475,7 @@ export function fakeSupabase(clock: Clock) {
         close_attempts: 0,
         detail: null,
         alerted: null,
+        realized_pnl: null,
       });
     }
     save(table, [...list, row]);
@@ -427,30 +488,36 @@ export function fakeSupabase(clock: Clock) {
     const list = rows(table);
     const changed: Row[] = [];
     for (const row of list.filter(match)) {
-      if (table === 'futures_demo_proposals') {
+      if (table === 'futures_proposals') {
         if ('telegram_message_id' in patch && row['telegram_message_id'] !== null) {
-          return failure('42501', 'futures_demo_proposal_immutable');
+          return failure('42501', 'futures_proposal_immutable');
         }
         if ('status' in patch && patch['status'] !== row['status']) {
-          if (row['status'] !== 'pending') return failure('42501', 'futures_demo_proposal_decided');
+          if (row['status'] !== 'pending') return failure('42501', 'futures_proposal_decided');
           if (
             patch['status'] === 'approved' &&
             clock.now() >= Date.parse(String(row['expires_at']))
           ) {
-            return failure('P0001', 'futures_demo_proposal_expired');
+            return failure('P0001', 'futures_proposal_expired');
           }
           row['decided_at'] = nowIso();
         }
       }
       if (
-        table === 'futures_demo_executions' &&
+        table === 'futures_executions' &&
         FINAL.includes(String(row['state'])) &&
         'state' in patch &&
         patch['state'] !== row['state']
       ) {
-        return failure('42501', 'futures_demo_execution_final');
+        return failure('42501', 'futures_execution_final');
+      }
+      if ('realized_pnl' in patch && row['realized_pnl'] != null) {
+        return failure('42501', 'futures_execution_result_recorded');
       }
       Object.assign(row, JSON.parse(JSON.stringify(patch)));
+      if (row['realized_pnl'] != null && (row['state'] !== 'closed' || row['filled_qty'] == null)) {
+        return failure('23514', 'futures_executions_check');
+      }
       changed.push(row);
     }
     save(table, list);
@@ -490,8 +557,12 @@ export function fakeSupabase(clock: Clock) {
       );
       return this;
     }
-    not(column: string, _operator: 'in', list: string) {
-      const values = list.slice(1, -1).split(',');
+    not(column: string, operator: 'in' | 'is', value: string | null) {
+      if (operator === 'is') {
+        this.filters.push((row) => row[column] !== value);
+        return this;
+      }
+      const values = String(value).slice(1, -1).split(',');
       this.filters.push((row) => !values.includes(String(row[column])));
       return this;
     }

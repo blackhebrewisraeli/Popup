@@ -1,10 +1,17 @@
 // @vitest-environment node
 /**
- * Pure parts of the futures-demo function: owner risk limits, the plan's exact arithmetic, the
- * callback binding and the Demo-only Binance client. SYNTHETIC values only.
+ * Pure parts of the futures-execution function: the owner's risk limits and 44 USDT budget, the
+ * plan's exact arithmetic, the callback binding and the Binance client. SYNTHETIC values only;
+ * no request leaves a test.
  */
 import { describe, expect, it } from 'vitest';
-import { DEMO_ORIGIN, demoClient, ROUTES } from '../../supabase/functions/futures-demo/binance';
+import {
+  FUTURES_ORIGIN,
+  futuresClient,
+  ROUTES,
+  SPOT_API_ORIGIN,
+} from '../../supabase/functions/futures-execution/binance';
+import { keyPermissionRefusal } from '../../supabase/functions/futures-execution/engine';
 import {
   callbackData,
   parseCallbackData,
@@ -14,10 +21,12 @@ import {
   planSha256,
   priceDrift,
   proposalText,
+  riskDrift,
+  signedDec,
   targetQuantities,
   type Plan,
-} from '../../supabase/functions/futures-demo/plan';
-import { RISK } from './futuresDemoFakes';
+} from '../../supabase/functions/futures-execution/plan';
+import { RISK } from './futuresFakes';
 
 const RULES = {
   tickSize: '0.01',
@@ -26,12 +35,11 @@ const RULES = {
   stepSize: '0.001',
   minQty: '0.001',
   maxQty: '1000',
-  marketStepSize: '0.001',
-  marketMinQty: '0.001',
   marketMaxQty: '100',
   minNotional: '5',
   percentUp: '1.05',
 };
+const E18 = 10n ** 18n;
 
 async function limits(overrides: Record<string, unknown> = {}) {
   const parsed = await parseRiskLimits(JSON.stringify({ ...RISK, ...overrides }));
@@ -39,34 +47,30 @@ async function limits(overrides: Record<string, unknown> = {}) {
   return parsed;
 }
 
-async function plan(overrides: Record<string, unknown> = {}, ask = '100.00', mark = '100.00') {
+async function plan(
+  overrides: Record<string, unknown> = {},
+  market: { ask?: string; mark?: string; fee?: string; cumulativeLoss?: bigint } = {},
+) {
   const { limits: l, sha256 } = await limits(overrides);
   return planLong({
-    candidate: {
-      symbol: 'ZCTAUSDT',
-      rule: 'synthetic',
-      synthetic: true,
-      signalReason: 'SYNTHETIC',
-    },
+    candidate: { symbol: 'ZCTAUSDT', rule: 'test-synthetic', signalReason: 'SYNTHETIC' },
     limits: l,
     limitsSha256: sha256,
     rules: RULES,
-    ask,
-    mark,
+    ask: market.ask ?? '100.00',
+    mark: market.mark ?? '100.00',
+    takerFeeRate: market.fee ?? '0.0005',
+    cumulativeLoss: market.cumulativeLoss ?? 0n,
     expiresAt: '2026-11-27T12:05:00.000Z',
   });
 }
 
 describe('owner risk limits', () => {
   it('stay unset until the owner supplies every one, with no defaults', async () => {
-    expect(await parseRiskLimits(undefined)).toEqual({
-      error: 'FUTURES_DEMO_RISK_LIMITS is not set',
-    });
-    expect(await parseRiskLimits('{')).toEqual({ error: 'FUTURES_DEMO_RISK_LIMITS is not JSON' });
-    expect(await parseRiskLimits('[]')).toEqual({
-      error: 'FUTURES_DEMO_RISK_LIMITS must be an object',
-    });
-    const { maxLossUsdt: _, ...missing } = RISK;
+    expect(await parseRiskLimits(undefined)).toEqual({ error: 'FUTURES_RISK_LIMITS is not set' });
+    expect(await parseRiskLimits('{')).toEqual({ error: 'FUTURES_RISK_LIMITS is not JSON' });
+    expect(await parseRiskLimits('[]')).toEqual({ error: 'FUTURES_RISK_LIMITS must be an object' });
+    const { maxLossPerTradeUsdt: _, ...missing } = RISK;
     expect(await parseRiskLimits(JSON.stringify(missing))).toMatchObject({
       error: expect.stringContaining('exactly'),
     });
@@ -75,12 +79,12 @@ describe('owner risk limits', () => {
     });
   });
 
-  it('refuse values out of bounds by name', async () => {
+  it('refuse values out of bounds by name, and a cumulative cap above the 44 USDT budget', async () => {
     const parsed = await parseRiskLimits(
       JSON.stringify({
         symbols: ['btc'],
-        maxLossUsdt: '0',
-        maxNotionalUsdt: '-1',
+        maxLossPerTradeUsdt: '0',
+        maxCumulativeLossUsdt: '45',
         stopDistancePercent: '25',
         takeProfitR: ['2', '1'],
         entrySlippageBps: 1.5,
@@ -90,7 +94,10 @@ describe('owner risk limits', () => {
     );
     expect(parsed).toEqual({
       error:
-        'FUTURES_DEMO_RISK_LIMITS has invalid symbols, maxLossUsdt, maxNotionalUsdt, stopDistancePercent, takeProfitR, entrySlippageBps, maxPriceMoveBps, proposalTtlSeconds',
+        'FUTURES_RISK_LIMITS has invalid symbols, maxLossPerTradeUsdt, maxCumulativeLossUsdt, stopDistancePercent, takeProfitR, entrySlippageBps, maxPriceMoveBps, proposalTtlSeconds',
+    });
+    expect(await parseRiskLimits(JSON.stringify({ ...RISK, maxLossPerTradeUsdt: '11' }))).toEqual({
+      error: 'FUTURES_RISK_LIMITS has invalid maxLossPerTradeUsdt',
     });
   });
 
@@ -99,12 +106,12 @@ describe('owner risk limits', () => {
     const a = await limits();
     const b = await parseRiskLimits(JSON.stringify(reordered));
     expect('sha256' in b && b.sha256).toBe(a.sha256);
-    expect((await limits({ maxLossUsdt: '3' })).sha256).not.toBe(a.sha256);
+    expect((await limits({ maxLossPerTradeUsdt: '3' })).sha256).not.toBe(a.sha256);
   });
 });
 
 describe('the Long plan', () => {
-  it('sizes by the loss cap and the notional cap with exact, grid-rounded decimals', async () => {
+  it('sizes by the fee-inclusive loss cap and the budget, with exact grid-rounded decimals', async () => {
     const p = (await plan()) as Plan;
     expect(p).toMatchObject({
       symbol: 'ZCTAUSDT',
@@ -114,33 +121,51 @@ describe('the Long plan', () => {
       referenceAsk: '100',
       entryLimit: '100.1',
       stopTrigger: '99',
-      // min(2 / 1.10 = 1.818…, 100 / 100.10 = 0.999…) → 0.999 on the 0.001 grid
-      quantity: '0.999',
-      notional: '99.9999',
-      initialMargin: '19.99998',
-      estimatedLossAtStop: '1.0989',
+      // loss per unit 1.1 + (100.1 + 99) × 0.0005 = 1.19955; 2 / 1.19955 = 1.6672… → 1.667
+      quantity: '1.667',
+      notional: '166.8667',
+      collateral: '33.37334',
+      estimatedLossAtStop: '1.99964985',
+      budgetUsdt: '44',
+      cumulativeLossBefore: '0',
       targets: [
         { r: '1', price: '101' },
         { r: '2', price: '102' },
       ],
     });
-    const lossBound = (await plan({ maxNotionalUsdt: '10000' })) as Plan;
-    expect(lossBound.quantity).toBe('1.818');
-    expect(Number(lossBound.estimatedLossAtStop)).toBeLessThanOrEqual(2);
+    // The collateral left of the budget binds: 4 USDT × 5 / 100.1 → 0.199.
+    const budgetBound = (await plan({}, { cumulativeLoss: 40n * E18 })) as Plan;
+    expect(budgetBound).toBe('The cumulative loss limit is reached (40 USDT)');
+    const near = (await plan(
+      { maxCumulativeLossUsdt: '44' },
+      { cumulativeLoss: 40n * E18 },
+    )) as Plan;
+    expect(near).toMatchObject({
+      quantity: '0.199',
+      collateral: '3.98398',
+      cumulativeLossBefore: '40',
+    });
+    // What is left of the cumulative cap binds: 0.5 / 1.19955 → 0.416.
+    const capBound = (await plan({}, { cumulativeLoss: (95n * E18) / 10n })) as Plan;
+    expect(capBound.quantity).toBe('0.416');
+  });
+
+  it('skips when even the smallest valid order breaks a limit', async () => {
+    expect(await plan({ maxLossPerTradeUsdt: '0.01' })).toBe(
+      'Skipped: the smallest valid order (0.05, 5.005 USDT notional, 1.001 USDT collateral, 0.0599775 USDT estimated loss) exceeds the limits (0.01 USDT loss, 44 USDT collateral left)',
+    );
+    expect(
+      await plan({ maxCumulativeLossUsdt: '44' }, { cumulativeLoss: (4395n * E18) / 100n }),
+    ).toMatch(/^Skipped: the smallest valid order .* 0\.05 USDT collateral left\)$/);
   });
 
   it('refuses what the owner or Binance filters do not allow', async () => {
     expect(await plan({ symbols: ['OTHERUSDT'] })).toBe(
       "ZCTAUSDT is not in the owner's allowed symbols",
     );
-    expect(await plan({ maxNotionalUsdt: '4' })).toBe(
-      'The risk limits allow less than the minimum notional',
-    );
-    expect(await plan({ maxLossUsdt: '0.0001' })).toBe(
-      'The risk limits allow less than the minimum quantity',
-    );
-    expect(await plan({}, '100.00', '90.00')).toBe('The entry limit breaks PERCENT_PRICE');
-    expect(await plan({}, 'abc')).toBe('The ask or mark price is unreadable');
+    expect(await plan({}, { mark: '90.00' })).toBe('The entry limit breaks PERCENT_PRICE');
+    expect(await plan({}, { ask: 'abc' })).toBe('The ask, mark price or fee rate is unreadable');
+    expect(await plan({}, { fee: '-1' })).toBe('The ask, mark price or fee rate is unreadable');
   });
 
   it('reads only TRADING USDT perpetual filters', () => {
@@ -153,7 +178,7 @@ describe('the Long plan', () => {
       filters: [{ filterType: 'PRICE_FILTER', tickSize: '0.01', minPrice: '0.01', maxPrice: '1' }],
     };
     expect(parseSymbolRules({ symbols: [] }, 'ZCTAUSDT')).toBe(
-      'ZCTAUSDT is not listed on Binance Futures Demo',
+      'ZCTAUSDT is not listed on Binance USDⓈ-M Futures',
     );
     expect(parseSymbolRules({ symbols: [{ ...entry, status: 'SETTLING' }] }, 'ZCTAUSDT')).toBe(
       'ZCTAUSDT is not TRADING',
@@ -171,23 +196,35 @@ describe('the Long plan', () => {
 
   it('sizes take-profits from the filled quantity, so a partial fill is fully covered', async () => {
     const p = (await plan()) as Plan;
-    expect(targetQuantities('0.999', p)).toEqual([
-      { price: '101', quantity: '0.499' },
-      { price: '102', quantity: '0.5' },
-    ]);
-    expect(targetQuantities('0.003', p)).toEqual([
-      { price: '101', quantity: '0.001' },
-      { price: '102', quantity: '0.002' },
+    expect(targetQuantities('1.667', p)).toEqual([
+      { price: '101', quantity: '0.833' },
+      { price: '102', quantity: '0.834' },
     ]);
     expect(targetQuantities('0.001', p)).toEqual([{ price: '101', quantity: '0.001' }]);
   });
 
-  it('detects a materially changed market on approval', async () => {
+  it('detects a materially changed market or risk room on approval', async () => {
     const p = (await plan()) as Plan;
     expect(priceDrift(p, '100.10')).toBeNull();
     expect(priceDrift(p, '100.11')).toBe('The ask 100.11 is above the approved limit 100.1');
     expect(priceDrift(p, '99.70')).toBe('The ask moved 30 bps from 100 (limit 20 bps)');
     expect(priceDrift(p, 'x')).toBe('The current ask is unreadable');
+    const { limits: l } = await limits();
+    expect(riskDrift(p, l, 0n)).toBeNull();
+    expect(riskDrift(p, l, 9n * E18)).toBe(
+      'The estimated loss 1.99964985 USDT exceeds the 1 USDT left',
+    );
+    const { limits: wide } = await limits({ maxCumulativeLossUsdt: '44' });
+    expect(riskDrift(p, wide, 12n * E18)).toBe(
+      'The collateral 33.37334 USDT exceeds what is left of the budget',
+    );
+  });
+
+  it('reads signed Binance amounts exactly', () => {
+    expect(signedDec('-1.5')).toBe((-15n * E18) / 10n);
+    expect(signedDec('2')).toBe(2n * E18);
+    expect(signedDec('1e3')).toBeNull();
+    expect(signedDec(3)).toBeNull();
   });
 });
 
@@ -198,15 +235,16 @@ describe('the Telegram proposal', () => {
     const sha = await planSha256(id, p);
     const text = proposalText(id, sha, p);
     for (const term of [
-      'SYNTHETIC CANDIDATE — not a trading signal',
-      'Binance Futures DEMO',
-      'ZCTAUSDT USDⓈ-M perpetual · LONG · isolated · 5×',
+      'LIVE Binance USDⓈ-M Futures proposal · rule test-synthetic',
+      'ZCTAUSDT perpetual · LONG · isolated · 5×',
       'Signal: SYNTHETIC',
-      'at most 100.1 (ask 100)',
-      'Size: 0.999 ZCTA',
+      'Entry bound: limit buy, immediate-or-cancel, at most 100.1 (ask 100)',
+      'Size: 1.667 ZCTA · notional ≤ 166.8667 USDT',
+      'Collateral: 33.37334 USDT',
       'Stop trigger: 99',
-      'Estimated loss at stop: 1.0989 USDT',
+      'Estimated loss at stop: 1.99964985 USDT',
       'Targets (reduce-only): 101 (1R), 102 (2R)',
+      'budget 44 USDT',
       'Expires: 2026-11-27 12:05 UTC',
     ]) {
       expect(text).toContain(term);
@@ -218,14 +256,14 @@ describe('the Telegram proposal', () => {
     expect(parseCallbackData('a:not-a-proposal')).toBeNull();
     expect(parseCallbackData(42)).toBeNull();
     // Any change to the terms changes the hash the buttons carry.
-    expect(await planSha256(id, { ...p, quantity: '0.998' })).not.toBe(sha);
+    expect(await planSha256(id, { ...p, quantity: '1.666' })).not.toBe(sha);
   });
 });
 
-describe('the Binance Demo client', () => {
+describe('the Binance client and key', () => {
   it('signs exactly like Binance’s documented HMAC example', async () => {
     let seen = '';
-    const client = demoClient({
+    const client = futuresClient({
       fetch: (async (input: string) => {
         seen = input;
         return new Response('{}', { status: 200 });
@@ -243,15 +281,20 @@ describe('the Binance Demo client', () => {
       timeInForce: 'GTC',
     });
     expect(seen).toBe(
-      `${DEMO_ORIGIN}/fapi/v1/order?symbol=BTCUSDT&side=BUY&type=LIMIT&quantity=1&price=9000&timeInForce=GTC&recvWindow=5000&timestamp=1591702613943&signature=3c661234138461fcc7a7d8746c6558c9842d4e10870d2ecbedf7777cad694af9`,
+      `${FUTURES_ORIGIN}/fapi/v1/order?symbol=BTCUSDT&side=BUY&type=LIMIT&quantity=1&price=9000&timeInForce=GTC&recvWindow=5000&timestamp=1591702613943&signature=3c661234138461fcc7a7d8746c6558c9842d4e10870d2ecbedf7777cad694af9`,
     );
   });
 
-  it('reaches only the Demo host and separates unknown outcomes from rejections', async () => {
-    expect(DEMO_ORIGIN).toBe('https://demo-fapi.binance.com');
-    expect(Object.values(ROUTES).every(([, path]) => path.startsWith('/fapi/'))).toBe(true);
+  it('reaches only its fixed routes and separates unknown outcomes from rejections', async () => {
+    expect(FUTURES_ORIGIN).toBe('https://fapi.binance.com');
+    for (const route of Object.values(ROUTES)) {
+      const [, path, , origin] = route as readonly [string, string, boolean, string?];
+      expect(origin === undefined ? path.startsWith('/fapi/') : origin === SPOT_API_ORIGIN).toBe(
+        true,
+      );
+    }
     const answer = (status: number, body: unknown) =>
-      demoClient({
+      futuresClient({
         fetch: (async () =>
           new Response(JSON.stringify(body), { status })) as unknown as typeof fetch,
         now: () => 0,
@@ -268,10 +311,9 @@ describe('the Binance Demo client', () => {
       ).kind,
     ).toBe('unknown');
     expect((await answer(503, { code: -1001, msg: 'Service Unavailable.' })).kind).toBe('rejected');
-    expect(
-      (await answer(400, { code: -1007, msg: 'Timeout waiting for response from backend server.' }))
-        .kind,
-    ).toBe('unknown');
+    expect((await answer(400, { code: -1007, msg: 'Timeout waiting for response.' })).kind).toBe(
+      'unknown',
+    );
     expect((await answer(408, {})).kind).toBe('unknown');
     expect((await answer(502, {})).kind).toBe('unknown');
     expect(await answer(400, { code: -2019, msg: 'Margin is insufficient.' })).toEqual({
@@ -280,7 +322,7 @@ describe('the Binance Demo client', () => {
       code: -2019,
       msg: 'Margin is insufficient.',
     });
-    const thrown = demoClient({
+    const thrown = futuresClient({
       fetch: (async () => {
         throw new DOMException('slow', 'TimeoutError');
       }) as unknown as typeof fetch,
@@ -289,7 +331,7 @@ describe('the Binance Demo client', () => {
       apiSecret: 's',
     });
     expect(await thrown.call('queryOrder')).toEqual({ kind: 'unknown', reason: 'TimeoutError' });
-    const unreadable = demoClient({
+    const unreadable = futuresClient({
       fetch: (async () => new Response('not json', { status: 200 })) as unknown as typeof fetch,
       now: () => 0,
       apiKey: 'k',
@@ -299,5 +341,30 @@ describe('the Binance Demo client', () => {
       kind: 'unknown',
       reason: 'unreadable 2xx',
     });
+  });
+
+  it('accepts only a Futures-trading key with no withdrawal, transfer or other market', () => {
+    const key = {
+      enableReading: true,
+      enableFutures: true,
+      enableWithdrawals: false,
+      enableInternalTransfer: false,
+      permitsUniversalTransfer: false,
+      enableSpotAndMarginTrading: false,
+      enableMargin: false,
+      enableVanillaOptions: false,
+      enablePortfolioMarginTrading: false,
+    };
+    expect(keyPermissionRefusal(key)).toBeNull();
+    expect(keyPermissionRefusal(null)).toBe('Could not verify the API key permissions');
+    expect(keyPermissionRefusal({ ...key, enableFutures: false })).toBe(
+      'The API key lacks enableFutures',
+    );
+    expect(keyPermissionRefusal({ ...key, permitsUniversalTransfer: undefined })).toBe(
+      'The API key must not have permitsUniversalTransfer',
+    );
+    expect(keyPermissionRefusal({ ...key, enableSpotAndMarginTrading: true })).toBe(
+      'The API key must not have enableSpotAndMarginTrading',
+    );
   });
 });

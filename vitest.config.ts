@@ -23,6 +23,7 @@ export default defineConfig({
         'supabase/functions/_shared/feed.ts',
         'supabase/functions/tv-webhook/index.ts',
         'supabase/functions/binance-spot-account/index.ts',
+        'supabase/functions/futures-execution/index.ts',
       ],
     },
   },

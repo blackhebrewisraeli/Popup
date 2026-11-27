@@ -1,33 +1,40 @@
-// The only way the futures-demo function talks to Binance: the USDⓈ-M Futures Demo host, a fixed
-// table of routes, HMAC-SHA256 signed. There is no origin setting, so a live key or host can't be
-// configured in: a live key fails authentication on the Demo host.
+// The only way the futures-execution function talks to Binance: a fixed table of routes on the
+// USDⓈ-M Futures host (plus the one key-permission read on the Spot API host), HMAC-SHA256 signed.
+// The caller can't choose a host, path or method. Live credentials are the function's own
+// BINANCE_FUTURES_* secrets, separate from the read-only Spot connection's.
 //
 // Binance references (read 2026-11-27):
-//   Demo/testnet REST base URL "https://demo-fapi.binance.com", signing, recvWindow, HTTP 503
-//   variants: https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info
+//   Base URL https://fapi.binance.com, signing, recvWindow, HTTP 503 variants:
+//     https://developers.binance.com/docs/derivatives/usds-margined-futures/general-info
 //   Error codes (-1006/-1007 execution status unknown, -2013, -4116):
 //     https://developers.binance.com/docs/derivatives/usds-margined-futures/error-code
 //   Conditional orders on the Algo Service since 2025-12-09 (POST /fapi/v1/algoOrder):
 //     https://developers.binance.com/docs/derivatives/change-log
-//   Orders, algo orders, account and symbol configuration, position risk:
+//   Orders, algo orders, account and symbol configuration, position risk, commission, income:
 //     https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api
 //     https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api
+//   Key permissions (GET /sapi/v1/account/apiRestrictions):
+//     https://developers.binance.com/docs/wallet/account/api-key-permission
 
 import { hmacSha256Hex } from '../binance-spot-account/handler.ts';
 
-export const DEMO_ORIGIN = 'https://demo-fapi.binance.com';
+export const FUTURES_ORIGIN = 'https://fapi.binance.com';
+export const SPOT_API_ORIGIN = 'https://api.binance.com';
 /** Binance's default. Also the window after which an unanswered order can no longer be accepted. */
 export const RECV_WINDOW_MS = 5000;
 const REQUEST_TIMEOUT_MS = 8000;
 
-/** Every Binance request this function can make: [method, path, signed]. */
+/** Every Binance request this function can make: [method, path, signed, origin]. */
 export const ROUTES = {
+  apiRestrictions: ['GET', '/sapi/v1/account/apiRestrictions', true, SPOT_API_ORIGIN],
   exchangeInfo: ['GET', '/fapi/v1/exchangeInfo', false],
   bookTicker: ['GET', '/fapi/v1/ticker/bookTicker', false],
   premiumIndex: ['GET', '/fapi/v1/premiumIndex', false],
   accountConfig: ['GET', '/fapi/v1/accountConfig', true],
   symbolConfig: ['GET', '/fapi/v1/symbolConfig', true],
   balance: ['GET', '/fapi/v3/balance', true],
+  commissionRate: ['GET', '/fapi/v1/commissionRate', true],
+  income: ['GET', '/fapi/v1/income', true],
   positionRisk: ['GET', '/fapi/v3/positionRisk', true],
   openOrders: ['GET', '/fapi/v1/openOrders', true],
   openAlgoOrders: ['GET', '/fapi/v1/openAlgoOrders', true],
@@ -54,22 +61,27 @@ export type Outcome =
   | { kind: 'rejected'; status: number; code: number; msg: string }
   | { kind: 'unknown'; reason: string };
 
-export interface DemoClient {
+export interface FuturesClient {
   call(route: Route, params?: Record<string, string>): Promise<Outcome>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-export function demoClient(deps: {
+export function futuresClient(deps: {
   fetch: typeof fetch;
   now: () => number;
   apiKey: string;
   apiSecret: string;
-}): DemoClient {
+}): FuturesClient {
   return {
     async call(route, params = {}) {
-      const [method, path, signed] = ROUTES[route];
+      const [method, path, signed, origin = FUTURES_ORIGIN] = ROUTES[route] as readonly [
+        string,
+        string,
+        boolean,
+        string?,
+      ];
       const query = new URLSearchParams(params);
       if (signed) {
         query.set('recvWindow', String(RECV_WINDOW_MS));
@@ -80,7 +92,7 @@ export function demoClient(deps: {
       let res: Response;
       let body: unknown;
       try {
-        res = await deps.fetch(`${DEMO_ORIGIN}${path}${text ? `?${text}` : ''}`, {
+        res = await deps.fetch(`${origin}${path}${text ? `?${text}` : ''}`, {
           method,
           headers: signed ? { 'X-MBX-APIKEY': deps.apiKey } : {},
           redirect: 'error',
