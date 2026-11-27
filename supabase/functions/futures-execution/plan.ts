@@ -455,6 +455,47 @@ const PRICE_NAMES = {
   stopLoss: 'stop loss',
   takeProfit: 'take profit',
 } as const;
+type CandidatePrices = Record<keyof typeof PRICE_NAMES, bigint>;
+
+/** Why the candidate's side, trigger price type or the sizing is not one planOrder knows, or null. */
+function candidateRefusal(c: OrderCandidate, sizing: Sizing): string | null {
+  if (c.side !== 'LONG' && c.side !== 'SHORT') return 'The side must be LONG or SHORT';
+  if (c.entryTriggerPriceType !== 'MARK_PRICE' && c.entryTriggerPriceType !== 'CONTRACT_PRICE') {
+    return 'The entry trigger price type must be MARK_PRICE or CONTRACT_PRICE';
+  }
+  if (sizing !== 'risk' && sizing !== 'maxCollateral') {
+    return 'The sizing must be risk or maxCollateral';
+  }
+  return null;
+}
+
+/** The candidate's prices, each on the tick grid within the price filter and in side order. */
+function candidatePrices(c: OrderCandidate, r: Grid): CandidatePrices | string {
+  const price = {} as CandidatePrices;
+  for (const [key, name] of Object.entries(PRICE_NAMES) as [keyof typeof PRICE_NAMES, string][]) {
+    const value = dec(c[key]);
+    const onGrid =
+      !!value &&
+      value >= r.minPrice &&
+      (r.maxPrice === 0n || value <= r.maxPrice) &&
+      (value - r.minPrice) % r.tickSize === 0n;
+    if (!onGrid) {
+      return `The ${name} ${String(c[key])} is not a price on the ${fmt(r.tickSize)} tick grid within the price filter`;
+    }
+    price[key] = value;
+  }
+  const { entryTrigger: trigger, entryLimit: limit, stopLoss: stop, takeProfit: target } = price;
+  const short = c.side === 'SHORT';
+  const ordered = short
+    ? target < limit && limit <= trigger && trigger < stop
+    : stop < trigger && trigger <= limit && limit < target;
+  if (!ordered) {
+    return short
+      ? 'A SHORT needs take profit < entry limit ≤ entry trigger < stop loss'
+      : 'A LONG needs stop loss < entry trigger ≤ entry limit < take profit';
+  }
+  return price;
+}
 
 /**
  * Plan one Long or Short from a candidate's own prices, sized from the entry limit:
@@ -485,39 +526,18 @@ export function planOrder(input: {
   if (!limits.symbols.includes(c.symbol)) {
     return `${c.symbol} is not in the owner's allowed symbols`;
   }
-  if (c.side !== 'LONG' && c.side !== 'SHORT') return 'The side must be LONG or SHORT';
-  if (c.entryTriggerPriceType !== 'MARK_PRICE' && c.entryTriggerPriceType !== 'CONTRACT_PRICE') {
-    return 'The entry trigger price type must be MARK_PRICE or CONTRACT_PRICE';
-  }
-  if (sizing !== 'risk' && sizing !== 'maxCollateral')
-    return 'The sizing must be risk or maxCollateral';
+  const refusal = candidateRefusal(c, sizing);
+  if (refusal) return refusal;
   const fee = dec(input.takerFeeRate);
   const available = dec(input.availableCollateral);
   if (fee === null || available === null || !intIn(input.stopSlippageBps, 0, 500)) {
     return 'The fee rate, stop slippage or available collateral is unreadable';
   }
   const r = grid(rules);
-  const price = {} as Record<keyof typeof PRICE_NAMES, bigint>;
-  for (const [key, name] of Object.entries(PRICE_NAMES) as [keyof typeof PRICE_NAMES, string][]) {
-    const value = dec(c[key]);
-    if (
-      !value ||
-      value < r.minPrice ||
-      (r.maxPrice > 0n && value > r.maxPrice) ||
-      (value - r.minPrice) % r.tickSize !== 0n
-    ) {
-      return `The ${name} ${String(c[key])} is not a price on the ${fmt(r.tickSize)} tick grid within the price filter`;
-    }
-    price[key] = value;
-  }
+  const price = candidatePrices(c, r);
+  if (typeof price === 'string') return price;
   const { entryTrigger: trigger, entryLimit: limit, stopLoss: stop, takeProfit: target } = price;
   const short = c.side === 'SHORT';
-  if (short && !(target < limit && limit <= trigger && trigger < stop)) {
-    return 'A SHORT needs take profit < entry limit ≤ entry trigger < stop loss';
-  }
-  if (!short && !(stop < trigger && trigger <= limit && limit < target)) {
-    return 'A LONG needs stop loss < entry trigger ≤ entry limit < take profit';
-  }
   const slip = bps(BigInt(input.stopSlippageBps));
   const stopFill = short
     ? ceilGrid(mul(stop, SCALE + slip), r.minPrice, r.tickSize)
