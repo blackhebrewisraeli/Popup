@@ -2,8 +2,9 @@
 // limits, Binance symbol rules, the immutable proposal plan, its hash and its Telegram text.
 // No Deno global, network or clock: vitest covers it from src/test.
 //
-// Fixed in code, not configuration: Binance USDⓈ-M Futures, USDT perpetuals, Long only, isolated
-// margin, 5× leverage, and the owner's 44 USDT total experiment budget.
+// Fixed in code, not configuration: Binance USDⓈ-M Futures, USDT perpetuals, isolated margin, 5×
+// leverage, and the owner's 44 USDT total experiment budget. The live flow proposes Long only
+// (planLong); planOrder plans a caller's Long or Short as a local dry run that nothing sends.
 
 import { stableSerialize } from '../_shared/stableSerialize.ts';
 import { webSha256 } from '../_shared/webSha256.ts';
@@ -54,6 +55,8 @@ const floorGrid = (value: bigint, min: bigint, step: bigint) =>
 const ceilGrid = (value: bigint, min: bigint, step: bigint) =>
   value <= min ? min : min + ((value - min + step - 1n) / step) * step;
 const least = (a: bigint, b: bigint) => (a < b ? a : b);
+/** Initial margin at 5×: the collateral an order commits. */
+const collateralOf = (qty: bigint, entry: bigint) => mul(qty, entry) / BigInt(LEVERAGE);
 
 export interface RiskLimits {
   /** Contracts the owner allows, e.g. ["BTCUSDT"]. */
@@ -246,6 +249,53 @@ export interface Candidate {
   signalReason: string;
 }
 
+/** The symbol's filters as exact decimals (parseSymbolRules guarantees each is readable). */
+type Grid = Record<keyof SymbolRules, bigint>;
+function grid(rules: SymbolRules): Grid {
+  return Object.fromEntries(Object.entries(rules).map(([k, v]) => [k, dec(v) as bigint])) as Grid;
+}
+
+/**
+ * The largest quantity on the lot grid, at most the market lot maximum (the stop closes at market),
+ * whose loss at the stop stays within `lossRoom` and whose collateral (initial margin, plus the
+ * `entryFee` rate on the notional when the caller reserves it) stays within `collateralRoom`.
+ * A null `lossRoom` leaves the loss out of the sizing; the caller checks it afterwards.
+ * If even the smallest order Binance accepts (minQty, MIN_NOTIONAL, step) breaks a room: skipped.
+ */
+function sizeWithin(o: {
+  entry: bigint;
+  lossPerUnit: bigint;
+  lossRoom: bigint | null;
+  collateralRoom: bigint;
+  r: Grid;
+  entryFee?: bigint;
+}): bigint | string {
+  const { entry, lossPerUnit, lossRoom, collateralRoom, r, entryFee = 0n } = o;
+  const lossOf = (qty: bigint) => mul(qty, lossPerUnit);
+  const committed = (qty: bigint) => collateralOf(qty, entry) + mul(mul(qty, entry), entryFee);
+  const maxQty = least(r.maxQty, r.marketMaxQty);
+  const smallest = ceilGrid(
+    r.minQty > div(r.minNotional, entry) ? r.minQty : div(r.minNotional, entry),
+    r.minQty,
+    r.stepSize,
+  );
+  if (smallest > maxQty) return 'The smallest valid order is above the maximum quantity';
+  if ((lossRoom !== null && lossOf(smallest) > lossRoom) || committed(smallest) > collateralRoom) {
+    const room = lossRoom === null ? '' : `${fmt(lossRoom)} USDT loss, `;
+    return (
+      `Skipped: the smallest valid order (${fmt(smallest)}, ${fmt(mul(smallest, entry))} USDT ` +
+      `notional, ${fmt(collateralOf(smallest, entry))} USDT collateral, ${fmt(lossOf(smallest))} USDT ` +
+      `estimated loss) exceeds the limits (${room}${fmt(collateralRoom)} USDT collateral left)`
+    );
+  }
+  const byCollateral = div(
+    collateralRoom * BigInt(LEVERAGE),
+    entry + mul(entry, entryFee) * BigInt(LEVERAGE),
+  );
+  const cap = lossRoom === null ? byCollateral : least(div(lossRoom, lossPerUnit), byCollateral);
+  return floorGrid(least(cap, maxQty), r.minQty, r.stepSize);
+}
+
 /**
  * Size one Long from the reference ask: a limit-IOC entry at most `entrySlippageBps` above it, a
  * stop `stopDistancePercent` below it, and the largest quantity on the lot grid such that
@@ -273,9 +323,7 @@ export function planLong(input: {
   const mark = dec(input.mark);
   const fee = dec(input.takerFeeRate);
   if (!ask || !mark || fee === null) return 'The ask, mark price or fee rate is unreadable';
-  const r = Object.fromEntries(
-    Object.entries(rules).map(([k, v]) => [k, dec(v) as bigint]),
-  ) as Record<keyof SymbolRules, bigint>;
+  const r = grid(rules);
   const lossRoom = least(limits.maxLossPerTradeUsdt, limits.maxCumulativeLossUsdt - cumulativeLoss);
   const collateralRoom = EXPERIMENT_BUDGET_USDT - cumulativeLoss;
   if (lossRoom <= 0n) return `The cumulative loss limit is reached (${fmt(cumulativeLoss)} USDT)`;
@@ -295,27 +343,8 @@ export function planLong(input: {
   );
   if (stopTrigger <= 0n || stopTrigger < r.minPrice) return 'The stop trigger is below minPrice';
   const lossPerUnit = entryLimit - stopTrigger + mul(entryLimit + stopTrigger, fee);
-  const lossOf = (qty: bigint) => mul(qty, lossPerUnit);
-  const collateralOf = (qty: bigint) => mul(qty, entryLimit) / BigInt(LEVERAGE);
-
-  const maxQty = least(r.maxQty, r.marketMaxQty);
-  const smallest = ceilGrid(
-    r.minQty > div(r.minNotional, entryLimit) ? r.minQty : div(r.minNotional, entryLimit),
-    r.minQty,
-    r.stepSize,
-  );
-  if (smallest > maxQty) return 'The smallest valid order is above the maximum quantity';
-  if (lossOf(smallest) > lossRoom || collateralOf(smallest) > collateralRoom) {
-    return (
-      `Skipped: the smallest valid order (${fmt(smallest)}, ${fmt(mul(smallest, entryLimit))} USDT ` +
-      `notional, ${fmt(collateralOf(smallest))} USDT collateral, ${fmt(lossOf(smallest))} USDT ` +
-      `estimated loss) exceeds the limits (${fmt(lossRoom)} USDT loss, ${fmt(collateralRoom)} USDT ` +
-      'collateral left)'
-    );
-  }
-  const byLoss = div(lossRoom, lossPerUnit);
-  const byCollateral = div(collateralRoom * BigInt(LEVERAGE), entryLimit);
-  const quantity = floorGrid(least(least(byLoss, byCollateral), maxQty), r.minQty, r.stepSize);
+  const quantity = sizeWithin({ entry: entryLimit, lossPerUnit, lossRoom, collateralRoom, r });
+  if (typeof quantity === 'string') return quantity;
 
   const targets = targetPrices(limits.takeProfitR, ask, stopTrigger, entryLimit, r);
   if (typeof targets === 'string') return targets;
@@ -333,10 +362,10 @@ export function planLong(input: {
     entryLimit: fmt(entryLimit),
     quantity: fmt(quantity),
     notional: fmt(mul(quantity, entryLimit)),
-    collateral: fmt(collateralOf(quantity)),
+    collateral: fmt(collateralOf(quantity, entryLimit)),
     stopTrigger: fmt(stopTrigger),
     takerFeeRate: fmt(fee),
-    estimatedLossAtStop: fmt(lossOf(quantity)),
+    estimatedLossAtStop: fmt(mul(quantity, lossPerUnit)),
     targets,
     budgetUsdt: fmt(EXPERIMENT_BUDGET_USDT),
     cumulativeLossBefore: fmt(cumulativeLoss),
@@ -352,7 +381,7 @@ function targetPrices(
   ask: bigint,
   stopTrigger: bigint,
   entryLimit: bigint,
-  r: Record<keyof SymbolRules, bigint>,
+  r: Grid,
 ): Target[] | string {
   const targets: Target[] = [];
   for (const multiple of multiples) {
@@ -362,6 +391,214 @@ function targetPrices(
     targets.push({ r: fmt(multiple), price: fmt(price) });
   }
   return targets;
+}
+
+export type Side = 'LONG' | 'SHORT';
+/** Binance workingType: the mark price, or the contract's last price. */
+export type TriggerPriceType = 'MARK_PRICE' | 'CONTRACT_PRICE';
+/** 'risk': the largest size within the loss limits. 'maxCollateral': all collateral available. */
+export type Sizing = 'risk' | 'maxCollateral';
+
+/**
+ * A caller's setup with its own prices. The entry is a stop-limit: when the trigger price crosses
+ * `entryTrigger` (≥ for a LONG, ≤ for a SHORT) a limit order at `entryLimit` is placed.
+ * `stopLoss` and `takeProfit` are the protective exit triggers.
+ */
+export interface OrderCandidate {
+  symbol: string;
+  side: Side;
+  entryTrigger: string;
+  entryTriggerPriceType: TriggerPriceType;
+  entryLimit: string;
+  stopLoss: string;
+  takeProfit: string;
+}
+
+/** A dry-run Long or Short plan for local review. Never stored, hashed, sent or placed. */
+export interface OrderPlan {
+  environment: typeof ENVIRONMENT;
+  symbol: string;
+  side: Side;
+  leverage: typeof LEVERAGE;
+  marginType: 'ISOLATED';
+  sizing: Sizing;
+  entryTrigger: string;
+  entryTriggerPriceType: TriggerPriceType;
+  /** The worst price the entry can fill at; size, notional and loss are computed from it. */
+  entryLimit: string;
+  takeProfit: string;
+  stopLoss: string;
+  quantity: string;
+  notional: string;
+  /** Initial margin at 5×, before fees. Sizing also reserves the entry fee beside it. */
+  collateral: string;
+  takerFeeRate: string;
+  stopSlippageBps: string;
+  /** Where the loss estimate assumes the stop fills: slipped, then onto the tick grid against us. */
+  modeledStopFill: string;
+  /** Taker fees on the entry and on the stop exit. */
+  estimatedFeesAtStop: string;
+  /** A planned estimate: gaps, wider slippage and funding can exceed it. */
+  estimatedLossAtStop: string;
+  /** The lesser of the per-trade cap and what is left of the cumulative cap. */
+  maxLossUsdt: string;
+  /** The lesser of the available collateral and what is left of the 44 USDT budget. */
+  collateralRoom: string;
+  cumulativeLossBefore: string;
+  budgetUsdt: string;
+  rules: SymbolRules;
+}
+
+const PRICE_NAMES = {
+  entryTrigger: 'entry trigger',
+  entryLimit: 'entry limit',
+  stopLoss: 'stop loss',
+  takeProfit: 'take profit',
+} as const;
+
+/**
+ * Plan one Long or Short from a candidate's own prices, sized from the entry limit:
+ *   - every price on the tick grid within the price filter, in side order:
+ *     LONG  stop loss < entry trigger ≤ entry limit < take profit,
+ *     SHORT take profit < entry limit ≤ entry trigger < stop loss;
+ *   - loss per unit = the move from the entry limit to the modeled stop fill, plus the taker fee
+ *     on both fills; the modeled fill is `stopSlippageBps` past the stop, rounded onto the tick
+ *     grid away from the trader (fills only happen on the grid);
+ *   - 'risk' sizing takes the largest lot-grid quantity whose loss fits the lesser of the per-trade
+ *     cap and what is left of the cumulative cap, and whose initial margin plus entry fee fits
+ *     the lesser of the available collateral and what is left of the 44 USDT budget;
+ *   - 'maxCollateral' sizing fills that collateral room and is refused, with its size and loss,
+ *     when that loss breaks the loss limits.
+ * PERCENT_PRICE is not checked: it depends on the mark price when the trigger fires.
+ */
+export function planOrder(input: {
+  candidate: OrderCandidate;
+  limits: Pick<RiskLimits, 'symbols' | 'maxLossPerTradeUsdt' | 'maxCumulativeLossUsdt'>;
+  rules: SymbolRules;
+  takerFeeRate: string;
+  stopSlippageBps: number;
+  availableCollateral: string;
+  cumulativeLoss: bigint;
+  sizing?: Sizing;
+}): OrderPlan | string {
+  const { candidate: c, limits, rules, cumulativeLoss, sizing = 'risk' } = input;
+  if (!limits.symbols.includes(c.symbol)) {
+    return `${c.symbol} is not in the owner's allowed symbols`;
+  }
+  if (c.side !== 'LONG' && c.side !== 'SHORT') return 'The side must be LONG or SHORT';
+  if (c.entryTriggerPriceType !== 'MARK_PRICE' && c.entryTriggerPriceType !== 'CONTRACT_PRICE') {
+    return 'The entry trigger price type must be MARK_PRICE or CONTRACT_PRICE';
+  }
+  if (sizing !== 'risk' && sizing !== 'maxCollateral')
+    return 'The sizing must be risk or maxCollateral';
+  const fee = dec(input.takerFeeRate);
+  const available = dec(input.availableCollateral);
+  if (fee === null || available === null || !intIn(input.stopSlippageBps, 0, 500)) {
+    return 'The fee rate, stop slippage or available collateral is unreadable';
+  }
+  const r = grid(rules);
+  const price = {} as Record<keyof typeof PRICE_NAMES, bigint>;
+  for (const [key, name] of Object.entries(PRICE_NAMES) as [keyof typeof PRICE_NAMES, string][]) {
+    const value = dec(c[key]);
+    if (
+      !value ||
+      value < r.minPrice ||
+      (r.maxPrice > 0n && value > r.maxPrice) ||
+      (value - r.minPrice) % r.tickSize !== 0n
+    ) {
+      return `The ${name} ${String(c[key])} is not a price on the ${fmt(r.tickSize)} tick grid within the price filter`;
+    }
+    price[key] = value;
+  }
+  const { entryTrigger: trigger, entryLimit: limit, stopLoss: stop, takeProfit: target } = price;
+  const short = c.side === 'SHORT';
+  if (short && !(target < limit && limit <= trigger && trigger < stop)) {
+    return 'A SHORT needs take profit < entry limit ≤ entry trigger < stop loss';
+  }
+  if (!short && !(stop < trigger && trigger <= limit && limit < target)) {
+    return 'A LONG needs stop loss < entry trigger ≤ entry limit < take profit';
+  }
+  const slip = bps(BigInt(input.stopSlippageBps));
+  const stopFill = short
+    ? ceilGrid(mul(stop, SCALE + slip), r.minPrice, r.tickSize)
+    : floorGrid(mul(stop, SCALE - slip), r.minPrice, r.tickSize);
+  if (stopFill < r.minPrice) return 'The modeled stop fill is below minPrice';
+  const lossPerUnit = (short ? stopFill - limit : limit - stopFill) + mul(limit + stopFill, fee);
+
+  const lossRoom = least(limits.maxLossPerTradeUsdt, limits.maxCumulativeLossUsdt - cumulativeLoss);
+  if (lossRoom <= 0n) return `The cumulative loss limit is reached (${fmt(cumulativeLoss)} USDT)`;
+  const collateralRoom = least(available, EXPERIMENT_BUDGET_USDT - cumulativeLoss);
+  const quantity = sizeWithin({
+    entry: limit,
+    lossPerUnit,
+    lossRoom: sizing === 'risk' ? lossRoom : null,
+    collateralRoom,
+    r,
+    entryFee: fee,
+  });
+  if (typeof quantity === 'string') return quantity;
+  const notional = mul(quantity, limit);
+  const loss = mul(quantity, lossPerUnit);
+  if (loss > lossRoom) {
+    return (
+      `Refused: maximum-collateral sizing gives ${fmt(quantity)} ${c.symbol.replace(/USDT$/, '')} ` +
+      `(${fmt(notional)} USDT notional, ${fmt(collateralOf(quantity, limit))} USDT collateral) ` +
+      `with ${fmt(loss)} USDT estimated loss at the stop, above the ${fmt(lossRoom)} USDT loss limit`
+    );
+  }
+  return {
+    environment: ENVIRONMENT,
+    symbol: c.symbol,
+    side: c.side,
+    leverage: LEVERAGE,
+    marginType: 'ISOLATED',
+    sizing,
+    entryTrigger: fmt(trigger),
+    entryTriggerPriceType: c.entryTriggerPriceType,
+    entryLimit: fmt(limit),
+    takeProfit: fmt(target),
+    stopLoss: fmt(stop),
+    quantity: fmt(quantity),
+    notional: fmt(notional),
+    collateral: fmt(collateralOf(quantity, limit)),
+    takerFeeRate: fmt(fee),
+    stopSlippageBps: String(input.stopSlippageBps),
+    modeledStopFill: fmt(stopFill),
+    estimatedFeesAtStop: fmt(mul(quantity, mul(limit + stopFill, fee))),
+    estimatedLossAtStop: fmt(loss),
+    maxLossUsdt: fmt(lossRoom),
+    collateralRoom: fmt(collateralRoom),
+    cumulativeLossBefore: fmt(cumulativeLoss),
+    budgetUsdt: fmt(EXPERIMENT_BUDGET_USDT),
+    rules,
+  };
+}
+
+const TRIGGER_LABEL: Record<TriggerPriceType, string> = {
+  MARK_PRICE: 'Mark Price',
+  CONTRACT_PRICE: 'Last Price',
+};
+
+/** The dry-run plan as plain text for the owner's review. Nothing is sent. */
+export function orderPlanText(plan: OrderPlan): string {
+  const short = plan.side === 'SHORT';
+  return [
+    'DRY RUN · Binance USDⓈ-M Futures order plan · not sent',
+    '',
+    `Contract: ${plan.symbol} perpetual · ${plan.side} · isolated · ${plan.leverage}× · ` +
+      (plan.sizing === 'risk' ? 'risk-sized' : 'maximum collateral'),
+    `Entry trigger: ${TRIGGER_LABEL[plan.entryTriggerPriceType]} ${short ? '<=' : '>='} ${plan.entryTrigger}`,
+    `Entry limit: ${short ? 'sell' : 'buy'} at ${plan.entryLimit} (the worst entry price; sizing uses it)`,
+    `Size: ${plan.quantity} ${plan.symbol.replace(/USDT$/, '')} · notional ${plan.notional} USDT`,
+    `Collateral: ${plan.collateral} USDT initial margin (before fees)`,
+    `Exits: take profit ${plan.takeProfit} · stop loss ${plan.stopLoss}`,
+    `Planned loss at stop: ${plan.estimatedLossAtStop} USDT if the stop fills at ${plan.modeledStopFill} ` +
+      `(${plan.stopSlippageBps} bps slippage, on the tick grid), taker fees ${plan.estimatedFeesAtStop} USDT ` +
+      `(${plan.takerFeeRate} per fill) included`,
+    `Limits: loss ${plan.maxLossUsdt} USDT · collateral ${plan.collateralRoom} USDT · ` +
+      `cumulative loss ${plan.cumulativeLossBefore} USDT before this trade · budget ${plan.budgetUsdt} USDT`,
+    'Actual execution can lose more: gaps past the stop, wider slippage and funding are not capped.',
+  ].join('\n');
 }
 
 /** The proposal's identity: its id and every approved term. */

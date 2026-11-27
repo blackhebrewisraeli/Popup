@@ -76,6 +76,33 @@ not in the estimate. A real loss can exceed it.
 closed trade whose result can't be verified stops new proposals. That happens when a commission or
 funding entry isn't in USDT (BNB fee payment), or no realized-PnL entry exists yet.
 
+## Dry-run Long/Short plans (local only)
+
+`planOrder` in [`plan.ts`](../supabase/functions/futures-execution/plan.ts) plans one Long or Short
+from a candidate that brings its own prices: an entry trigger on mark or last price (`>=` for a
+Long, `<=` for a Short), an entry limit, a stop loss and a take profit. Only the tests call it. The
+live flow, the engine and the Telegram proposal still use the Long-only plan above, and nothing from
+`planOrder` is stored, sent or placed.
+
+- Every price must sit on the tick grid inside the price filter, in side order: Long
+  `stop < trigger ≤ limit < take profit`, Short `take profit < limit ≤ trigger < stop`.
+- Size, notional and loss come from the entry limit, the worst price the limit can fill at. The
+  quantity rounds down to the lot grid, and the smallest order (`minQty`, `MIN_NOTIONAL`) must fit.
+- The loss at the stop assumes the stop fills `stopSlippageBps` past its trigger, then on the next
+  tick against the trade, plus the taker fee on both fills. It is a planned estimate. Gaps, wider
+  slippage and funding can exceed it.
+- Risk sizing (default) takes the largest quantity whose loss fits the lesser of
+  `maxLossPerTradeUsdt` and what is left of `maxCumulativeLossUsdt`, and whose initial margin plus
+  entry fee fits the lesser of the available collateral and what is left of the 44 USDT budget.
+  Maximum-collateral sizing fills that collateral room and is refused, with its size and loss, if
+  the loss breaks those limits.
+
+Synthetic SOLUSDT Short (5 bps taker fee per fill, 5 bps stop slippage, 2 USDT cap, 43.92 USDT
+available): the stop fill is 72.14 × 1.0005 = 72.17607, so 72.18. The loss per unit is
+2.18 + (70 + 72.18) × 0.0005 = 2.25109. 2 ÷ 2.25109 rounds down to 0.88 SOL: 61.6 USDT notional,
+12.32 USDT collateral, 1.9809592 USDT planned loss. Maximum-collateral sizing would take 3.12 SOL
+with a 7.0234008 USDT loss, so it is refused.
+
 ## Owner risk limits — `FUTURES_RISK_LIMITS`
 
 One JSON secret with exactly these keys. It has no defaults. If it is unset, malformed, has an
@@ -259,7 +286,9 @@ price and limit changes, account settings and key permissions, the smallest-orde
 fills, unknown and never-accepted entry answers, failed stop placement with a verified close, an
 unresolved close that blocks entries until a later tick resolves it, restart reconciliation,
 sibling exits cancelled after the stop fires, a replaced stop, a finished stop with a long left,
-result recording and the cumulative loss limit. The signing test reproduces Binance's documented
+result recording and the cumulative loss limit. Dry-run Long/Short plans: the SOLUSDT Short above,
+refused maximum-collateral sizing, a Long, inverted Short exits, tick and lot grids, the
+minimum-notional skip and a remaining cumulative allowance below the per-trade cap. The signing test reproduces Binance's documented
 HMAC example. The SQL test checks immutability, single decisions, expiry by the database clock, one
 open execution, final states and grants.
 
