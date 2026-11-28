@@ -940,7 +940,8 @@ export function evaluateScan(snapshot: Snapshot): ScanReport {
 const tally = (rows: Rejection[]) => {
   const counts: Record<string, number> = {};
   for (const { reason } of rows) {
-    const key = reason.replace(/:.*$/, '');
+    const colon = reason.indexOf(':');
+    const key = colon === -1 ? reason : reason.slice(0, colon);
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return (
