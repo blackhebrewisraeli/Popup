@@ -354,6 +354,7 @@ export function MarketScanSummary({
   scanId,
   changes,
   choice,
+  reviewByTicker = false,
 }: Readonly<{
   scan: MarketScan | undefined;
   completedAt: number;
@@ -366,6 +367,7 @@ export function MarketScanSummary({
   /** The TradingView import against its baseline, and how that baseline was chosen. */
   changes?: ScanComparison;
   choice?: BaselineChoice;
+  reviewByTicker?: boolean;
 }>) {
   if (!scan) {
     return (
@@ -469,7 +471,14 @@ export function MarketScanSummary({
         </dl>
       </header>
       {scanned.length > 0 && (
-        <ScanReview scan={scan} scanId={scanId} source={source} changes={changes} choice={choice} />
+        <ScanReview
+          scan={scan}
+          scanId={scanId}
+          source={source}
+          changes={changes}
+          choice={choice}
+          reviewByTicker={reviewByTicker}
+        />
       )}
       {failures.length > 0 && (
         <section className="market-scan-failures" aria-label="Not evaluated this scan">

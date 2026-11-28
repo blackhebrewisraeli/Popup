@@ -145,16 +145,15 @@ mistaken for each other:
   does not refresh and that study eligibility is checked separately: being saved does not make a
   scan part of any study.
 
-The note is display only. It changes no default source, selection or stored state. A
-cohort repeats its own status and data time only when a scan has more than one; the coverage
-breakdown by class appears only then too. The results come in three views: **Long setups** (ZC LONG
-holds), **Risk warnings** (ZC RISK holds) and **All ranked** (every evaluated asset by rank; most meet
-no setup). A Risk warning names the clause that holds it, the same on its tag and in the row's
-accessible name: **Risk: high volatility** (the high-volatility regime, ATR ≥ 4% of price),
-**Risk: low score** (score ≤ 28) or both. The Risk warnings view is every asset where either holds. Both open on **All ranked**, so zero long setups is a normal result, not an empty screen.
-Each row shows rank, asset, score, setup and a short reason: the recorded clauses that decide its
-setup state ("Score 61, needs ≥ 78" for an asset short of ZC LONG), from the same `explainResult`
-the evidence uses. A search box (ticker, instrument or requested symbol) and filters on recorded
+A cohort repeats its own status and data time when a scan has more than one. Both scans open on
+all evaluated assets. The browser scan calls this **All evaluated** and lists assets by ticker, with
+their setup and a short reason from `explainResult`. The dated **Daily candidates** table provides
+the review order by descending rolling 24-hour quote volume in USDT. Saved TradingView scans open
+on **All ranked** and show the recorded rank and score alongside each asset, setup and reason.
+
+Both scans have **Long setups** and **Risk warnings** views. A Risk warning names its clause on the
+tag and in the row's accessible name: **Risk: high volatility** (ATR ≥ 4% of price),
+**Risk: low score** (score ≤ 28) or both. A search box (ticker, instrument or requested symbol) and filters on recorded
 fields narrow them by regime and the model's momentum bias (±0.05% of price is flat). "No setups" is a full answer only for a complete cohort; an empty filter result says how many
 it hid. The header says whether the data still passes the scan's own freshness rule now: crypto's
 latest close within 48h, equities' latest final session or the one before. Past that the data is
@@ -207,7 +206,7 @@ Neither view offers an order, a size or a broker link.
 
 ### Candidates to review first
 
-At the top of the results, before the ranked list, each ranked asset class lists up to five
+In a saved TradingView scan, above the ranked results, each ranked asset class lists up to five
 **candidates**: the assets model `1.0.0` ranks highest in the scan shown, so the owner sees where
 to start without choosing a symbol first. A candidate is _prioritized for review by this model, relative to this universe and
 this scan_. It is not a buy recommendation, a calibrated probability of profit, a verified
