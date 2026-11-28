@@ -9,8 +9,8 @@
  *     [--taker-fee-bps 5] [--slippage-bps 5] [--min-net-reward-risk 1.5]
  *   npx tsx scripts/perpBreakoutScanRun.ts --replay <snapshot.json> [--json]
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { stableSerialize } from '../supabase/functions/_shared/stableSerialize';
@@ -18,8 +18,11 @@ import {
   CANDLES,
   cryptoPerpetuals,
   DEFAULT_SETTINGS,
+  errorName,
   evaluateScan,
   INTERVAL_MS,
+  INVALID_SNAPSHOT,
+  normalizeSnapshot,
   type QuoteRecord,
   REFERENCE,
   reportText,
@@ -31,6 +34,13 @@ import {
   type Snapshot,
   SNAPSHOT_SCHEMA,
 } from './perpBreakoutScan';
+
+/** The normalized view every live decision reads: the same one a replay builds from the file. */
+function view(snapshot: Snapshot): Snapshot {
+  const normalized = normalizeSnapshot(snapshot);
+  if (!normalized) throw new Error('The scan produced a snapshot its own replay would refuse');
+  return normalized;
+}
 
 export const ORIGIN = 'https://fapi.binance.com';
 /** Binance's documented request weight of each public request the scan makes. */
@@ -128,11 +138,8 @@ const failure = (answer: Answer) => (answer.ok ? 'unreadable answer' : answer.re
 export function errorReason(error: unknown): string {
   if (!(error instanceof Error)) return 'network error';
   const cause: unknown = error.cause;
-  const code =
-    cause instanceof Error ? ((cause as { code?: unknown }).code ?? cause.message) : undefined;
-  return typeof code === 'string' && code
-    ? `${error.name} (${code})`
-    : `${error.name}: ${error.message}`;
+  const code = cause instanceof Error ? (cause as { code?: unknown }).code : undefined;
+  return errorName(error.name, code) ?? 'network error';
 }
 
 /**
@@ -164,13 +171,9 @@ async function discover(api: Api, snapshot: Snapshot): Promise<boolean> {
  * eligible contract in descending 24h quote volume, until the weight budget or the deadline.
  */
 async function fetchCandles(api: Api, snapshot: Snapshot): Promise<void> {
-  const { perpetuals } = cryptoPerpetuals(snapshot.exchangeSymbols ?? []);
-  const { eligible } = screenUniverse(
-    perpetuals,
-    snapshot.tickers24h,
-    snapshot.bookTickers,
-    snapshot.settings,
-  );
+  const seen = view(snapshot);
+  const { perpetuals } = cryptoPerpetuals(seen.exchangeSymbols ?? []);
+  const { eligible } = screenUniverse(perpetuals, seen.tickers24h, seen.bookTickers, seen.settings);
   const universe = new Set(eligible.map((e) => e.symbol));
   const params = {
     interval: '15m',
@@ -243,27 +246,25 @@ export async function scan(deps: ScanDeps, settings: ScanSettings): Promise<Snap
   if (await discover(api, snapshot)) {
     await fetchCandles(api, snapshot);
     // Quotes only for the signals the same evaluation finds in the candles.
-    const signals = evaluateScan(snapshot).signals;
+    const signals = evaluateScan(view(snapshot)).signals;
     await pool(signals, settings.concurrency, (signal) => fetchQuote(api, snapshot, signal.symbol));
   }
   snapshot.elapsedMs = deps.now() - started;
-  snapshot.report = evaluateScan(snapshot);
+  snapshot.report = evaluateScan(view(snapshot));
   return snapshot;
 }
 
 /** The saved snapshot through the same evaluation, offline, compared with its recorded report. */
-export function replay(snapshot: Snapshot): { report: ScanReport; match: boolean | null } {
-  if (snapshot.schema !== SNAPSHOT_SCHEMA || snapshot.schemaVersion !== 1) {
-    throw new Error('Not a perp breakout scan snapshot');
-  }
-  if (stableSerialize(snapshot.rule) !== stableSerialize(RULE)) {
-    throw new Error(
-      `Snapshot rule ${snapshot.rule.id} ${snapshot.rule.version} is not this code's ${RULE.version}`,
-    );
-  }
-  const { report: recorded, ...inputs } = snapshot;
-  const report = evaluateScan(inputs);
-  return { report, match: recorded ? stableSerialize(report) === stableSerialize(recorded) : null };
+export function replay(raw: unknown): { report: ScanReport; match: boolean | null } {
+  const snapshot = normalizeSnapshot(raw);
+  if (!snapshot) throw new Error(INVALID_SNAPSHOT);
+  const report = evaluateScan(snapshot);
+  // The recorded report is only compared, never printed.
+  const recorded: unknown = (raw as { report?: unknown }).report;
+  return {
+    report,
+    match: recorded === undefined ? null : stableSerialize(report) === stableSerialize(recorded),
+  };
 }
 
 const FLAGS = {
@@ -297,14 +298,53 @@ export function settingsFrom(values: Record<string, unknown>): ScanSettings {
  * The snapshot file a replay may read: a .json file in SNAPSHOT_DIR, named alone or by a path that
  * resolves there. Replay reads nothing else.
  */
-export function snapshotPath(argument: string): string {
+export const OUTSIDE_SNAPSHOT_DIR = `Replay reads only regular .json snapshot files in ${SNAPSHOT_DIR}/`;
+
+export async function snapshotFile(argument: string, dir = SNAPSHOT_DIR): Promise<string> {
   const name = basename(argument);
-  const file = join(SNAPSHOT_DIR, name);
-  const elsewhere = argument !== name && resolve(argument) !== resolve(file);
-  if (!name.endsWith('.json') || elsewhere) {
-    throw new Error(`Replay reads only .json snapshots in ${SNAPSHOT_DIR}/`);
-  }
+  const candidate = join(dir, name);
+  const elsewhere = argument !== name && resolve(argument) !== resolve(candidate);
+  if (!name.endsWith('.json') || elsewhere) throw new Error(OUTSIDE_SNAPSHOT_DIR);
+  // Symlinks are followed before the check: the real file must be a regular file whose real
+  // parent is the real snapshot directory.
+  const real = await Promise.all([realpath(dir), realpath(candidate)]).catch(() => null);
+  const file = real && dirname(real[1]) === real[0] ? real[1] : null;
+  const regular = file
+    ? await stat(file).then(
+        (s) => s.isFile(),
+        () => false,
+      )
+    : false;
+  if (!file || !regular) throw new Error(OUTSIDE_SNAPSHOT_DIR);
   return file;
+}
+
+/**
+ * Replay one saved snapshot offline and print its report (text, or JSON with `json`) and the
+ * verdict. Unreadable JSON and any snapshot normalizeSnapshot refuses end in INVALID_SNAPSHOT,
+ * before anything is printed. Returns the exit code.
+ */
+export async function replayCommand(
+  argument: string,
+  json: boolean,
+  log: (text: string) => void,
+  dir = SNAPSHOT_DIR,
+): Promise<number> {
+  const file = await snapshotFile(argument, dir);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    // JSON.parse messages quote the input; report a fixed message instead.
+    throw new Error(INVALID_SNAPSHOT);
+  }
+  const { report, match } = replay(raw);
+  log(json ? JSON.stringify(report, null, 2) : reportText(report));
+  const verdict = { true: 'MATCH', false: 'MISMATCH', null: 'no recorded report to compare' }[
+    String(match)
+  ];
+  log(`Replay (offline): ${verdict}`);
+  return match === false ? 1 : 0;
 }
 
 async function main() {
@@ -319,21 +359,15 @@ async function main() {
       replay: { type: 'string' },
     },
   });
-  const print = (report: ScanReport) =>
-    console.log(values.json ? JSON.stringify(report, null, 2) : reportText(report));
   if (typeof values.replay === 'string') {
-    const file = snapshotPath(values.replay);
-    const { report, match } = replay(JSON.parse(await readFile(file, 'utf8')) as Snapshot);
-    print(report);
-    const verdict = { true: 'MATCH', false: 'MISMATCH', null: 'no recorded report to compare' }[
-      String(match)
-    ];
-    console.log(`Replay (offline): ${verdict}`);
-    process.exitCode = match === false ? 1 : 0;
+    process.exitCode = await replayCommand(values.replay, values.json === true, (text) =>
+      console.log(text),
+    );
     return;
   }
   const snapshot = await scan({ fetch, now: Date.now }, settingsFrom(values));
-  print(snapshot.report as ScanReport);
+  const report = snapshot.report as ScanReport;
+  console.log(values.json ? JSON.stringify(report, null, 2) : reportText(report));
   if (values.save) {
     const stamp = new Date(snapshot.decisionTime).toISOString().replace(/[:.]/g, '-');
     const file = join(SNAPSHOT_DIR, `perp-breakout-${stamp}.json`);

@@ -4,15 +4,22 @@
  * validation, the market direction, the frozen rule, quote economics, scan status and the
  * runner's snapshot replay. No request leaves a test.
  */
-import { describe, expect, it } from 'vitest';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   breakoutSetup,
   type Candle,
   cryptoPerpetuals,
   DEFAULT_SETTINGS,
+  diagnostic,
   evaluateScan,
   INTERVAL_MS,
+  INVALID_SNAPSHOT,
   marketDirection,
+  normalizeSettings,
+  normalizeSnapshot,
   type QuoteRecord,
   reportText,
   RULE,
@@ -27,10 +34,12 @@ import {
 } from './perpBreakoutScan';
 import {
   errorReason,
+  OUTSIDE_SNAPSHOT_DIR,
   replay,
+  replayCommand,
   scan,
   settingsFrom,
-  snapshotPath,
+  snapshotFile,
   WEIGHTS,
 } from './perpBreakoutScanRun';
 import { dec } from '../supabase/functions/futures-execution/plan';
@@ -508,7 +517,7 @@ describe('the command', () => {
       replay({ ...fromDisk, report: { ...(saved.report as ScanReport), status: 'failed' } }).match,
     ).toBe(false);
     expect(() => replay({ ...fromDisk, rule: { ...RULE, version: '0.9.0' } as never })).toThrow(
-      /not this code's 1\.0\.0/,
+      INVALID_SNAPSHOT,
     );
   });
 
@@ -586,26 +595,138 @@ describe('request failures', () => {
     expect(errorReason(new TypeError('fetch failed', { cause: dns }))).toBe(
       'TypeError (ENOTFOUND)',
     );
-    expect(errorReason(new DOMException('slow', 'TimeoutError'))).toBe('TimeoutError: slow');
+    // The message is never kept: only a known name and a code-shaped cause.
+    expect(errorReason(new DOMException('slow', 'TimeoutError'))).toBe('TimeoutError');
+    expect(
+      errorReason(
+        new TypeError('x', { cause: Object.assign(new Error('y'), { code: 'not a code' }) }),
+      ),
+    ).toBe('TypeError');
+    expect(errorReason(Object.assign(new Error('x'), { name: 'WeirdError' }))).toBe(
+      'network error',
+    );
     expect(errorReason('boom')).toBe('network error');
   });
 });
 
-describe('replay input', () => {
-  it('reads only .json snapshots in the snapshot directory', () => {
-    const inDir = '.zerochart-scans/perp-breakout/perp-breakout-x.json';
-    expect(snapshotPath('perp-breakout-x.json')).toBe(inDir);
-    expect(snapshotPath(inDir)).toBe(inDir);
-    expect(snapshotPath(`./${inDir}`)).toBe(inDir);
-    for (const outside of [
-      '../secrets.json',
-      '/etc/passwd',
-      '.zerochart-scans/other/x.json',
-      inDir.replace('.json', '.txt'),
-    ]) {
-      expect(() => snapshotPath(outside)).toThrow(
-        'Replay reads only .json snapshots in .zerochart-scans/perp-breakout/',
-      );
+const SENTINEL = 'SENTINEL-c0ffee-42';
+
+describe('the replay boundary', () => {
+  let dir = '';
+  let outside = '';
+  let valid: Record<string, unknown> = {};
+  /** Writes a snapshot file into the temporary snapshot directory. */
+  const put = (name: string, body: unknown) =>
+    writeFile(join(dir, name), typeof body === 'string' ? body : JSON.stringify(body));
+  /** Runs the replay command in text or JSON mode, capturing everything it prints or throws. */
+  async function run(name: string, json: boolean) {
+    const lines: string[] = [];
+    let code: number | string;
+    try {
+      code = await replayCommand(name, json, (text) => lines.push(text), dir);
+    } catch (error) {
+      code = (error as Error).message;
     }
+    return { code, output: lines.join('\n') };
+  }
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'perp-breakout-snapshots-'));
+    outside = await mkdtemp(join(tmpdir(), 'perp-breakout-outside-'));
+    valid = JSON.parse(JSON.stringify(await scan(fakeBinance(), s))) as Record<string, unknown>;
+    await put('valid.json', valid);
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it('replays a valid saved scan offline to MATCH, in text and JSON', async () => {
+    const text = await run('valid.json', false);
+    expect(text.code).toBe(0);
+    expect(text.output).toContain('Status: COMPLETE');
+    expect(text.output).toContain('LONG AAAUSDT · eligible');
+    expect(text.output).toMatch(/Replay \(offline\): MATCH$/);
+    const json = await run('valid.json', true);
+    expect(json.code).toBe(0);
+    const [body] = json.output.split('\nReplay (offline): ');
+    expect(JSON.parse(body as string)).toEqual(valid['report']);
+    expect(json.output).toMatch(/Replay \(offline\): MATCH$/);
+  });
+
+  it('refuses a snapshot with a sentinel in any diagnostic field without printing it', async () => {
+    const quotes = valid['quotes'] as Record<string, QuoteRecord>;
+    const variants: Record<string, unknown> = {
+      'failure.json': { ...valid, failures: { 'klines AAAUSDT': SENTINEL } },
+      'failure-key.json': { ...valid, failures: { [SENTINEL]: 'HTTP 500' } },
+      'not-evaluated.json': { ...valid, notEvaluated: { AAAUSDT: SENTINEL } },
+      'quote.json': {
+        ...valid,
+        quotes: { AAAUSDT: { ...quotes['AAAUSDT'], failure: `HTTP 503; ${SENTINEL}` } },
+      },
+      'error-message.json': { ...valid, failures: { time: `TypeError: ${SENTINEL}` } },
+      'settings.json': {
+        ...valid,
+        settings: { ...(valid['settings'] as object), maxSpreadBps: SENTINEL },
+      },
+      'rule.json': { ...valid, rule: { ...RULE, version: SENTINEL } },
+      'not-json.json': `{"schema": "${SENTINEL}"`,
+      'array.json': [SENTINEL],
+    };
+    for (const [name, body] of Object.entries(variants)) {
+      await put(name, body);
+      for (const json of [false, true]) {
+        const { code, output } = await run(name, json);
+        expect(code, name).toBe(INVALID_SNAPSHOT);
+        expect(output, name).toBe('');
+        expect(String(code)).not.toContain('SENTINEL');
+      }
+    }
+  });
+
+  it('reads only regular files whose real path is in the snapshot directory', async () => {
+    await writeFile(join(outside, 'elsewhere.json'), JSON.stringify(valid));
+    await symlink(join(outside, 'elsewhere.json'), join(dir, 'link-out.json'));
+    await symlink(join(dir, 'valid.json'), join(dir, 'link-in.json'));
+    await mkdir(join(dir, 'folder.json'));
+    expect(await snapshotFile('link-in.json', dir)).toMatch(/valid\.json$/);
+    expect((await run('link-in.json', false)).output).toMatch(/MATCH$/);
+    for (const name of ['link-out.json', 'folder.json', 'missing.json', '../x.json', 'valid.txt']) {
+      await expect(snapshotFile(name, dir), name).rejects.toThrow(OUTSIDE_SNAPSHOT_DIR);
+    }
+    // A path to the same file is accepted; a path to another directory is not.
+    expect(await snapshotFile(join(dir, 'valid.json'), dir)).toMatch(/valid\.json$/);
+    await expect(snapshotFile(join(outside, 'elsewhere.json'), dir)).rejects.toThrow(
+      OUTSIDE_SNAPSHOT_DIR,
+    );
+  });
+
+  it('normalizes market data without changing a decision and rebuilds diagnostics', () => {
+    const normalized = normalizeSnapshot(valid) as Snapshot;
+    expect(evaluateScan(normalized)).toEqual(valid['report']);
+    // Decimals are re-rendered from their exact values; settings are checked at runtime.
+    const padded = {
+      ...valid,
+      settings: { ...(valid['settings'] as object), maxSpreadBps: '10.000' },
+    };
+    expect(normalizeSnapshot(padded)?.settings.maxSpreadBps).toBe('10');
+    expect(
+      normalizeSnapshot({
+        ...valid,
+        settings: { ...(valid['settings'] as object), concurrency: 0 },
+      }),
+    ).toBeNull();
+    expect(normalizeSettings({ ...DEFAULT_SETTINGS, weightBudget: '1000' })).toBeNull();
+    expect(diagnostic('HTTP 503')).toBe('HTTP 503');
+    expect(diagnostic('TypeError (ENOTFOUND)')).toBe('TypeError (ENOTFOUND)');
+    expect(diagnostic('weight budget')).toBe('weight budget');
+    expect(diagnostic('HTTP 999')).toBeNull();
+    expect(diagnostic('Oops (ENOTFOUND)')).toBeNull();
+    // Unreadable market values stay unreadable: the same rejection follows.
+    const broken = { ...valid, tickers24h: [{ symbol: 'AAAUSDT', quoteVolume: 'lots' }] };
+    expect(evaluateScan(normalizeSnapshot(broken) as Snapshot).screenRejected).toContainEqual({
+      symbol: 'AAAUSDT',
+      reason: '24h quote volume invalid',
+    });
   });
 });

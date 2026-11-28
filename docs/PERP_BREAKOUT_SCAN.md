@@ -120,9 +120,47 @@ symbol-filter reader.
 - elapsed time, and the report
 
 `--replay` runs the saved inputs through the same `evaluateScan` offline and compares the result
-with the recorded report: **MATCH** or **MISMATCH**. A snapshot from another rule version is
-refused. Replay reads only `.json` files in `.zerochart-scans/perp-breakout/`, named alone or by a
-path that resolves there.
+with the recorded report: **MATCH** or **MISMATCH**. The recorded report is only compared, never
+printed.
+
+**Replay input boundary.**
+
+- **File.** Replay reads one regular `.json` file in `.zerochart-scans/perp-breakout/`, named
+  alone or by a path that resolves there. Symlinks are followed first: the real file must be a
+  regular file whose real parent is the real snapshot directory.
+- **Parsing.** The file is parsed as `unknown`. `normalizeSnapshot` then builds the snapshot the
+  scan reads from only the fields it uses:
+  - identity, clock and accounting checked: the schema and the exact rule ID and version, a
+    boundary consistent with the decision time, non-negative counts
+  - settings validated at runtime and rebuilt from the known keys
+  - market answers reduced to the fields the selection, rule and quote checks read
+  - failures, not-evaluated reasons and quote failures accepted only in the scanner's own forms
+    and rebuilt from their parts: a skip reason, `HTTP <status>`, or a known error name with an
+    optional network code
+- **Malformed input.** Unreadable JSON or any refused field produces one fixed message,
+  `Not a valid perp breakout scan snapshot for two-close-directional-breakout-15m 1.0.0`, before
+  anything is printed, in text or `--json`. Nothing from the file is echoed.
+- **Live scans.** A live scan evaluates the same normalized view, so a run and its replay agree
+  by construction.
+
+**Compatibility with existing snapshots.** Both snapshots saved on 2026-11-28 (01:18Z failed and
+01:33Z complete) replay to MATCH unchanged, in text and `--json`. Normalization changes only these
+cases:
+
+- **Decimals** are re-rendered from their exact values (`59882.10000000` becomes `59882.1`). The
+  decisions and the report are unchanged, because every decision reads the exact value.
+- **Settings** must be valid at runtime. A decimal setting written with extra zeros (`10.000`)
+  replays and reports as `10`.
+- **Symbols** must be 1–40 letters (any script), digits or underscores. Exchange codes (status,
+  contract type, quote and margin asset, underlying type) must be `A-Z0-9_`, otherwise they read as
+  `INVALID`. Every symbol and code in the 2026-11-28 data passes, including five Chinese-named
+  contracts such as 币安人生USDT.
+- **Unreadable market values** stay unreadable. A non-decimal price, a non-object quote or a
+  malformed candle row leads to the same rejection as before.
+- **Error reasons** carry only a known error name (TypeError, TimeoutError, AbortError, SyntaxError,
+  Error) and a code-shaped network cause such as `TypeError (ENOTFOUND)`, never an error message. A
+  snapshot holding any other diagnostic text is refused. None of the saved snapshots holds one.
+- **Rule version.** A snapshot from another rule version is refused with the same fixed message.
 
 **Scan status:**
 
@@ -166,3 +204,10 @@ fixtures. It covers:
 - the decision time taken from `/fapi/v1/time` while exchangeInfo reports a 4 h old `serverTime`
 - a complete zero-signal scan
 - the runner's request weight and snapshot replay (MATCH, MISMATCH, rule version refused)
+- the replay boundary:
+  - a valid saved scan replays to MATCH in text and JSON
+  - snapshots with a sentinel in a failure value or key, a not-evaluated reason, a quote failure, an
+    error message, a setting, the rule version, unparsable JSON or a non-object are refused with the
+    fixed message, and nothing is printed, in either mode
+  - symlinks out of the directory, directories, missing files and other paths are refused, and a
+    symlink to a file inside is followed

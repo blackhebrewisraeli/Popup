@@ -935,6 +935,279 @@ export function evaluateScan(snapshot: Snapshot): ScanReport {
   };
 }
 
+// ---------------------------------------------------------------- 5. replay boundary
+
+/** The only message a malformed snapshot produces: nothing from the file is echoed. */
+export const INVALID_SNAPSHOT = `Not a valid perp breakout scan snapshot for ${RULE.id} ${RULE.version}`;
+
+/** Contract symbols: letters of any script (Binance lists e.g. 币安人生USDT), digits, underscore. */
+const SYMBOL = /^[\p{L}\p{N}_]{1,40}$/u;
+/** Exchange codes such as status, contract type, assets and underlying type. */
+const CODE = /^[A-Z0-9_]{1,40}$/;
+const ERROR_NAMES = ['TypeError', 'TimeoutError', 'AbortError', 'SyntaxError', 'Error'] as const;
+const ERROR_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
+/** Why the scanner skipped a request: its only notEvaluated values. */
+export const SKIP_REASONS = [
+  'weight budget',
+  'deadline',
+  'rate limited (HTTP 429)',
+  'rate limited (HTTP 418)',
+] as const;
+const FIXED_FAILURES = [...SKIP_REASONS, 'unreadable answer', 'network error'] as const;
+const DISCOVERY_REQUESTS = ['time', 'exchangeInfo', 'tickers24h', 'bookTickers'] as const;
+
+const symbolOf = (value: unknown) => (typeof value === 'string' && SYMBOL.test(value) ? value : '');
+const codeOf = (value: unknown) =>
+  typeof value === 'string' && CODE.test(value) ? value : 'INVALID';
+/** A decimal re-rendered from its exact value, or null: the same number for every decision. */
+const canonical = (value: unknown) => {
+  const exact = dec(value);
+  return exact === null ? null : fmt(exact);
+};
+const safeInt = (value: unknown) => (Number.isSafeInteger(value) ? (value as number) : null);
+const count = (value: unknown) =>
+  Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : null;
+
+/** A thrown request error as the scanner reports it: a known name, plus a network code if any. */
+export function errorName(name: unknown, code: unknown): string | null {
+  const known = ERROR_NAMES.find((n) => n === name);
+  if (!known) return null;
+  return typeof code === 'string' && ERROR_CODE.test(code) ? `${known} (${code})` : known;
+}
+
+/**
+ * One diagnostic exactly as the scanner emits it, rebuilt from its validated parts, or null:
+ * a skip or fixed reason, `HTTP <status>`, or a known error name with an optional network code.
+ */
+export function diagnostic(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const fixed = FIXED_FAILURES.find((reason) => reason === value);
+  if (fixed) return fixed;
+  const http = /^HTTP (\d{3})$/.exec(value);
+  const status = http ? Number(http[1]) : 0;
+  if (status >= 100 && status <= 599) return `HTTP ${status}`;
+  const error = /^([A-Za-z]{1,20})(?: \(([A-Z0-9_]{2,64})\))?$/.exec(value);
+  return error ? errorName(error[1], error[2]) : null;
+}
+
+/** A quote failure: diagnostics joined by '; ', each rebuilt. */
+function quoteFailure(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const parts = value.split('; ').map(diagnostic);
+  return parts.some((p) => p === null) ? null : parts.join('; ');
+}
+
+/** Settings checked at runtime and rebuilt from DEFAULT_SETTINGS' keys, or null. */
+export function normalizeSettings(value: unknown): ScanSettings | null {
+  if (!isRecord(value)) return null;
+  const settings: Record<string, unknown> = {};
+  for (const [key, fallback] of Object.entries(DEFAULT_SETTINGS)) {
+    const read = typeof fallback === 'number' ? safeInt(value[key]) : canonical(value[key]);
+    if (read === null) return null;
+    settings[key] = read;
+  }
+  return settingsRefusal(settings as unknown as ScanSettings)
+    ? null
+    : (settings as unknown as ScanSettings);
+}
+
+/** The exchangeInfo fields the selection reads; anything unreadable stays unreadable. */
+function exchangeEntry(entry: unknown): Record<string, unknown> {
+  if (!isRecord(entry)) return {};
+  const filters = Array.isArray(entry['filters']) ? entry['filters'].filter(isRecord) : [];
+  const filter = (type: string): Record<string, unknown> =>
+    filters.find((f) => f['filterType'] === type) ?? {};
+  const price = filter('PRICE_FILTER');
+  const lot = filter('LOT_SIZE');
+  return {
+    symbol: symbolOf(entry['symbol']),
+    status: codeOf(entry['status']),
+    contractType: codeOf(entry['contractType']),
+    quoteAsset: codeOf(entry['quoteAsset']),
+    marginAsset: codeOf(entry['marginAsset']),
+    underlyingType: codeOf(entry['underlyingType']),
+    filters: [
+      {
+        filterType: 'PRICE_FILTER',
+        tickSize: canonical(price['tickSize']),
+        minPrice: canonical(price['minPrice']),
+        maxPrice: canonical(price['maxPrice']),
+      },
+      {
+        filterType: 'LOT_SIZE',
+        stepSize: canonical(lot['stepSize']),
+        minQty: canonical(lot['minQty']),
+        maxQty: canonical(lot['maxQty']),
+      },
+      { filterType: 'MARKET_LOT_SIZE', maxQty: canonical(filter('MARKET_LOT_SIZE')['maxQty']) },
+      { filterType: 'MIN_NOTIONAL', notional: canonical(filter('MIN_NOTIONAL')['notional']) },
+      {
+        filterType: 'PERCENT_PRICE',
+        multiplierUp: canonical(filter('PERCENT_PRICE')['multiplierUp']),
+      },
+    ],
+  };
+}
+
+/** Rows that carry a valid symbol, reduced to the given decimal and time fields. */
+function marketRows(value: unknown, decimals: string[], times: string[] = []): unknown[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter(isRecord).flatMap((row) => {
+    const symbol = symbolOf(row['symbol']);
+    if (!symbol) return [];
+    const out: Record<string, unknown> = { symbol };
+    for (const key of decimals) out[key] = canonical(row[key]);
+    for (const key of times) {
+      const time = safeInt(row[key]);
+      if (time !== null) out[key] = time;
+    }
+    return [out];
+  });
+}
+
+/** A kline row reduced to what validCandles reads: open time, OHLC and close time. */
+const candleRow = (row: unknown) =>
+  Array.isArray(row)
+    ? [
+        safeInt(row[0]),
+        canonical(row[1]),
+        canonical(row[2]),
+        canonical(row[3]),
+        canonical(row[4]),
+        null,
+        safeInt(row[6]),
+      ]
+    : null;
+
+function normalizeCandles(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, rows] of Object.entries(value)) {
+    if (symbolOf(key) !== key) return null;
+    out[key] = Array.isArray(rows) ? rows.map(candleRow) : null;
+  }
+  return out;
+}
+
+/** A recorded book ticker or mark price reduced to its prices and time; a non-object stays null. */
+const bookRecord = (value: unknown) =>
+  isRecord(value)
+    ? {
+        bidPrice: canonical(value['bidPrice']),
+        askPrice: canonical(value['askPrice']),
+        time: safeInt(value['time']),
+      }
+    : null;
+const markRecord = (value: unknown) =>
+  isRecord(value)
+    ? { markPrice: canonical(value['markPrice']), time: safeInt(value['time']) }
+    : null;
+
+function quoteRecord(value: unknown): QuoteRecord | null {
+  if (!isRecord(value)) return null;
+  const requestedAt = safeInt(value['requestedAt']);
+  if (requestedAt === null) return null;
+  const record: QuoteRecord = { requestedAt };
+  if (value['receivedAt'] !== undefined) {
+    const receivedAt = safeInt(value['receivedAt']);
+    if (receivedAt === null) return null;
+    record.receivedAt = receivedAt;
+  }
+  if (value['failure'] !== undefined) {
+    const failure = quoteFailure(value['failure']);
+    if (failure === null) return null;
+    record.failure = failure;
+  }
+  if ('bookTicker' in value) record.bookTicker = bookRecord(value['bookTicker']);
+  if ('premiumIndex' in value) record.premiumIndex = markRecord(value['premiumIndex']);
+  return record;
+}
+
+/** A record of symbol → value, each value rebuilt, or null if any key or value is not the scanner's. */
+function bySymbolRecord<T>(
+  value: unknown,
+  read: (v: unknown) => T | null,
+): Record<string, T> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, T> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const rebuilt = read(item);
+    if (symbolOf(key) !== key || rebuilt === null) return null;
+    out[key] = rebuilt;
+  }
+  return out;
+}
+
+function normalizeFailures(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [key, reason] of Object.entries(value)) {
+    const request = DISCOVERY_REQUESTS.find((r) => r === key);
+    const symbol = key.startsWith('klines ') ? symbolOf(key.slice(7)) : '';
+    const rebuilt = diagnostic(reason);
+    if ((!request && !symbol) || rebuilt === null) return null;
+    out[request ?? `klines ${symbol}`] = rebuilt;
+  }
+  return out;
+}
+
+/**
+ * The replay input boundary. A parsed file (unknown) becomes the snapshot evaluateScan reads, built
+ * only from the fields the scan uses: settings checked at runtime, market answers reduced to their
+ * fields with every decimal re-rendered from its exact value (unreadable values stay unreadable, so
+ * the same decisions follow), and diagnostics accepted only in the scanner's own forms. Null when
+ * anything else is malformed; the caller reports INVALID_SNAPSHOT and echoes nothing. A live scan
+ * evaluates the same normalized view, so a run and its replay agree by construction.
+ */
+/** The snapshot's identity, clock and accounting, checked and rebuilt, or null. */
+function snapshotMeta(raw: Record<string, unknown>) {
+  const rule = raw['rule'];
+  const identity =
+    raw['schema'] === SNAPSHOT_SCHEMA &&
+    raw['schemaVersion'] === 1 &&
+    isRecord(rule) &&
+    rule['id'] === RULE.id &&
+    rule['version'] === RULE.version;
+  const settings = normalizeSettings(raw['settings']);
+  const decisionTime = safeInt(raw['decisionTime']);
+  if (!identity || !settings || decisionTime === null) return null;
+  const boundary = Math.floor(decisionTime / INTERVAL_MS) * INTERVAL_MS;
+  const requestWeight = count(raw['requestWeight']);
+  const elapsedMs = count(raw['elapsedMs']);
+  const usedWeight1m = raw['usedWeight1m'] === null ? null : count(raw['usedWeight1m']);
+  if (raw['boundary'] !== boundary || requestWeight === null || elapsedMs === null) return null;
+  if (usedWeight1m === null && raw['usedWeight1m'] !== null) return null;
+  return { settings, decisionTime, boundary, requestWeight, usedWeight1m, elapsedMs };
+}
+
+export function normalizeSnapshot(raw: unknown): Snapshot | null {
+  if (!isRecord(raw)) return null;
+  const meta = snapshotMeta(raw);
+  const candles = normalizeCandles(raw['candles']);
+  const notEvaluated = bySymbolRecord(
+    raw['notEvaluated'],
+    (v) => SKIP_REASONS.find((r) => r === v) ?? null,
+  );
+  const quotes = bySymbolRecord(raw['quotes'], quoteRecord);
+  const failures = normalizeFailures(raw['failures']);
+  const symbols = raw['exchangeSymbols'];
+  if (!meta || !candles || !notEvaluated || !quotes || !failures) return null;
+  if (symbols !== null && !Array.isArray(symbols)) return null;
+  return {
+    schema: SNAPSHOT_SCHEMA,
+    schemaVersion: 1,
+    rule: RULE,
+    ...meta,
+    exchangeSymbols: Array.isArray(symbols) ? symbols.map(exchangeEntry) : null,
+    tickers24h: marketRows(raw['tickers24h'], ['quoteVolume']),
+    bookTickers: marketRows(raw['bookTickers'], ['bidPrice', 'askPrice'], ['time']),
+    candles,
+    notEvaluated,
+    quotes,
+    failures,
+  };
+}
+
 // ---------------------------------------------------------------- report text
 
 const tally = (rows: Rejection[]) => {
