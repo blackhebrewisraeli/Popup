@@ -24,8 +24,9 @@ TradingView remains the source for market analysis. Binance supplies account rec
   `VITE_*` variables, the browser, URLs the browser sees, logs, fixtures or Git. The function logs
   one line per request: outcome, HTTP status, duration, a Binance error code and the number of
   assets. It never logs which assets or how much.
-- **Separate from Popup's books.** The snapshot lives in the Account component's memory only. It is
-  not cached, stored, or written to any table, and it never becomes a deposit, position or
+- **Separate from Popup's books.** The snapshot lives in browser memory only, shared by the home
+  summary and the Journal for the signed-in owner, and is dropped on logout, a different sign-in or
+  loss of owner access. It is not stored or written to any table, and it never becomes a deposit, position or
   transaction in paper trading, tracked holdings or simulations. Separately,
   [manual Spot experiments](MANUAL_SPOT_EXPERIMENTS.md) will store a copy of a fill only when the
   owner explicitly links it. No UI does that yet.
@@ -112,6 +113,7 @@ cost and P&L statuses, and works through synthetic examples.
 | Shown                                                                                         | Meaning                                                                                                  |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Nothing                                                                                       | Not the owner, signed out, or the function is not deployed                                               |
+| Unavailable                                                                                   | Home summary only: the owner check passed but the function refused or gave no answer it recognizes       |
 | Not configured                                                                                | Owner is set, but the flag, key or secret is missing                                                     |
 | Reading balances from Binance…                                                                | A read is in flight; refresh is unavailable until it ends                                                |
 | Connected … Last successful read _time_                                                       | Key verified read-only; the table, or "no non-zero Spot balances"                                        |
@@ -122,8 +124,10 @@ cost and P&L statuses, and works through synthetic examples.
 | Unverified                                                                                    | Key permissions could not be confirmed                                                                   |
 | Rate limit / did not answer in time / could not reach / could not be read / reported an error | Binance 429 or 418 (refresh pauses for `Retry-After`), timeout, network, malformed response, other error |
 
-Answers are applied in request order, and a snapshot is never replaced by one Binance produced
-earlier, so overlapping refreshes cannot move the view backwards.
+Only one balance read is in flight at a time, and a snapshot is never replaced by one Binance
+produced earlier, so refreshes cannot move the view backwards. While the home summary or the Journal
+is on screen in a visible tab, balances are read on entry when no read is under a minute old, then
+once a minute, and again on return to the tab once a read is due.
 
 The execution section starts with no provider request. **Load executions** shows the exact pair and
 range, consistent-record count, conflicting-identity count, retrieval time, continuation availability
@@ -176,9 +180,10 @@ How they are applied (`supabase/functions/binance-spot-account/handler.ts`):
   `recvWindow` is fixed at 5000 ms and never widened. A rejected timestamp is reported, not retried.
 - One balance refresh costs weight 22. One execution page costs 22 plus 20 per selected pair. The
   UI selects one pair, so it costs 42. Each reconciliation capture is one more balance read (22),
-  and its execution pages cost 42 each. Nothing retries automatically. After a 429 or 418 the view
-  reports the rate limit and the balance view disables refresh for the time Binance names (60 s if
-  it names none).
+  and its execution pages cost 42 each. Only the balance read repeats on its own (once a minute while
+  a balance view is visible, weight 22); execution pages and captures stay manual. After a 429 or 418
+  the view reports the rate limit and no balance read, automatic or manual, is sent for the time
+  Binance names (60 s if it names none).
 - Each request has a 4 s timeout; redirects are refused.
 
 ## Owner setup

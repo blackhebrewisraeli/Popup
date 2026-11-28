@@ -1,18 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { BinanceSpotExecutions } from '@/components/BinanceSpotExecutions';
 import { BinanceSpotReconciliation } from '@/components/BinanceSpotReconciliation';
 import {
-  applySpotRead,
-  INITIAL_SPOT_VIEW,
   isSpotSnapshotStale,
   readSpotAccount,
   type SpotFailure,
   type SpotRead,
 } from '@/lib/binanceSpotAccount';
-
-/** Wait this long after a rate limit when Binance names no delay. */
-const DEFAULT_BACKOFF_SECONDS = 60;
+import {
+  DEFAULT_BACKOFF_SECONDS,
+  useSpotBalances,
+  type SpotBalances,
+} from '@/lib/spotBalanceSession';
 
 function failureText(failure: SpotFailure): string {
   switch (failure.error) {
@@ -35,94 +34,37 @@ function failureText(failure: SpotFailure): string {
   }
 }
 
+/** Manual refresh of the shared read. Waits while a read is in flight or Binance asked to wait. */
+export function RefreshBalancesButton({ balances }: Readonly<{ balances: SpotBalances }>) {
+  const { reading, paused, refresh } = balances;
+  return (
+    <button
+      type="button"
+      className="portfolio-cash-btn"
+      // aria-disabled, not disabled: a disabled button drops keyboard focus mid-refresh.
+      aria-disabled={reading || paused}
+      onClick={reading || paused ? undefined : refresh}
+    >
+      <RefreshCw size={13} aria-hidden="true" /> {reading ? 'Reading…' : 'Refresh balances'}
+    </button>
+  );
+}
+
 /**
- * The owner's Binance Spot balances, read-only. Renders nothing until the
- * server has answered, and nothing at all for anyone but the configured owner.
- * This snapshot is display-only: it never becomes a deposit, position or
- * transaction in any Popup ledger.
+ * Status, failure and balances of the shared read: asset, available and
+ * locked exactly as Binance reported them, and when they were read.
  */
-export function BinanceSpotBalances({
-  accountContext,
-  read = readSpotAccount,
-}: Readonly<{
-  /** The signed-in owner, so a reconciliation never mixes reads made for different owners. */
-  accountContext: string;
-  read?: () => Promise<SpotRead>;
-}>) {
-  const [view, setView] = useState(INITIAL_SPOT_VIEW);
-  const gated = view.access === 'unknown' || view.access === 'hidden';
-  const [reading, setReading] = useState(false);
-  const [pausedUntil, setPausedUntil] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-  const seqRef = useRef(0);
-  const mountedRef = useRef(true);
-  const initialReadRef = useRef(false);
-
-  const refresh = useCallback(() => {
-    const seq = ++seqRef.current;
-    setReading(true);
-    void read()
-      .catch((): SpotRead => ({ state: 'error', error: 'network' }))
-      .then((result) => {
-        if (!mountedRef.current) return;
-        setView((current) => applySpotRead(current, seq, result));
-        setNow(Date.now());
-        if (result.state === 'error' && result.error === 'rate_limited') {
-          const seconds = result.retryAfterSeconds ?? DEFAULT_BACKOFF_SECONDS;
-          setPausedUntil(Date.now() + seconds * 1000);
-        }
-        if (seq === seqRef.current) setReading(false);
-      });
-  }, [read]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    // React StrictMode runs this effect, its cleanup and the effect again on
-    // one instance. The first run's read is still in flight and its answer is
-    // still wanted, so the second run must not send another.
-    if (!initialReadRef.current) {
-      initialReadRef.current = true;
-      refresh();
-    }
-    // Re-evaluates "stale" and the rate-limit pause as time passes.
-    const tick = setInterval(() => setNow(Date.now()), 5000);
-    return () => {
-      mountedRef.current = false;
-      clearInterval(tick);
-    };
-  }, [refresh]);
-
-  if (gated) return null;
-
+export function SpotBalanceReadout({ balances }: Readonly<{ balances: SpotBalances }>) {
+  const { view, reading, now } = balances;
   const { snapshot, failure } = view;
-  const paused = now < pausedUntil;
   const stale = snapshot !== null && isSpotSnapshotStale(snapshot.readAt, now);
 
   return (
-    <section className="portfolio-workspace-card spot-card" aria-labelledby="spot-title">
-      <div className="spot-head">
-        <div>
-          <h2 id="spot-title" className="portfolio-section-title">
-            Binance Spot <span className="spot-chip">Read-only</span>
-          </h2>
-          <p className="spot-note">
-            Read balances and executions reported by Binance, then link fills to your recorded
-            decisions.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="portfolio-cash-btn"
-          // aria-disabled, not disabled: a disabled button drops keyboard focus mid-refresh.
-          aria-disabled={reading || paused}
-          onClick={reading || paused ? undefined : refresh}
-        >
-          <RefreshCw size={13} aria-hidden="true" /> {reading ? 'Reading…' : 'Refresh balances'}
-        </button>
-      </div>
-
+    <>
       <p className="spot-status" role="status">
         {reading && 'Reading balances from Binance… '}
+        {view.access === 'hidden' &&
+          'Unavailable. The server returned no Binance Spot balances for this sign-in.'}
         {view.access === 'not_configured' &&
           'Not configured. The server has no enabled read-only Binance connection.'}
         {snapshot !== null && (
@@ -173,6 +115,45 @@ export function BinanceSpotBalances({
             </tbody>
           </table>
         ))}
+    </>
+  );
+}
+
+/**
+ * The owner's Binance Spot balances, read-only. Renders nothing until the
+ * server has answered, and nothing at all for anyone but the configured owner.
+ * The read is shared with the home summary (lib/spotBalanceSession) and is
+ * display-only: it never becomes a deposit, position or transaction in any
+ * Popup ledger.
+ */
+export function BinanceSpotBalances({
+  accountContext,
+  read = readSpotAccount,
+}: Readonly<{
+  /** The signed-in owner, so a reconciliation never mixes reads made for different owners. */
+  accountContext: string;
+  read?: () => Promise<SpotRead>;
+}>) {
+  const balances = useSpotBalances(accountContext, read);
+  const { access } = balances.view;
+  if (access === 'unknown' || access === 'hidden') return null;
+
+  return (
+    <section className="portfolio-workspace-card spot-card" aria-labelledby="spot-title">
+      <div className="spot-head">
+        <div>
+          <h2 id="spot-title" className="portfolio-section-title">
+            Binance Spot <span className="spot-chip">Read-only</span>
+          </h2>
+          <p className="spot-note">
+            Read balances and executions reported by Binance, then link fills to your recorded
+            decisions.
+          </p>
+        </div>
+        <RefreshBalancesButton balances={balances} />
+      </div>
+
+      <SpotBalanceReadout balances={balances} />
 
       <BinanceSpotExecutions linkFor={accountContext} />
       <BinanceSpotReconciliation key={accountContext} accountContext={accountContext} />

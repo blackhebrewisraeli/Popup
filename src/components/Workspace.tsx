@@ -1,10 +1,11 @@
 import { Link, Outlet, useMatch } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useRef, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { LogOut } from 'lucide-react';
 import { BrandLogo } from '@/components/Brand';
 import { DailyCandidates } from '@/components/DailyCandidates';
 import { MarketScanSummary } from '@/components/MarketScanSummary';
+import { OwnerSummary } from '@/components/OwnerSummary';
 import { OpenSavedScanFile, SavedScanFileView } from '@/components/SavedScanFile';
 import { Segmented } from '@/components/Segmented';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -13,6 +14,7 @@ import { useMarketScan } from '@/hooks/useMarketScan';
 import { useSavedScanFile } from '@/hooks/useSavedScanFile';
 import { fetchAssets } from '@/lib/assets';
 import { useAuth } from '@/lib/authStore';
+import { forgetOwnerSummary } from '@/lib/receivedAlerts';
 import { isSpotExperimentOwner } from '@/lib/spotExperiments';
 import { isBinanceCrypto } from '@/lib/ticker';
 import { cn } from '@/lib/utils';
@@ -131,6 +133,17 @@ export function DailyResearch() {
   );
 }
 
+/** The signed-in home screen: the owner's account and alerts summary above daily research. */
+export function Home() {
+  const { user } = useAuth();
+  return (
+    <>
+      {user && <OwnerSummary userId={user.id} />}
+      <DailyResearch />
+    </>
+  );
+}
+
 function SignIn() {
   const [open, setOpen] = useState(false);
   return (
@@ -157,6 +170,11 @@ function PrivateWorkspace({ userId, signOut }: Readonly<{ userId: string; signOu
     queryFn: isSpotExperimentOwner,
     retry: false,
   });
+  const queryClient = useQueryClient();
+  const lostAccess = owner.data === false;
+  useEffect(() => {
+    if (lostAccess) forgetOwnerSummary(queryClient, null);
+  }, [queryClient, lostAccess]);
   const linkClass = (active: boolean) =>
     cn(
       'rounded-md px-3 py-2 text-sm font-medium hover:bg-muted',
@@ -215,6 +233,11 @@ function PrivateWorkspace({ userId, signOut }: Readonly<{ userId: string; signOu
 
 export function Workspace() {
   const { user, loading, signOut } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = user?.id ?? null;
+  // Logout or a different sign-in drops the previous owner's balances and alerts,
+  // and any answer still in flight for them.
+  useEffect(() => forgetOwnerSummary(queryClient, userId), [queryClient, userId]);
   if (loading) {
     return (
       <p className="page-width py-8" role="status">

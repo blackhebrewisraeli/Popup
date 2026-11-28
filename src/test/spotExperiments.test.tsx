@@ -49,6 +49,7 @@ import { SpotExperiments } from '@/components/SpotExperiments';
 import type { Json } from '@/integrations/supabase/types';
 import type { Candle } from '@/lib/binance';
 import type { SpotRead } from '@/lib/binanceSpotAccount';
+import { clearSpotBalanceSession } from '@/lib/spotBalanceSession';
 import { evaluateScan, type MarketScan, type ScanInput } from '@/lib/marketScanner';
 import {
   checkCloseDraft,
@@ -105,6 +106,8 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  // The balance read is shared for the session; each test starts without one.
+  clearSpotBalanceSession();
   vi.useRealTimers();
   vi.restoreAllMocks();
   db.rpc.mockReset();

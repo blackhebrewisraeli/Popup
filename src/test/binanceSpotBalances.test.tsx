@@ -16,6 +16,7 @@ import {
   SPOT_STALE_AFTER_MS,
   type SpotRead,
 } from '@/lib/binanceSpotAccount';
+import { clearSpotBalanceSession, SPOT_REFRESH_MS } from '@/lib/spotBalanceSession';
 
 // Synthetic balances throughout; no Binance account is involved.
 const connected = (
@@ -38,6 +39,8 @@ function deferredReads() {
 const refreshButton = () => screen.getByRole('button', { name: /refresh balances|reading/i });
 
 afterEach(() => {
+  // The read is shared for the session; each test starts signed out of it.
+  clearSpotBalanceSession();
   vi.useRealTimers();
   invoke.mockReset();
 });
@@ -58,6 +61,7 @@ describe('Binance Spot balance view', () => {
       expect(container).toBeEmptyDOMElement();
       expect(read).toHaveBeenCalledTimes(1);
       unmount();
+      clearSpotBalanceSession();
     }
   });
 
@@ -157,15 +161,25 @@ describe('Binance Spot balance view', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('labels a read older than five minutes as stale without another request', async () => {
+  it('labels the last good read stale once a minute of refreshes has failed for five minutes', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-11-10T08:00:00.000Z') });
     const { read, answer } = deferredReads();
     render(<BinanceSpotBalances accountContext="owner-a" read={read} />);
     await answer(0, connected('2026-11-10T08:00:00.000Z'));
     expect(screen.getByRole('status')).not.toHaveTextContent('Stale');
-    await act(async () => vi.advanceTimersByTime(SPOT_STALE_AFTER_MS + 5_000));
-    expect(screen.getByRole('status')).toHaveTextContent('Stale Read more than 5 minutes ago.');
-    expect(read).toHaveBeenCalledTimes(1);
+    for (let minute = 1; minute <= 5; minute += 1) {
+      await act(async () => vi.advanceTimersByTime(SPOT_REFRESH_MS));
+      expect(read).toHaveBeenCalledTimes(minute + 1);
+      await answer(minute, failed('timeout'));
+    }
+    expect(screen.getByRole('status')).not.toHaveTextContent('Stale');
+    await act(async () =>
+      vi.advanceTimersByTime(SPOT_STALE_AFTER_MS + 5_000 - 5 * SPOT_REFRESH_MS),
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^Not current\..*Stale Read more than 5 minutes ago\.$/,
+    );
+    expect(within(screen.getByRole('table')).getByText('0.50000000')).toBeVisible();
   });
 
   it('pauses refresh for as long as Binance asks after a rate limit', async () => {
@@ -388,6 +402,7 @@ describe('separation from Popup ledgers', () => {
       'src/components/BinanceSpotBalances.tsx',
       'src/components/BinanceSpotExecutions.tsx',
       'src/components/BinanceSpotReconciliation.tsx',
+      'src/lib/spotBalanceSession.ts',
     ]) {
       const source = readFileSync(file, 'utf8');
       const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
