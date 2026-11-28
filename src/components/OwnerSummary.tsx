@@ -84,10 +84,10 @@ function ReceivedAlerts({ userId }: Readonly<{ userId: string }>) {
         </button>
       </div>
 
-      <p className="spot-status" role="status">
+      <output className="spot-status">
         {alerts.isPending && 'Reading received alerts… '}
         {LIVE_TEXT[live]}
-      </p>
+      </output>
 
       {alerts.isError && (
         <p className="spot-failed" role="alert">

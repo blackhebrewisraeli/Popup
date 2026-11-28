@@ -2387,6 +2387,10 @@ td.discovery-number {
   margin-top: 6px;
   max-width: 68ch;
 }
+/* <output> is inline by default; a status line reads as a paragraph. */
+.spot-status {
+  display: block;
+}
 .spot-status:empty {
   display: none;
 }

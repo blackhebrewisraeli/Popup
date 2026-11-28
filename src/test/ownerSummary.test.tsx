@@ -538,7 +538,7 @@ describe('received TradingView alerts', () => {
     sb.alerts.unshift({ ...alert(0), ticker: 'HANDUSDT' });
     fireEvent.click(within(received()).getByRole('button', { name: 'Refresh alerts' }));
     expect(await within(received()).findByText('HANDUSDT')).toBeVisible();
-    expect(sb.alertQueries.length).toBe(before + 1);
+    expect(sb.alertQueries).toHaveLength(before + 1);
 
     unmount();
     expect(sb.removed).toEqual([sb.channels[0]]);
