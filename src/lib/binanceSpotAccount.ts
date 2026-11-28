@@ -1,7 +1,7 @@
 // Browser side of the owner-only Binance Spot balance view
-// (docs/BINANCE_SPOT_ACCOUNT.md). It holds one account snapshot in component
-// state: no query cache, no storage, and nothing here touches a portfolio,
-// ledger, paper cash or simulation.
+// (docs/BINANCE_SPOT_ACCOUNT.md). The snapshot lives in memory only
+// (lib/spotBalanceSession): no query cache, no storage, and nothing here
+// touches a portfolio, ledger, paper cash or simulation.
 import { sameExecution } from '@/lib/binanceSpotEvidence';
 import { supabase } from '@/lib/supabaseClient';
 import type {

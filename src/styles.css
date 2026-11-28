@@ -2333,6 +2333,21 @@ td.discovery-number {
   }
 }
 /* Owner-only Binance Spot balances (docs/BINANCE_SPOT_ACCOUNT.md). */
+/* Home summary: balances and received alerts side by side when there is room. */
+.owner-summary {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.owner-summary .spot-card {
+  margin-top: 0;
+}
+@media (min-width: 960px) {
+  .owner-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
 .spot-card {
   display: grid;
   gap: 14px;

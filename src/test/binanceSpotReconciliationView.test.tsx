@@ -17,6 +17,7 @@ import type {
   SpotRead,
 } from '@/lib/binanceSpotAccount';
 import { nextExecutionEvidence, type SpotExecutionEvidence } from '@/lib/binanceSpotEvidence';
+import { clearSpotBalanceSession } from '@/lib/spotBalanceSession';
 import {
   MAX_BALANCE_INTERVAL_MS,
   RECONCILIATION_GUARD_MS,
@@ -150,6 +151,7 @@ const pureResult = (closingBtc: string, answer: SpotExecutionRead) =>
   });
 
 afterEach(() => {
+  clearSpotBalanceSession();
   vi.useRealTimers();
   vi.restoreAllMocks();
   invoke.mockReset();

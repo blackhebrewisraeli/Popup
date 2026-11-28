@@ -1,14 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { DailyResearch } from '@/components/Workspace';
+import { Home } from '@/components/Workspace';
 
 export const Route = createFileRoute('/_workspace/')({
-  component: DailyResearch,
+  component: Home,
   head: () => ({
     meta: [
       { title: 'Research — Popup' },
       {
         name: 'description',
-        content: 'Review daily Binance Spot candidates and inspect scan evidence.',
+        content:
+          'Check Binance Spot balances and received TradingView alerts, then review daily Binance Spot candidates.',
       },
     ],
   }),
