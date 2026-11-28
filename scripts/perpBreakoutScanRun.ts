@@ -307,8 +307,10 @@ export async function snapshotFile(argument: string, dir = SNAPSHOT_DIR): Promis
   if (!name.endsWith('.json') || elsewhere) throw new Error(OUTSIDE_SNAPSHOT_DIR);
   // Symlinks are followed before the check: the real file must be a regular file whose real
   // parent is the real snapshot directory.
-  const real = await Promise.all([realpath(dir), realpath(candidate)]).catch(() => null);
-  const file = real && dirname(real[1]) === real[0] ? real[1] : null;
+  const [realDir, realFile] = await Promise.all([realpath(dir), realpath(candidate)]).catch(
+    () => [],
+  );
+  const file = realFile && dirname(realFile) === realDir ? realFile : null;
   const regular = file
     ? await stat(file).then(
         (s) => s.isFile(),

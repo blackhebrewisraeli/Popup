@@ -994,7 +994,7 @@ export function diagnostic(value: unknown): string | null {
 function quoteFailure(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const parts = value.split('; ').map(diagnostic);
-  return parts.some((p) => p === null) ? null : parts.join('; ');
+  return parts.includes(null) ? null : parts.join('; ');
 }
 
 /** Settings checked at runtime and rebuilt from DEFAULT_SETTINGS' keys, or null. */
