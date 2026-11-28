@@ -172,7 +172,6 @@ function CandidateRow({
 }>) {
   return (
     <tr>
-      <td className="discovery-rank">{member.rank}</td>
       <th scope="row" className="discovery-pair">
         <span className="discovery-symbol">{member.symbol}</span>
         <span className="discovery-sub">{member.baseAsset}/USDT</span>
@@ -315,7 +314,7 @@ function CandidatesTable({
           <caption>
             <strong>Candidates for {evidence.slot.date}</strong>{' '}
             <span>
-              Ranks 1–{members.length} of {coverage.ranked} eligible pairs by rolling 24-hour quote
+              Top {members.length} of {coverage.ranked} eligible pairs by rolling 24-hour quote
               volume{sharedWindow && `, every window to ${sharedWindow} UTC`}
             </span>
             <span className="discovery-class-legend">
@@ -324,9 +323,6 @@ function CandidatesTable({
           </caption>
           <thead>
             <tr>
-              <th scope="col" className="discovery-rank">
-                Rank
-              </th>
               <th scope="col">Pair</th>
               <th scope="col" className="discovery-number">
                 24h quote volume (USDT)
@@ -443,15 +439,10 @@ function BatchDetails({
   );
 }
 
-/**
- * What the board is, said once in its header (and to sign-ins without access): its rank is
- * liquidity, never a model score or a signal.
- */
 const LEDE = (
   <p className="daily-lede">
-    Binance Spot USDT pairs ranked by Binance&rsquo;s rolling 24-hour quote volume when the batch
-    was collected: <strong>a liquidity-based shortlist to investigate later</strong>, not a BUY/SELL
-    signal, a model score or evidence of profitability.
+    Review Binance Spot USDT pairs starting with the highest rolling 24-hour quote volume at the
+    time of collection. Quote volume measures trading activity.
   </p>
 );
 

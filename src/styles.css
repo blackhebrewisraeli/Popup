@@ -753,8 +753,11 @@ body {
   gap: 4px 14px;
   align-items: baseline;
 }
+.scan-review-by-ticker :is(.scan-list-cols, .scan-row-main) {
+  grid-template-columns: minmax(84px, 128px) minmax(100px, 0.5fr) minmax(0, 1fr);
+}
 /* Scores right-aligned under their label, so tabular digits line up. */
-.scan-list-cols > :nth-child(3),
+.scan-list-score,
 .scan-row-main > .market-scan-score {
   text-align: right;
 }
@@ -1318,16 +1321,6 @@ body {
 .discovery-table tbody tr:hover {
   background: color-mix(in oklch, var(--muted) 70%, transparent);
 }
-.discovery-table .discovery-rank {
-  width: 3.5rem;
-  padding-left: 4px;
-  text-align: right;
-}
-td.discovery-rank {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
-  color: var(--muted-foreground);
-}
 .discovery-table .discovery-pair {
   width: 15rem;
 }
@@ -1486,7 +1479,7 @@ td.discovery-number {
     grid-column: 1;
   }
 }
-/* A phone keeps rank, pair, volume and the detail action in view; the classification moves
+/* A phone keeps the pair, volume and chart action in view; the classification moves
    under the pair rather than off screen. */
 @media (max-width: 640px) {
   .discovery-class-col {
@@ -1515,10 +1508,6 @@ td.discovery-number {
   .discovery-table th,
   .discovery-table td {
     padding: 8px 6px;
-  }
-  .discovery-table .discovery-rank {
-    width: 2rem;
-    padding-left: 0;
   }
   .discovery-table .discovery-number {
     width: auto;
@@ -1871,6 +1860,13 @@ td.discovery-number {
       '. reason reason';
     gap: 4px 10px;
     padding: 12px 4px 12px 6px;
+  }
+  .scan-review-by-ticker .scan-row-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'asset'
+      'setup'
+      'reason';
   }
   .scan-row-main > .market-scan-rank {
     grid-area: rank;

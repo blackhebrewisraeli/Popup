@@ -119,9 +119,7 @@ describe('Daily candidates', () => {
     const section = await board();
     expect(within(section).getByText('Current')).toBeTruthy();
     expect(
-      within(section).getByText(
-        /not a BUY\/SELL signal, a model score or evidence of profitability/,
-      ),
+      within(section).getByText(/highest rolling 24-hour quote volume at the time of collection/),
     ).toBeTruthy();
     // The batch summary: date, collection time and freshness, counts, latest attempt.
     const summary = within(section).getByText('Batch date').closest('dl')!;
@@ -143,25 +141,24 @@ describe('Daily candidates', () => {
     const table = within(section).getByRole('table', { name: /Candidates for 2026-11-20/ });
     expect(
       within(table).getByText(
-        /Ranks 1–50 of 62 eligible pairs by rolling 24-hour quote volume, every window to 00:33:03 UTC/,
+        /Top 50 of 62 eligible pairs by rolling 24-hour quote volume, every window to 00:33:03 UTC/,
       ),
     ).toBeTruthy();
     expect(
       within(table)
         .getAllByRole('columnheader')
         .map((th) => th.textContent),
-    ).toEqual(['Rank', 'Pair', '24h quote volume (USDT)', 'Classification', 'Chart']);
+    ).toEqual(['Pair', '24h quote volume (USDT)', 'Classification', 'Chart']);
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(50);
-    // Each row is named by its exact pair; rank and the exact-decimal volume follow it.
+    // The highest-volume pair appears first, with its exact reported volume.
     expect(within(rows[0]!).getByRole('rowheader').textContent).toMatch(/^ZCT001USDT/);
-    const [rank, volume, category] = within(rows[0]!).getAllByRole('cell');
-    expect(rank!.textContent).toBe('1');
+    const [volume, category] = within(rows[0]!).getAllByRole('cell');
     expect(volume!.textContent).toBe('60,000,000');
     expect(volume!.title).toBe('60000000.5 USDT, exactly as reported');
     expect(category!.textContent).toBe('Not classified');
     expect(within(rows[15]!).getByRole('rowheader').textContent).toMatch(/^BTCUSDT/);
-    expect(within(rows[31]!).getAllByRole('cell')[2]!.textContent).toBe('Tokenized commodity');
+    expect(within(rows[31]!).getAllByRole('cell')[1]!.textContent).toBe('Tokenized commodity');
     // No prices from the ticker are shown as if they were refreshed evidence.
     expect(within(section).queryByText('1.10')).toBeNull();
     expect(db.reads.every((read) => read.filters.some((f) => f[1] === 'policy_id'))).toBe(true);

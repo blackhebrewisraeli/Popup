@@ -81,6 +81,39 @@ function fact(panel: HTMLElement, label: string) {
 }
 
 describe('MarketScanSummary', () => {
+  it('reviews daily scan results by ticker without promoting the highest model score', () => {
+    wideScreen();
+    const scan = scanOf([
+      { ...supported('BTC-USD'), candles: candles(rising) },
+      { ...supported('ETH-USD'), candles: candles(falling) },
+    ]);
+    expect(scan.results.map(({ ticker }) => ticker)).toEqual(['ETH-USD', 'BTC-USD']);
+    render(
+      <MarketScanSummary
+        scan={scan}
+        completedAt={NOW}
+        scanning={false}
+        failed={false}
+        reviewByTicker
+      />,
+    );
+
+    const panel = screen.getByRole('region', { name: 'Market scan' });
+    expect(within(panel).getByRole('tab', { name: /All evaluated/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(panel).queryByRole('region', { name: /^Candidates to review first/ })).toBeNull();
+    const results = within(panel).getByRole('region', { name: 'Crypto results' });
+    expect(results.querySelector('.scan-list-cols')).toHaveTextContent('AssetSetupReason');
+    const rows = within(results).getAllByRole('button', { name: /^(BTC|ETH)-USD/ });
+    expect(rows.map((row) => row.dataset['scanRow'])).toEqual(['BTC-USD', 'ETH-USD']);
+    expect(results.querySelector('.market-scan-rank, .market-scan-score')).toBeNull();
+    expect(rows[0]).toHaveAccessibleName(/^BTC-USD, (Risk|No setup)/);
+    fireEvent.click(rows[0]!);
+    expect(within(panel).getByText('Indicators and score calculation')).toBeInTheDocument();
+  });
+
   it('says "none" only as a full answer when every supported asset was scored', () => {
     const panel = renderScan([
       supported('BTC-USD'),

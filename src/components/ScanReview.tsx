@@ -27,7 +27,12 @@ import {
   type MarketRegime,
   type ModelSetups,
 } from '@/lib/canonicalModel';
-import type { MarketScan, ScanAssetResult, ScanCohort } from '@/lib/marketScanner';
+import {
+  compareTickers,
+  type MarketScan,
+  type ScanAssetResult,
+  type ScanCohort,
+} from '@/lib/marketScanner';
 import { exactSymbol, type ScanComparison } from '@/lib/scanChanges';
 import { spotSymbol } from '@/lib/tradingViewSymbol';
 import {
@@ -201,6 +206,7 @@ function moveBetweenRows(event: ReactKeyboardEvent<HTMLButtonElement>) {
 function ResultRow({
   result,
   symbol,
+  showModelRank,
   selected,
   wide,
   evidenceId,
@@ -211,6 +217,7 @@ function ResultRow({
 }: Readonly<{
   result: ScanAssetResult;
   symbol: string | undefined;
+  showModelRank: boolean;
   selected: boolean;
   wide: boolean;
   evidenceId: string;
@@ -222,13 +229,14 @@ function ResultRow({
   const setup = result.setups?.long || result.setups?.risk;
   const reasonId = useId();
   const score = result.model?.signal_score;
+  const rankLabel = showModelRank ? `, rank ${result.rank}, score ${score}` : '';
   return (
     <li className={cn('scan-row', selected && 'is-selected')}>
       <button
         type="button"
         className="scan-row-main"
         data-scan-row={result.ticker}
-        aria-label={`${result.ticker}, rank ${result.rank}, score ${score}, ${setupWords(result)}`}
+        aria-label={`${result.ticker}${rankLabel}, ${setupWords(result)}`}
         aria-describedby={reasonId}
         aria-current={selected ? 'true' : undefined}
         aria-controls={wide ? evidenceId : undefined}
@@ -236,17 +244,19 @@ function ResultRow({
         onClick={() => onSelect(result.ticker)}
         onKeyDown={moveBetweenRows}
       >
-        <span className="market-scan-rank">#{result.rank}</span>
+        {showModelRank && <span className="market-scan-rank">#{result.rank}</span>}
         <span className="scan-row-asset">
           <span className="market-scan-ticker underline decoration-muted-foreground underline-offset-4">
             {result.ticker}
           </span>
           {symbol && <span className="scan-row-symbol">{symbol}</span>}
         </span>
-        <span className="market-scan-score">
-          <span className="scan-score-label">Score </span>
-          {score}
-        </span>
+        {showModelRank && (
+          <span className="market-scan-score">
+            <span className="scan-score-label">Score </span>
+            {score}
+          </span>
+        )}
         <span className="scan-row-setup">
           {setup ? (
             <SetupTags result={result} />
@@ -664,6 +674,7 @@ function CohortResults({
   view,
   filters,
   source,
+  reviewByTicker,
   solo,
   selected,
   wide,
@@ -679,6 +690,7 @@ function CohortResults({
   view: ScanView;
   filters: ScanFilters;
   source: TradingViewDevSource | undefined;
+  reviewByTicker: boolean;
   /** The scan's only cohort: its status, coverage and data time are the scan header's. */
   solo: boolean;
   selected: string | null;
@@ -692,6 +704,8 @@ function CohortResults({
 }>) {
   const label = CLASS_LABEL[cohort.assetClass];
   const inView = viewResults(scan.results, cohort.assetClass, view);
+  const viewNoun = reviewByTicker && view === 'all' ? 'evaluated assets' : VIEW_NOUN[view];
+  if (reviewByTicker) inView.sort((a, b) => compareTickers(a.ticker, b.ticker));
   const shown = inView.filter((result) =>
     matchesFilters(result, filters, source?.symbols[result.ticker]),
   );
@@ -723,7 +737,10 @@ function CohortResults({
   return (
     <section className="market-scan-cohort-setups" aria-label={`${label} results`}>
       <h3 className="market-scan-label">
-        {label} <span className="market-scan-rule">ranked only among {label.toLowerCase()}</span>
+        {label}
+        {!reviewByTicker && (
+          <span className="market-scan-rule"> ranked only among {label.toLowerCase()}</span>
+        )}
       </h3>
       {!solo && (
         <p className="scan-asof">
@@ -751,12 +768,11 @@ function CohortResults({
         </p>
       )}
       {shown.length > 0 && (
-        // Column labels for sighted readers; each row names its own score for screen readers.
         <div className="scan-list-head" aria-hidden="true">
           <span className="scan-list-cols">
-            <span>#</span>
+            {!reviewByTicker && <span>#</span>}
             <span>Asset</span>
-            <span>Score</span>
+            {!reviewByTicker && <span className="scan-list-score">Score</span>}
             <span>Setup</span>
             <span>Reason</span>
           </span>
@@ -770,6 +786,7 @@ function CohortResults({
               key={result.ticker}
               result={result}
               symbol={source?.symbols[result.ticker]}
+              showModelRank={!reviewByTicker}
               selected={selected === result.ticker}
               wide={wide}
               evidenceId={evidenceId}
@@ -784,7 +801,7 @@ function CohortResults({
         <p className="market-scan-empty">
           {inView.length > 0 ? (
             <>
-              No {VIEW_NOUN[view]} match these filters ({inView.length} hidden).{' '}
+              No {viewNoun} match these filters ({inView.length} hidden).{' '}
               <button type="button" className="scan-link-button" onClick={onClearFilters}>
                 Clear filters
               </button>
@@ -796,7 +813,7 @@ function CohortResults({
       )}
       {shown.length > 0 && shown.length < inView.length && (
         <p className="market-scan-fit">
-          Showing {shown.length} of {inView.length} {VIEW_NOUN[view]}.
+          Showing {shown.length} of {inView.length} {viewNoun}.
         </p>
       )}
       {cohort.assetClass === 'equity' && (
@@ -1468,6 +1485,7 @@ export function ScanReview({
   source,
   changes,
   choice,
+  reviewByTicker,
 }: Readonly<{
   scan: MarketScan;
   /** TradingView imports only: the scan's own ID, which a Spot scenario names. */
@@ -1476,9 +1494,9 @@ export function ScanReview({
   /** TradingView imports only: the displayed scan against its baseline. */
   changes?: ScanComparison | undefined;
   choice?: BaselineChoice | undefined;
+  reviewByTicker: boolean;
 }>) {
-  // A scan opens on every ranked asset, so zero long setups never leaves an empty screen;
-  // it stays a full answer under its own tab.
+  // Start with all evaluated assets so the list is usable when no Long setup holds.
   const [view, setView] = useState<ScanView>('all');
   const [filters, setFilters] = useState<ScanFilters>(NO_FILTERS);
   const [compare, setCompare] = useState<readonly string[]>([]);
@@ -1531,7 +1549,7 @@ export function ScanReview({
       !matchesFilters(picked, filters, source?.symbols[picked.ticker]));
 
   return (
-    <div className="scan-review" ref={reviewRef}>
+    <div className={cn('scan-review', reviewByTicker && 'scan-review-by-ticker')} ref={reviewRef}>
       <div className="scan-toolbar">
         <Segmented
           value={view}
@@ -1542,7 +1560,13 @@ export function ScanReview({
             value,
             label: (
               <>
-                {{ long: 'Long setups', risk: 'Risk warnings', all: 'All ranked' }[value]}
+                {
+                  {
+                    long: 'Long setups',
+                    risk: 'Risk warnings',
+                    all: reviewByTicker ? 'All evaluated' : 'All ranked',
+                  }[value]
+                }
                 <span className="segment-tag">{count(value)}</span>
               </>
             ),
@@ -1596,24 +1620,34 @@ export function ScanReview({
         </div>
       </div>
       <p className="scan-caption">
-        {VIEW_RULE[view]}. Ranked by model score within each asset class: a rank is relative, not a
-        recommendation; a score is not a probability or an expected return.
+        {reviewByTicker ? (
+          <>
+            {view !== 'all' && `${VIEW_RULE[view]}. `}Results are ordered by ticker. Open Daily
+            candidates to prioritize review by 24h quote volume.
+          </>
+        ) : (
+          <>
+            {VIEW_RULE[view]}. Ranked by model score within each asset class: a rank is relative,
+            not a recommendation; a score is not a probability or an expected return.
+          </>
+        )}
       </p>
       <div className={cn('scan-desk', wide && 'is-wide')}>
         <div className="scan-desk-list">
-          {cohorts.map((cohort, index) => (
-            <Candidates
-              key={cohort.assetClass}
-              cohort={cohort}
-              scan={scan}
-              scanId={scanId}
-              selected={selected}
-              wide={wide}
-              evidenceId={evidenceId}
-              primary={index === 0}
-              onSelect={select}
-            />
-          ))}
+          {!reviewByTicker &&
+            cohorts.map((cohort, index) => (
+              <Candidates
+                key={cohort.assetClass}
+                cohort={cohort}
+                scan={scan}
+                scanId={scanId}
+                selected={selected}
+                wide={wide}
+                evidenceId={evidenceId}
+                primary={index === 0}
+                onSelect={select}
+              />
+            ))}
           {changes && (
             <ScanChanges
               comparison={changes}
@@ -1633,6 +1667,7 @@ export function ScanReview({
               view={view}
               filters={filters}
               source={source}
+              reviewByTicker={reviewByTicker}
               solo={cohorts.length === 1}
               selected={selected}
               wide={wide}

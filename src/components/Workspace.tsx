@@ -59,6 +59,7 @@ function DailyModelScan({ active }: Readonly<{ active: boolean }>) {
           completedAt={scan.dataUpdatedAt}
           scanning={scan.isFetching}
           failed={scan.isError}
+          reviewByTicker
         />
       )}
       {scan.isError && (
