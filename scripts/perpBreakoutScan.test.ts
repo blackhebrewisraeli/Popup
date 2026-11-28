@@ -25,7 +25,14 @@ import {
   spreadBps,
   validCandles,
 } from './perpBreakoutScan';
-import { errorReason, replay, scan, settingsFrom, WEIGHTS } from './perpBreakoutScanRun';
+import {
+  errorReason,
+  replay,
+  scan,
+  settingsFrom,
+  snapshotPath,
+  WEIGHTS,
+} from './perpBreakoutScanRun';
 import { dec } from '../supabase/functions/futures-execution/plan';
 
 const BOUNDARY = Date.UTC(2026, 10, 28, 12, 0);
@@ -581,5 +588,24 @@ describe('request failures', () => {
     );
     expect(errorReason(new DOMException('slow', 'TimeoutError'))).toBe('TimeoutError: slow');
     expect(errorReason('boom')).toBe('network error');
+  });
+});
+
+describe('replay input', () => {
+  it('reads only .json snapshots in the snapshot directory', () => {
+    const inDir = '.zerochart-scans/perp-breakout/perp-breakout-x.json';
+    expect(snapshotPath('perp-breakout-x.json')).toBe(inDir);
+    expect(snapshotPath(inDir)).toBe(inDir);
+    expect(snapshotPath(`./${inDir}`)).toBe(inDir);
+    for (const outside of [
+      '../secrets.json',
+      '/etc/passwd',
+      '.zerochart-scans/other/x.json',
+      inDir.replace('.json', '.txt'),
+    ]) {
+      expect(() => snapshotPath(outside)).toThrow(
+        'Replay reads only .json snapshots in .zerochart-scans/perp-breakout/',
+      );
+    }
   });
 });

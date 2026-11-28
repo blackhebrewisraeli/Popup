@@ -10,7 +10,7 @@
  *   npx tsx scripts/perpBreakoutScanRun.ts --replay <snapshot.json> [--json]
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { stableSerialize } from '../supabase/functions/_shared/stableSerialize';
@@ -67,8 +67,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /** Up to `limit` workers take items in order, so whatever a budget cuts off is the tail. */
 async function pool<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>) {
   let next = 0;
-  const worker = async () => {
-    while (next < items.length) await work(items[next++] as T);
+  const worker = async (): Promise<void> => {
+    if (next >= items.length) return;
+    await work(items[next++] as T);
+    return worker();
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
@@ -90,7 +92,8 @@ function binanceApi(deps: ScanDeps, snapshot: Snapshot, started: number): Api {
     snapshot.requestWeight += WEIGHTS[request];
     const query = new URLSearchParams(params).toString();
     try {
-      const res = await deps.fetch(`${ORIGIN}${PATHS[request]}${query ? `?${query}` : ''}`, {
+      const url = ORIGIN + PATHS[request] + (query ? '?' + query : '');
+      const res = await deps.fetch(url, {
         redirect: 'error',
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
@@ -290,6 +293,20 @@ export function settingsFrom(values: Record<string, unknown>): ScanSettings {
   return settings as unknown as ScanSettings;
 }
 
+/**
+ * The snapshot file a replay may read: a .json file in SNAPSHOT_DIR, named alone or by a path that
+ * resolves there. Replay reads nothing else.
+ */
+export function snapshotPath(argument: string): string {
+  const name = basename(argument);
+  const file = join(SNAPSHOT_DIR, name);
+  const elsewhere = argument !== name && resolve(argument) !== resolve(file);
+  if (!name.endsWith('.json') || elsewhere) {
+    throw new Error(`Replay reads only .json snapshots in ${SNAPSHOT_DIR}/`);
+  }
+  return file;
+}
+
 async function main() {
   const options = Object.fromEntries(
     Object.keys(FLAGS).map((flag) => [flag, { type: 'string' as const }]),
@@ -305,7 +322,8 @@ async function main() {
   const print = (report: ScanReport) =>
     console.log(values.json ? JSON.stringify(report, null, 2) : reportText(report));
   if (typeof values.replay === 'string') {
-    const { report, match } = replay(JSON.parse(await readFile(values.replay, 'utf8')) as Snapshot);
+    const file = snapshotPath(values.replay);
+    const { report, match } = replay(JSON.parse(await readFile(file, 'utf8')) as Snapshot);
     print(report);
     const verdict = { true: 'MATCH', false: 'MISMATCH', null: 'no recorded report to compare' }[
       String(match)
@@ -327,8 +345,10 @@ async function main() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  main().catch((error: unknown) => {
+  try {
+    await main();
+  } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
-  });
+  }
 }

@@ -280,7 +280,7 @@ function parseCandle(row: unknown): Candle | null {
 export function validCandles(rows: unknown, boundary: number): Candle[] | string {
   if (!Array.isArray(rows) || rows.length === 0) return 'candles missing';
   const candles = rows.map(parseCandle);
-  if (candles.some((c) => c === null)) return 'candle row invalid';
+  if (candles.includes(null)) return 'candle row invalid';
   const valid = candles as Candle[];
   const last = (valid.at(-1) as Candle).openTime;
   const expectedLast = boundary - INTERVAL_MS;
@@ -784,8 +784,15 @@ function clockRefusal(decisionTime: number, bookTickers: unknown[]): string | nu
 }
 
 /** Candle problems that mean the contract was not evaluated (insufficient history is the rule's). */
-const DATA_REJECTION =
-  /^(candles missing|candle row invalid|stale candles|candle after|gapped candles|\d+ candles)/;
+const DATA_REJECTIONS = [
+  'candles missing',
+  'candle row invalid',
+  'stale candles',
+  'candle after',
+  'gapped candles',
+];
+const isDataRejection = (reason: string) =>
+  DATA_REJECTIONS.some((prefix) => reason.startsWith(prefix)) || /^\d/.test(reason);
 
 /** The rule over every eligible contract in order, with what kept each one from a setup. */
 function evaluateContracts(snapshot: Snapshot, eligible: Eligible[], market: Market | null) {
@@ -796,7 +803,7 @@ function evaluateContracts(snapshot: Snapshot, eligible: Eligible[], market: Mar
   for (const perp of eligible) {
     const skipped = snapshot.notEvaluated[perp.symbol];
     const candles = skipped ?? validCandles(snapshot.candles[perp.symbol], snapshot.boundary);
-    if (typeof candles === 'string' && (skipped || DATA_REJECTION.test(candles))) {
+    if (typeof candles === 'string' && (skipped || isDataRejection(candles))) {
       notEvaluated.push({
         symbol: perp.symbol,
         reason: withFailure(snapshot, perp.symbol, candles),
@@ -946,7 +953,7 @@ const tally = (rows: Rejection[]) => {
 
 function signalLines(x: Signal): string[] {
   const lines = [
-    `${x.side} ${x.symbol} · ${x.status}${x.reasons.length > 0 ? `: ${x.reasons.join('; ')}` : ''}`,
+    `${x.side} ${x.symbol} · ${x.status}${x.reasons.length > 0 ? ': ' + x.reasons.join('; ') : ''}`,
     `  breakout level ${x.breakoutLevel} (range ${x.rangeLow}–${x.rangeHigh}) · closes ${x.firstBreakoutClose}, ${x.confirmationClose} · signal ${x.signalTime}, expires ${x.expiresAt}`,
     `  exits raw stop ${x.rawStop} / target ${x.rawTarget} → tick ${x.tickSize}: stop ${x.stop} / target ${x.target}`,
   ];

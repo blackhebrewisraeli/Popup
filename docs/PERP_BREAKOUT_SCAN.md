@@ -121,7 +121,8 @@ symbol-filter reader.
 
 `--replay` runs the saved inputs through the same `evaluateScan` offline and compares the result
 with the recorded report: **MATCH** or **MISMATCH**. A snapshot from another rule version is
-refused.
+refused. Replay reads only `.json` files in `.zerochart-scans/perp-breakout/`, named alone or by a
+path that resolves there.
 
 **Scan status:**
 
